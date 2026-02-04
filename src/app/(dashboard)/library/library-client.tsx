@@ -5,14 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { BookCard, type Book } from "@/components/library/BookCard";
+import { BookFilters } from "@/components/library/BookFilters";
 
 export default function LibraryClient() {
   const router = useRouter();
@@ -134,68 +128,16 @@ export default function LibraryClient() {
           )}
         </div>
 
-        {/* Type */}
-        <Select
-          value={type}
-          onValueChange={(v) => {
-            setLoading(true);
-            navigate({ type: v === "all" ? "" : v });
-          }}
-        >
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="pdf">PDF</SelectItem>
-            <SelectItem value="epub">ePub</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/* Status */}
-        <Select
-          value={status}
-          onValueChange={(v) => {
-            setLoading(true);
-            navigate({ status: v === "all" ? "" : v });
-          }}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="not_started">Not Started</SelectItem>
-            <SelectItem value="reading">Reading</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/* Sort */}
-        <Select
-          value={sort}
-          onValueChange={(v) => {
-            setLoading(true);
-            navigate({ sort: v === "added" ? "" : v });
-          }}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="added">Recently Added</SelectItem>
-            <SelectItem value="read">Recently Read</SelectItem>
-            <SelectItem value="title">Title A–Z</SelectItem>
-            <SelectItem value="author">Author A–Z</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/* Clear filters */}
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground hover:text-foreground">
-            Clear filters
-          </Button>
-        )}
+        <BookFilters
+          type={type}
+          status={status}
+          sort={sort}
+          hasFilters={hasFilters}
+          onTypeChange={(v) => { setLoading(true); navigate({ type: v === "all" ? "" : v }); }}
+          onStatusChange={(v) => { setLoading(true); navigate({ status: v === "all" ? "" : v }); }}
+          onSortChange={(v) => { setLoading(true); navigate({ sort: v === "added" ? "" : v }); }}
+          onClearFilters={clearFilters}
+        />
       </div>
 
       {/* Book count */}
