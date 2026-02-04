@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { log } from "./log";
 import { handleAdd } from "./handleAdd";
+import { handleDelete } from "./handleDelete";
 
 const libraryPath = process.env.LIBRARY_PATH ?? "./data/library";
 const resolvedPath = path.resolve(libraryPath);
@@ -33,7 +34,7 @@ watcher
     log(`[CHANGE] ${filePath}`);
   })
   .on("unlink", (filePath) => {
-    log(`[DELETE] ${filePath}`);
+    handleDelete(filePath);
   })
   .on("error", (error) => {
     log(`[ERROR] ${error}`);

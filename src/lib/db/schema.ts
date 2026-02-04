@@ -29,7 +29,7 @@ export const books = sqliteTable("books", {
 export const readingProgress = sqliteTable("reading_progress", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text("user_id").notNull().references(() => users.id),
-  bookId: text("book_id").notNull().references(() => books.id),
+  bookId: text("book_id").notNull().references(() => books.id, { onDelete: "cascade" }),
   currentPage: integer("current_page").notNull().default(0),
   totalPages: integer("total_pages"),
   epubLocation: text("epub_location"),
@@ -50,7 +50,7 @@ export const collectionBooks = sqliteTable(
   "collection_books",
   {
     collectionId: text("collection_id").notNull().references(() => collections.id),
-    bookId: text("book_id").notNull().references(() => books.id),
+    bookId: text("book_id").notNull().references(() => books.id, { onDelete: "cascade" }),
     addedAt: integer("added_at").notNull().$defaultFn(() => Math.floor(Date.now() / 1000)),
   },
   (table) => ({
