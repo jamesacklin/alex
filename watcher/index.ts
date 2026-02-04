@@ -1,15 +1,13 @@
 import chokidar from "chokidar";
 import path from "path";
 import fs from "fs";
+import { log } from "./log";
+import { handleAdd } from "./handleAdd";
 
 const libraryPath = process.env.LIBRARY_PATH ?? "./data/library";
 const resolvedPath = path.resolve(libraryPath);
 
 fs.mkdirSync(resolvedPath, { recursive: true });
-
-function log(message: string) {
-  console.log(`[${new Date().toISOString()}] ${message}`);
-}
 
 function isTarget(filePath: string): boolean {
   const lower = filePath.toLowerCase();
@@ -29,7 +27,7 @@ log(`Watching ${resolvedPath} for .pdf and .epub files…`);
 
 watcher
   .on("add", (filePath) => {
-    log(`[ADD] ${filePath}`);
+    handleAdd(filePath);
   })
   .on("change", (filePath) => {
     log(`[CHANGE] ${filePath}`);
