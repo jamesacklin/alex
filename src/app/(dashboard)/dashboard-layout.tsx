@@ -99,7 +99,7 @@ export default function DashboardLayout({
       >
         {/* Sidebar brand */}
         <div className="flex h-14 shrink-0 items-center px-4 border-b">
-          <span className="text-lg font-semibold">BookShelf</span>
+          <span className="text-lg font-semibold">Alex</span>
           <button
             className="ml-auto md:hidden text-muted-foreground hover:text-foreground"
             aria-label="Close sidebar"
