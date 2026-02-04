@@ -94,30 +94,13 @@ export default function ReaderPage({ params }: { params: Promise<{ bookId: strin
 
   // --- Reader ---
   return (
-    <>
-      {/* Minimal header */}
-      <header className="flex items-center gap-3 px-4 h-12 shrink-0 border-b bg-card">
-        <Link
-          href="/library"
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Back to library"
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5" />
-            <path d="m12 19-7-7 7-7" />
-          </svg>
-        </Link>
-        <h1 className="text-sm font-medium truncate">{book.title}</h1>
-      </header>
-
-      {/* PDF viewer fills remaining space */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <PdfReader
-          bookId={book.id}
-          initialPage={savedProgress?.currentPage ?? 1}
-          onPageChange={saveProgress}
-        />
-      </div>
-    </>
+    <div className="flex-1 min-h-0 overflow-hidden">
+      <PdfReader
+        bookId={book.id}
+        title={book.title}
+        initialPage={savedProgress?.currentPage ?? 1}
+        onPageChange={saveProgress}
+      />
+    </div>
   );
 }
