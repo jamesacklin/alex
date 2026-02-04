@@ -112,21 +112,27 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Extract text strings from current page for search
-  const [pageTextItems, setPageTextItems] = useState<string[]>([]);
+  // All pages text — lazy-loaded on first search open, cached until doc changes
+  const [allPagesText, setAllPagesText] = useState<string[][] | null>(null);
+  useEffect(() => { setAllPagesText(null); }, [docReady]);
   useEffect(() => {
-    if (!docProxyRef.current) { setPageTextItems([]); return; }
-    docProxyRef.current.getPage(currentPage).then((page: any) =>
-      page.getTextContent().then((content: any) => {
-        setPageTextItems(content.items.map((item: any) => item.str));
-      })
-    );
-  }, [currentPage, docReady]);
+    if (!searchOpen || allPagesText !== null || !docProxyRef.current) return;
+    const doc = docProxyRef.current;
+    const promises: Promise<string[]>[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      promises.push(
+        doc.getPage(i).then((page: any) => page.getTextContent()).then((content: any) =>
+          content.items.map((item: any) => item.str)
+        )
+      );
+    }
+    Promise.all(promises).then((texts) => setAllPagesText(texts));
+  }, [searchOpen, docReady, allPagesText]);
 
-  // Reset match index when query or page changes
+  // Reset match index when query changes
   useEffect(() => {
     setCurrentMatchIndex(0);
-  }, [searchQuery, currentPage]);
+  }, [searchQuery]);
 
   // Focus search input when panel opens
   useEffect(() => {
@@ -135,49 +141,67 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
     }
   }, [searchOpen]);
 
-  // Compute matches + per-item highlight ranges (pure, no async)
-  const { matchCount, highlightMap } = useMemo(() => {
-    if (!searchQuery.trim() || pageTextItems.length === 0) {
-      return { matchCount: 0, highlightMap: new Map<number, Array<[number, number, boolean]>>() };
-    }
-
-    const fullText = pageTextItems.join("");
-    const lowerFull = fullText.toLowerCase();
+  // Global matches across all pages in document order
+  const globalMatches = useMemo(() => {
+    if (!searchQuery.trim() || !allPagesText) return [];
     const lowerQuery = searchQuery.toLowerCase();
+    const matches: { page: number; start: number; end: number }[] = [];
+    allPagesText.forEach((pageItems, pageIdx) => {
+      const fullText = pageItems.join("");
+      const lowerFull = fullText.toLowerCase();
+      let pos = 0;
+      while (true) {
+        const idx = lowerFull.indexOf(lowerQuery, pos);
+        if (idx === -1) break;
+        matches.push({ page: pageIdx + 1, start: idx, end: idx + lowerQuery.length });
+        pos = idx + 1;
+      }
+    });
+    return matches;
+  }, [allPagesText, searchQuery]);
 
-    // All match positions in the concatenated text
-    const positions: [number, number][] = [];
-    let pos = 0;
-    while (true) {
-      const idx = lowerFull.indexOf(lowerQuery, pos);
-      if (idx === -1) break;
-      positions.push([idx, idx + lowerQuery.length]);
-      pos = idx + 1;
+  const matchCount = globalMatches.length;
+
+  // Navigate to the active match's page when the index or match list changes.
+  // currentPage is intentionally excluded — we only want to react to match navigation,
+  // not to the user manually changing pages via arrows/input.
+  useEffect(() => {
+    if (globalMatches.length === 0) return;
+    const match = globalMatches[currentMatchIndex % globalMatches.length];
+    if (match.page !== currentPage) {
+      setCurrentPage(match.page);
     }
-    if (positions.length === 0) return { matchCount: 0, highlightMap: new Map() };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMatchIndex, globalMatches]);
 
-    // Item boundaries in the concatenated string
+  // Highlight map for the page currently being rendered
+  const highlightMap = useMemo(() => {
+    if (!allPagesText || globalMatches.length === 0) return new Map<number, Array<[number, number, boolean]>>();
+    const pageItems = allPagesText[currentPage - 1];
+    if (!pageItems) return new Map();
+
+    const activeIdx = currentMatchIndex % globalMatches.length;
     const boundaries = [0];
-    pageTextItems.forEach((str) => boundaries.push(boundaries[boundaries.length - 1] + str.length));
+    pageItems.forEach((str) => boundaries.push(boundaries[boundaries.length - 1] + str.length));
 
-    // Map each match back to the item indices it touches
     const map = new Map<number, Array<[number, number, boolean]>>();
-    positions.forEach(([gStart, gEnd], matchIdx) => {
-      const isActive = matchIdx === currentMatchIndex % positions.length;
-      for (let i = 0; i < pageTextItems.length; i++) {
+    globalMatches.forEach((match, globalIdx) => {
+      if (match.page !== currentPage) return;
+      const isActive = globalIdx === activeIdx;
+      for (let i = 0; i < pageItems.length; i++) {
         const itemStart = boundaries[i];
         const itemEnd = boundaries[i + 1];
-        if (gEnd <= itemStart) break;
-        if (gStart >= itemEnd) continue;
-        const localStart = Math.max(0, gStart - itemStart);
-        const localEnd = Math.min(pageTextItems[i].length, gEnd - itemStart);
+        if (match.end <= itemStart) break;
+        if (match.start >= itemEnd) continue;
+        const localStart = Math.max(0, match.start - itemStart);
+        const localEnd = Math.min(pageItems[i].length, match.end - itemStart);
         if (!map.has(i)) map.set(i, []);
         map.get(i)!.push([localStart, localEnd, isActive]);
       }
     });
 
-    return { matchCount: positions.length, highlightMap: map };
-  }, [pageTextItems, searchQuery, currentMatchIndex]);
+    return map;
+  }, [allPagesText, globalMatches, currentPage, currentMatchIndex]);
 
   // Custom text renderer — returns HTML string; matched regions wrapped in <mark>
   const customTextRenderer = useCallback(({ str, itemIndex }: { str: string; itemIndex: number }) => {
