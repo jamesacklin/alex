@@ -4,6 +4,7 @@ import fs from "fs";
 import { log } from "./log";
 import { handleAdd } from "./handleAdd";
 import { handleDelete } from "./handleDelete";
+import { handleChange } from "./handleChange";
 
 const libraryPath = process.env.LIBRARY_PATH ?? "./data/library";
 const resolvedPath = path.resolve(libraryPath);
@@ -31,7 +32,7 @@ watcher
     handleAdd(filePath);
   })
   .on("change", (filePath) => {
-    log(`[CHANGE] ${filePath}`);
+    handleChange(filePath);
   })
   .on("unlink", (filePath) => {
     handleDelete(filePath);
