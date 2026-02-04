@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx src/lib/db/seed.ts"
+    "db:seed": "tsx src/lib/db/seed.ts",
+    "watcher": "tsx watcher/index.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
+    "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.1",
