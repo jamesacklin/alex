@@ -14,17 +14,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
 @media (prefers-color-scheme: dark) {
   html {
     color-scheme: dark;
@@ -143,7 +132,14 @@ a {
 
 @layer base {
   * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
     @apply border-border outline-ring/50;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
   }
   body {
     @apply bg-background text-foreground;
