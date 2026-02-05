@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 
 const PdfReader = dynamic(() => import("@/components/readers/PdfReader").then((m) => m.PdfReader), { ssr: false });
+const EpubReader = dynamic(() => import("@/components/readers/EpubReader").then((m) => m.EpubReader), { ssr: false });
 
 interface BookMeta {
   id: string;
@@ -16,6 +17,7 @@ interface BookMeta {
 interface Progress {
   currentPage: number;
   totalPages: number;
+  epubLocation: string | null;
   percentComplete: number;
   status: string;
 }
@@ -44,7 +46,7 @@ export default function ReaderPage({ params }: { params: Promise<{ bookId: strin
           setLoading(false);
           return;
         }
-        if (meta.fileType !== "pdf") {
+        if (meta.fileType !== "pdf" && meta.fileType !== "epub") {
           router.replace("/library");
           return;
         }
@@ -74,6 +76,18 @@ export default function ReaderPage({ params }: { params: Promise<{ bookId: strin
     [bookId],
   );
 
+  const saveEpubProgress = useCallback(
+    (epubLocation: string, percentComplete: number) => {
+      if (!bookId) return;
+      fetch(`/api/books/${bookId}/progress`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ epubLocation, percentComplete }),
+      });
+    },
+    [bookId],
+  );
+
   // --- Loading / Error states ---
   if (loading) {
     return (
@@ -97,12 +111,21 @@ export default function ReaderPage({ params }: { params: Promise<{ bookId: strin
   // --- Reader ---
   return (
     <div className="flex-1 min-h-0 overflow-hidden">
-      <PdfReader
-        bookId={book.id}
-        title={book.title}
-        initialPage={savedProgress?.currentPage ?? 1}
-        onPageChange={saveProgress}
-      />
+      {book.fileType === "epub" ? (
+        <EpubReader
+          bookId={book.id}
+          title={book.title}
+          initialLocation={savedProgress?.epubLocation ?? undefined}
+          onLocationChange={saveEpubProgress}
+        />
+      ) : (
+        <PdfReader
+          bookId={book.id}
+          title={book.title}
+          initialPage={savedProgress?.currentPage ?? 1}
+          onPageChange={saveProgress}
+        />
+      )}
     </div>
   );
 }
