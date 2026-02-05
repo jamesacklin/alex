@@ -12,8 +12,7 @@ interface PdfToolbarProps {
   onGoToPage: (page: number) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  onFitWidth: () => void;
-  onFitPage: () => void;
+  onFit: () => void;
   onSearchToggle: () => void;
   pageInputRef: React.RefObject<HTMLInputElement | null>;
 }
@@ -28,8 +27,7 @@ export function PdfToolbar({
   onGoToPage,
   onZoomIn,
   onZoomOut,
-  onFitWidth,
-  onFitPage,
+  onFit,
   onSearchToggle,
   pageInputRef,
 }: PdfToolbarProps) {
@@ -119,18 +117,10 @@ export function PdfToolbar({
 
         <button
           className="text-gray-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-gray-700"
-          onClick={onFitWidth}
-          aria-label="Fit width"
-        >
-          Width
-        </button>
-
-        <button
-          className="text-gray-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-gray-700"
-          onClick={onFitPage}
+          onClick={onFit}
           aria-label="Fit page"
         >
-          Page
+          Fit
         </button>
 
         <span className="w-px h-5 bg-gray-600" />

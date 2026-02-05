@@ -70,25 +70,33 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
   }, [currentPage, docReady]);
 
   // --- Zoom ---
-  const [zoomPercent, setZoomPercent] = useState<number>(() => {
-    if (typeof window === "undefined") return 100;
-    const stored = localStorage.getItem("pdf-zoom");
-    return stored ? Math.min(200, Math.max(50, Number(stored))) : 100;
-  });
-  useEffect(() => {
-    localStorage.setItem("pdf-zoom", String(zoomPercent));
-  }, [zoomPercent]);
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const initialFitDone = useRef(false);
 
   const effectiveWidth = containerWidth ? containerWidth * (zoomPercent / 100) : undefined;
 
   const zoomIn = () => setZoomPercent((z) => Math.min(200, z + 25));
   const zoomOut = () => setZoomPercent((z) => Math.max(50, z - 25));
-  const fitWidth = () => setZoomPercent(100);
-  const fitPage = () => {
+  const fit = () => {
     if (!containerWidth || !containerHeight || !pageNaturalWidth || !pageNaturalHeight) return;
-    const z = Math.round((containerHeight * pageNaturalWidth) / (containerWidth * pageNaturalHeight) * 100);
-    setZoomPercent(Math.min(200, Math.max(50, Math.min(100, z))));
+    // Available space inside p-4 padding (16px each side)
+    const availW = containerWidth - 32;
+    const availH = containerHeight - 32;
+    // Zoom % that fills available width / available height respectively
+    const fitW = (availW / containerWidth) * 100;
+    const fitH = (availH * pageNaturalWidth) / (pageNaturalHeight * containerWidth) * 100;
+    // Use the more constraining dimension
+    setZoomPercent(Math.min(200, Math.max(50, Math.floor(Math.min(fitW, fitH)))));
   };
+
+  // Auto-fit once on initial load (runs as soon as container + page dimensions are known)
+  useEffect(() => {
+    if (initialFitDone.current) return;
+    if (!containerWidth || !containerHeight || !pageNaturalWidth || !pageNaturalHeight) return;
+    fit();
+    initialFitDone.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerWidth, containerHeight, pageNaturalWidth, pageNaturalHeight]);
 
   // --- Progress ---
   useEffect(() => {
@@ -275,8 +283,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
           onGoToPage={goTo}
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
-          onFitWidth={fitWidth}
-          onFitPage={fitPage}
+          onFit={fit}
           onSearchToggle={() => setSearchOpen((o) => !o)}
           pageInputRef={pageInputRef}
         />
