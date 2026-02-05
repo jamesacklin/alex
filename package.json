@@ -8,6 +8,7 @@
     "start": "next start",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/lib/db/seed.ts",
+    "db:reset": "rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push && pnpm db:seed",
     "watcher": "tsx watcher/index.ts"
   },
   "dependencies": {
