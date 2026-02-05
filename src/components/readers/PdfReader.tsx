@@ -74,7 +74,17 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
   const [fitReady, setFitReady] = useState(false);
   const userZoomed = useRef(false); // set true on first manual zoom; stops auto-fit
 
-  const effectiveWidth = containerWidth ? containerWidth * (zoomPercent / 100) : undefined;
+  // In auto-fit mode compute width directly from dimensions (single render, no flicker).
+  // Once the user zooms manually, fall back to zoomPercent-based width.
+  const effectiveWidth = useMemo(() => {
+    if (!containerWidth) return undefined;
+    if (!userZoomed.current && containerHeight && pageNaturalWidth && pageNaturalHeight) {
+      const availW = containerWidth - 32;
+      const availH = containerHeight - 32;
+      return Math.min(availW, availH * pageNaturalWidth / pageNaturalHeight);
+    }
+    return containerWidth * (zoomPercent / 100);
+  }, [containerWidth, containerHeight, pageNaturalWidth, pageNaturalHeight, zoomPercent]);
 
   const zoomIn = () => { userZoomed.current = true; setZoomPercent((z) => Math.min(200, z + 25)); };
   const zoomOut = () => { userZoomed.current = true; setZoomPercent((z) => Math.max(50, z - 25)); };

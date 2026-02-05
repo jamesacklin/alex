@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { PdfReader } from "@/components/readers/PdfReader";
+import dynamic from "next/dynamic";
+
+const PdfReader = dynamic(() => import("@/components/readers/PdfReader").then((m) => m.PdfReader), { ssr: false });
 
 interface BookMeta {
   id: string;
