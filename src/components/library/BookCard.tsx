@@ -19,7 +19,7 @@ export function BookCard({ book }: { book: Book }) {
   return (
     <Link
       href={`/read/${book.id}`}
-      className="group block rounded-lg border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+      className="group block rounded-lg border bg-card overflow-hidden"
     >
       {/* Cover */}
       <div className="relative aspect-[2/3] overflow-hidden bg-muted">
@@ -30,7 +30,10 @@ export function BookCard({ book }: { book: Book }) {
         />
         {/* File-type badge */}
         <div className="absolute top-2 right-2">
-          <Badge variant="secondary" className="text-xs font-semibold shadow-sm bg-white/90 text-gray-800">
+          <Badge
+            variant="secondary"
+            className="text-xs font-semibold bg-white/90 text-gray-800"
+          >
             {book.fileType === "pdf" ? "PDF" : "EPUB"}
           </Badge>
         </div>
@@ -44,9 +47,13 @@ export function BookCard({ book }: { book: Book }) {
 
       {/* Info */}
       <div className="p-3 space-y-1">
-        <h3 className="font-medium text-sm leading-snug line-clamp-2">{book.title}</h3>
+        <h3 className="font-medium text-sm leading-snug line-clamp-2">
+          {book.title}
+        </h3>
         {book.author && (
-          <p className="text-xs text-muted-foreground truncate">{book.author}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {book.author}
+          </p>
         )}
 
         {/* Progress bar — reading only */}
@@ -54,7 +61,7 @@ export function BookCard({ book }: { book: Book }) {
           <div className="pt-2">
             <div className="flex justify-between text-xs text-muted-foreground mb-1">
               <span>Reading</span>
-              <span>{book.readingProgress.percentComplete}%</span>
+              <span>{book.readingProgress.percentComplete.toFixed(0)}%</span>
             </div>
             <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
               <div
