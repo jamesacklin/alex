@@ -2,11 +2,13 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Menu, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Menu, ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { ReactReader } from "react-reader";
 import type { Rendition } from "epubjs";
 
 type TocItem = { label: string; href: string };
+type FontSize = "small" | "medium" | "large" | "xl";
+type Theme = "light" | "dark" | "sepia";
 
 interface EpubReaderProps {
   bookId: string;
@@ -20,25 +22,61 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
   const renditionRef = useRef<Rendition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [epubData, setEpubData] = useState<ArrayBuffer | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentHref, setCurrentHref] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fontSize, setFontSize] = useState<FontSize>("medium");
+  const [theme, setTheme] = useState<Theme>("light");
+  const [epubData, setEpubData] = useState<ArrayBuffer | null>(null);
 
-  // Fetch the epub file as ArrayBuffer on mount
+  // Fetch epub as ArrayBuffer
   useEffect(() => {
-    fetch(`/api/books/${bookId}/file`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch ePub file");
-        return r.arrayBuffer();
+    fetch(`/api/books/${bookId}/book.epub`)
+      .then((res) => res.arrayBuffer())
+      .then((buffer) => {
+        setEpubData(buffer);
       })
-      .then((buffer) => setEpubData(buffer))
       .catch((err) => {
-        console.error("ePub fetch error:", err);
+        console.error("Failed to load epub:", err);
         setError("Failed to load ePub file");
         setLoading(false);
       });
   }, [bookId]);
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("epub-reader-settings");
+    if (saved) {
+      try {
+        const { fontSize: savedFontSize, theme: savedTheme } = JSON.parse(saved);
+        if (savedFontSize) setFontSize(savedFontSize);
+        if (savedTheme) setTheme(savedTheme);
+      } catch (err) {
+        console.error("Failed to load reader settings:", err);
+      }
+    }
+  }, []);
+
+  // Save settings to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("epub-reader-settings", JSON.stringify({ fontSize, theme }));
+  }, [fontSize, theme]);
+
+  // Apply settings to rendition whenever they change
+  useEffect(() => {
+    if (!renditionRef.current) return;
+
+    const fontSizeMap = {
+      small: "14px",
+      medium: "16px",
+      large: "18px",
+      xl: "20px",
+    };
+
+    renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
+    renditionRef.current.themes.select(theme);
+  }, [fontSize, theme]);
 
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
@@ -80,6 +118,33 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
       console.error("ePub load error:", err);
       setError("Failed to load ePub file");
       setLoading(false);
+    });
+
+    // Hide loading spinner once book is ready
+    rendition.book.ready.then(() => {
+      setLoading(false);
+    }).catch((err: unknown) => {
+      console.error("Failed to load book:", err);
+    });
+
+    // Register themes once (cleaner than repeated overrides)
+    rendition.themes.register("light", {
+      body: {
+        color: "#1a1a1a !important",
+        "background-color": "#ffffff !important",
+      },
+    });
+    rendition.themes.register("dark", {
+      body: {
+        color: "#e5e5e5 !important",
+        "background-color": "#1a1a1a !important",
+      },
+    });
+    rendition.themes.register("sepia", {
+      body: {
+        color: "#5b4636 !important",
+        "background-color": "#f4ecd8 !important",
+      },
     });
 
     // Extract table of contents
@@ -186,6 +251,15 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
         >
           <Menu className="h-5 w-5" />
         </button>
+
+        {/* Reading settings */}
+        <button
+          onClick={() => setSettingsOpen(!settingsOpen)}
+          className="p-1 rounded hover:bg-gray-800 transition-colors"
+          aria-label="Reading settings"
+        >
+          <Settings className="h-5 w-5" />
+        </button>
       </header>
 
       {/* Reader */}
@@ -235,9 +309,64 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
           </>
         )}
 
+        {/* Reading Settings */}
+        {settingsOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/50 z-20"
+              onClick={() => setSettingsOpen(false)}
+            />
+            {/* Settings Panel */}
+            <div className="absolute top-4 right-4 w-72 bg-background border rounded-lg shadow-xl z-30 p-4">
+              <h3 className="font-semibold mb-4">Reading Settings</h3>
+
+              {/* Font Size */}
+              <div className="mb-4">
+                <label className="text-sm font-medium mb-2 block">Font Size</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(["small", "medium", "large", "xl"] as const).map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => setFontSize(size)}
+                      className={`px-3 py-2 rounded text-sm border transition-colors ${
+                        fontSize === size
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background hover:bg-accent"
+                      }`}
+                    >
+                      {size === "small" ? "S" : size === "medium" ? "M" : size === "large" ? "L" : "XL"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Theme */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Theme</label>
+                <div className="space-y-2">
+                  {(["light", "dark", "sepia"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setTheme(t)}
+                      className={`w-full px-3 py-2 rounded text-sm border text-left transition-colors ${
+                        theme === t
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background hover:bg-accent"
+                      }`}
+                    >
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
         {epubData && (
           <ReactReader
-            url={epubData as any}
+            url={epubData}
             location={location}
             locationChanged={handleLocationChanged}
             getRendition={handleGetRendition}
