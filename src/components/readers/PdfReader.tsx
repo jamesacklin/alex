@@ -71,30 +71,30 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
 
   // --- Zoom ---
   const [zoomPercent, setZoomPercent] = useState(100);
-  const initialFitDone = useRef(false);
+  const [fitReady, setFitReady] = useState(false);
+  const userZoomed = useRef(false); // set true on first manual zoom; stops auto-fit
 
   const effectiveWidth = containerWidth ? containerWidth * (zoomPercent / 100) : undefined;
 
-  const zoomIn = () => setZoomPercent((z) => Math.min(200, z + 25));
-  const zoomOut = () => setZoomPercent((z) => Math.max(50, z - 25));
+  const zoomIn = () => { userZoomed.current = true; setZoomPercent((z) => Math.min(200, z + 25)); };
+  const zoomOut = () => { userZoomed.current = true; setZoomPercent((z) => Math.max(50, z - 25)); };
   const fit = () => {
     if (!containerWidth || !containerHeight || !pageNaturalWidth || !pageNaturalHeight) return;
-    // Available space inside p-4 padding (16px each side)
-    const availW = containerWidth - 32;
+    const availW = containerWidth - 32; // p-4 padding each side
     const availH = containerHeight - 32;
-    // Zoom % that fills available width / available height respectively
     const fitW = (availW / containerWidth) * 100;
     const fitH = (availH * pageNaturalWidth) / (pageNaturalHeight * containerWidth) * 100;
-    // Use the more constraining dimension
     setZoomPercent(Math.min(200, Math.max(50, Math.floor(Math.min(fitW, fitH)))));
   };
 
-  // Auto-fit once on initial load (runs as soon as container + page dimensions are known)
+  // Auto-fit: keeps page fitted as dimensions settle (toolbar appearing, etc.)
+  // until the user manually zooms. fitReady gates the <Page> render so it never
+  // paints before the first fit calculation.
   useEffect(() => {
-    if (initialFitDone.current) return;
+    if (userZoomed.current) return;
     if (!containerWidth || !containerHeight || !pageNaturalWidth || !pageNaturalHeight) return;
     fit();
-    initialFitDone.current = true;
+    if (!fitReady) setFitReady(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerWidth, containerHeight, pageNaturalWidth, pageNaturalHeight]);
 
@@ -283,7 +283,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
           onGoToPage={goTo}
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
-          onFit={fit}
+          onFit={() => { userZoomed.current = true; fit(); }}
           onSearchToggle={() => setSearchOpen((o) => !o)}
           pageInputRef={pageInputRef}
         />
@@ -370,7 +370,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
             onLoadError={() => setError("Failed to load PDF.")}
             loading={<Spinner />}
           >
-            {numPages && (
+            {numPages && fitReady && (
               <Page
                 pageNumber={currentPage}
                 width={effectiveWidth}
