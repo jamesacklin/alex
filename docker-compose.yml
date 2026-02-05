@@ -1,0 +1,36 @@
+services:
+  alex:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+
+    environment:
+      # Paths inside the container – these should not normally need changing
+      DATABASE_PATH: /app/data/library.db
+      LIBRARY_PATH: /app/data/library
+
+      # Set NEXTAUTH_SECRET in a .env file at the project root (required)
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Create a .env file and set NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+
+    volumes:
+      # Persistent storage for the SQLite database and generated cover images.
+      # Lives in a Docker-managed named volume so it survives container restarts
+      # and image rebuilds without touching your local filesystem.
+      - alex-data:/app/data
+
+      # Your local PDF/EPUB collection, mounted into the container's library
+      # directory.  Change the left-hand path to point to wherever your books
+      # live on disk, for example:
+      #
+      #   /home/user/My Books:/app/data/library
+      #   ~/Documents/eBooks:/app/data/library
+      #
+      # The default (./library) creates a "library" folder next to your
+      # docker-compose.yml if it doesn't already exist.
+      - ./library:/app/data/library
+
+    restart: unless-stopped
+
+volumes:
+  alex-data:
