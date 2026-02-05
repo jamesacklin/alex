@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { ReactReader } from "react-reader";
@@ -18,6 +18,22 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
   const renditionRef = useRef<Rendition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [epubData, setEpubData] = useState<ArrayBuffer | null>(null);
+
+  // Fetch the epub file as ArrayBuffer on mount
+  useEffect(() => {
+    fetch(`/api/books/${bookId}/file`)
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to fetch ePub file");
+        return r.arrayBuffer();
+      })
+      .then((buffer) => setEpubData(buffer))
+      .catch((err) => {
+        console.error("ePub fetch error:", err);
+        setError("Failed to load ePub file");
+        setLoading(false);
+      });
+  }, [bookId]);
 
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
@@ -95,12 +111,14 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
             </div>
           </div>
         )}
-        <ReactReader
-          url={`/api/books/${bookId}/file`}
-          location={location}
-          locationChanged={handleLocationChanged}
-          getRendition={handleGetRendition}
-        />
+        {epubData && (
+          <ReactReader
+            url={epubData as any}
+            location={location}
+            locationChanged={handleLocationChanged}
+            getRendition={handleGetRendition}
+          />
+        )}
       </div>
     </div>
   );
