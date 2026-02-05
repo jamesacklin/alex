@@ -14,6 +14,7 @@
     "@hookform/resolvers": "^5.2.2",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
+    "canvas": "^3.2.1",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

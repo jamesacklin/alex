@@ -8,6 +8,7 @@ export interface Book {
   coverPath: string | null;
   fileType: string;
   pageCount: number | null;
+  updatedAt: number;
   readingProgress: {
     status: string;
     percentComplete: number;
@@ -24,7 +25,7 @@ export function BookCard({ book }: { book: Book }) {
       {/* Cover */}
       <div className="relative aspect-[2/3] overflow-hidden bg-muted">
         <img
-          src={`/api/books/${book.id}/cover`}
+          src={`/api/books/${book.id}/cover?t=${book.updatedAt}`}
           alt={book.title}
           className="w-full h-full object-cover"
         />

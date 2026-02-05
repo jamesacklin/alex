@@ -83,6 +83,7 @@ export async function GET(req: Request) {
           fileType: books.fileType,
           pageCount: books.pageCount,
           addedAt: books.addedAt,
+          updatedAt: books.updatedAt,
           progressStatus: readingProgress.status,
           progressPercent: readingProgress.percentComplete,
           progressLastReadAt: readingProgress.lastReadAt,
@@ -99,6 +100,7 @@ export async function GET(req: Request) {
           fileType: books.fileType,
           pageCount: books.pageCount,
           addedAt: books.addedAt,
+          updatedAt: books.updatedAt,
           progressStatus: readingProgress.status,
           progressPercent: readingProgress.percentComplete,
           progressLastReadAt: readingProgress.lastReadAt,
@@ -115,6 +117,7 @@ export async function GET(req: Request) {
     coverPath: row.coverPath,
     fileType: row.fileType,
     pageCount: row.pageCount,
+    updatedAt: row.updatedAt,
     readingProgress: row.progressStatus !== null
       ? {
           status: row.progressStatus,
