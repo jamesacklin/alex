@@ -57,7 +57,13 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <svg className="h-7 w-7" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" strokeWidth="12" />
+              <rect x="88" y="88" width="80" height="80" fill="currentColor" />
+            </svg>
+            <CardTitle className="text-2xl">Alex</CardTitle>
+          </div>
         </CardHeader>
         <CardContent>
           <Form {...form}>
