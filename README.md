@@ -38,7 +38,21 @@ A self-hosted personal library for your ebook collection. Drop PDFs into a folde
 NEXTAUTH_SECRET=paste-a-random-string-here
 ```
 
-2. Create a `library` folder (or point to an existing one — see `docker-compose.yml`).
+Generate a random secret:
+```sh
+openssl rand -base64 32
+```
+
+2. **Point to your existing library.** Edit `docker-compose.yml` and change the library volume mount:
+
+```yaml
+volumes:
+  - alex-data:/app/data
+  # Change this line to point to your books folder:
+  - /Volumes/books:/app/data/library
+```
+
+Or keep the default (`./library`) to create a new library folder next to your `docker-compose.yml`.
 
 3. Start the stack:
 
@@ -46,7 +60,13 @@ NEXTAUTH_SECRET=paste-a-random-string-here
 docker compose up -d --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000). On first run, Alex creates a default admin account (`admin@localhost` / `admin123`). Change the password after you log in.
+4. Open [http://localhost:3000](http://localhost:3000). On first run, Alex creates a default admin account:
+   - **Email:** `admin@localhost`
+   - **Password:** `admin123`
+
+   ⚠️ **Change the password immediately after logging in.**
+
+5. **Add books:** Drop PDFs or EPUBs into your library folder (`/Volumes/books`). The file watcher will automatically detect and import them.
 
 ### Local Development
 

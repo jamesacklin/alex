@@ -23,12 +23,13 @@ services:
       # directory.  Change the left-hand path to point to wherever your books
       # live on disk, for example:
       #
+      #   /Volumes/books:/app/data/library
       #   /home/user/My Books:/app/data/library
       #   ~/Documents/eBooks:/app/data/library
       #
       # The default (./library) creates a "library" folder next to your
       # docker-compose.yml if it doesn't already exist.
-      - ./library:/app/data/library
+      - /Volumes/books:/app/data/library
 
     restart: unless-stopped
 
