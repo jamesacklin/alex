@@ -31,7 +31,7 @@ export async function GET() {
             });
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           }
-        } catch (error) {
+        } catch {
           // Silently handle errors
         }
       };

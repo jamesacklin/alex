@@ -214,7 +214,7 @@ export default function CollectionsClient() {
             <polyline points="2 17 12 22 22 17" />
             <polyline points="2 12 12 17 22 12" />
           </svg>
-          <p className="text-muted-foreground font-medium">You haven't created any collections yet</p>
+          <p className="text-muted-foreground font-medium">You haven&apos;t created any collections yet</p>
           <p className="text-sm text-muted-foreground mt-1">
             Create a collection to start organizing your library.
           </p>

@@ -99,7 +99,7 @@ export function EpubReader({
       const book = renditionRef.current.book;
 
       // Track current chapter for TOC highlighting
-      const currentLocation = renditionRef.current.currentLocation() as any;
+      const currentLocation = renditionRef.current.currentLocation() as { start?: { href?: string } } | null;
       if (currentLocation?.start?.href) {
         setCurrentHref(currentLocation.start.href);
       }
@@ -148,7 +148,7 @@ export function EpubReader({
       });
 
     // Extract table of contents
-    rendition.book.loaded.navigation.then((nav: any) => {
+    rendition.book.loaded.navigation.then((nav: { toc?: unknown[] }) => {
       setToc(nav.toc || []);
     });
 

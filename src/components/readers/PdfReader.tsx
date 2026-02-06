@@ -51,7 +51,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
   }, []);
 
   // --- PDF document proxy + natural page dimensions ---
-  const docProxyRef = useRef<any>(null);
+  const docProxyRef = useRef<{ getPage: (pageNum: number) => Promise<unknown>; numPages: number } | null>(null);
   const [docReady, setDocReady] = useState(0); // bumped in onLoadSuccess so effects that need the proxy re-run
   const [pageNaturalWidth, setPageNaturalWidth] = useState<number | null>(null);
   const [pageNaturalHeight, setPageNaturalHeight] = useState<number | null>(null);
@@ -62,7 +62,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
 
   useEffect(() => {
     if (!docProxyRef.current) return;
-    docProxyRef.current.getPage(currentPage).then((page: any) => {
+    docProxyRef.current.getPage(currentPage).then((page: { getViewport: (opts: { scale: number }) => { width: number; height: number } }) => {
       const vp = page.getViewport({ scale: 1 });
       setPageNaturalWidth(vp.width);
       setPageNaturalHeight(vp.height);
@@ -117,12 +117,12 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
 
   // --- Page navigation ---
   const pageInputRef = useRef<HTMLInputElement>(null);
-  const goTo = (page: number) => {
+  const goTo = useCallback((page: number) => {
     if (numPages && page >= 1 && page <= numPages) {
       setError(null);
       setCurrentPage(page);
     }
-  };
+  }, [numPages]);
 
   // --- Search ---
   const [searchOpen, setSearchOpen] = useState(false);
@@ -139,8 +139,8 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
     const promises: Promise<string[]>[] = [];
     for (let i = 1; i <= doc.numPages; i++) {
       promises.push(
-        doc.getPage(i).then((page: any) => page.getTextContent()).then((content: any) =>
-          content.items.map((item: any) => item.str)
+        doc.getPage(i).then((page: { getTextContent: () => Promise<{ items: { str: string }[] }> }) => page.getTextContent()).then((content: { items: { str: string }[] }) =>
+          content.items.map((item: { str: string }) => item.str)
         )
       );
     }
@@ -168,11 +168,11 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
       const fullText = pageItems.join("");
       const lowerFull = fullText.toLowerCase();
       let pos = 0;
-      while (true) {
-        const idx = lowerFull.indexOf(lowerQuery, pos);
-        if (idx === -1) break;
+      let idx = lowerFull.indexOf(lowerQuery, pos);
+      while (idx !== -1) {
         matches.push({ page: pageIdx + 1, start: idx, end: idx + lowerQuery.length });
         pos = idx + 1;
+        idx = lowerFull.indexOf(lowerQuery, pos);
       }
     });
     return matches;
@@ -276,7 +276,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentPage, numPages, zoomPercent]);
+  }, [currentPage, numPages, zoomPercent, goTo]);
 
   // --- Render ---
   return (
@@ -371,7 +371,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
               setCurrentPage((prev) => Math.min(prev, doc.numPages));
               docProxyRef.current = doc;
               setDocReady((n) => n + 1);
-              doc.getPage(Math.min(initialPage, doc.numPages)).then((page: any) => {
+              doc.getPage(Math.min(initialPage, doc.numPages)).then((page: { getViewport: (opts: { scale: number }) => { width: number; height: number } }) => {
                 const vp = page.getViewport({ scale: 1 });
                 setPageNaturalWidth(vp.width);
                 setPageNaturalHeight(vp.height);
@@ -388,7 +388,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
                 onError={() => setError("Failed to render this page.")}
                 renderTextLayer={true}
                 renderAnnotationLayer={true}
-                customTextRenderer={customTextRenderer as any}
+                customTextRenderer={customTextRenderer as (props: { str: string; itemIndex: number }) => string}
               />
             )}
           </Document>

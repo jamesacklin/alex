@@ -71,7 +71,7 @@ export default function LibraryClient() {
               // Silent fail for background refresh
             });
         }
-      } catch (err) {
+      } catch {
         // Ignore parsing errors
       }
     });
