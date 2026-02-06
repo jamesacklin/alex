@@ -169,7 +169,7 @@ describe("Collections API", () => {
     const created = await createRes.json();
     expect(created.name).toBe("Sci-Fi");
 
-    const listRes = await GET();
+    const listRes = await GET(new Request("http://localhost/api/collections"));
     const list = await listRes.json();
     expect(Array.isArray(list.collections)).toBe(true);
     expect(list.collections).toHaveLength(1);

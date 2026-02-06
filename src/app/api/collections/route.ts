@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { collectionBooks, collections, users } from "@/lib/db/schema";
 
 // GET /api/collections — list current user's collections with book counts
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const url = new URL(req.url);
+  const bookId = url.searchParams.get("bookId")?.trim() || "";
 
   const rows = await db
     .select({
@@ -25,7 +28,34 @@ export async function GET() {
     .groupBy(collections.id)
     .orderBy(desc(collections.createdAt));
 
-  return NextResponse.json({ collections: rows });
+  if (!bookId) {
+    return NextResponse.json({ collections: rows });
+  }
+
+  if (rows.length === 0) {
+    return NextResponse.json({ collections: [] });
+  }
+
+  const membershipRows = await db
+    .select({ collectionId: collectionBooks.collectionId })
+    .from(collectionBooks)
+    .where(
+      and(
+        eq(collectionBooks.bookId, bookId),
+        inArray(
+          collectionBooks.collectionId,
+          rows.map((row) => row.id),
+        ),
+      ),
+    );
+
+  const membership = new Set(membershipRows.map((row) => row.collectionId));
+  const collectionsWithMembership = rows.map((row) => ({
+    ...row,
+    containsBook: membership.has(row.id),
+  }));
+
+  return NextResponse.json({ collections: collectionsWithMembership });
 }
 
 // POST /api/collections — create collection { name, description? }
