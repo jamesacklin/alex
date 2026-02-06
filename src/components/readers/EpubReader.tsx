@@ -148,7 +148,7 @@ export function EpubReader({
       });
 
     // Extract table of contents
-    rendition.book.loaded.navigation.then((nav: { toc?: unknown[] }) => {
+    rendition.book.loaded.navigation.then((nav: { toc?: TocItem[] }) => {
       setToc(nav.toc || []);
     });
 
