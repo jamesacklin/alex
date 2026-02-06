@@ -6,6 +6,7 @@ import { books } from "../src/lib/db/schema";
 import { log } from "./log";
 import { extractPdfMetadata } from "./extractors/pdf";
 import { extractEpubMetadata } from "./extractors/epub";
+import { incrementLibraryVersion } from "../src/lib/db/library-version";
 
 function computeHash(filePath: string): string {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -69,6 +70,9 @@ export async function handleChange(filePath: string) {
       .where(eq(books.id, book.id));
 
     log(`[UPDATE] "${book.title}" → "${metadata.title}" (${book.fileType})`);
+
+    // Notify clients of library update
+    await incrementLibraryVersion();
   } catch (error) {
     log(`[ERROR] Failed to process change for ${filePath}: ${error}`);
   }

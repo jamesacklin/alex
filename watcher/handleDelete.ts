@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/lib/db";
 import { books } from "../src/lib/db/schema";
 import { log } from "./log";
+import { incrementLibraryVersion } from "../src/lib/db/library-version";
 
 export async function handleDelete(filePath: string) {
   try {
@@ -30,6 +31,9 @@ export async function handleDelete(filePath: string) {
     await db.delete(books).where(eq(books.id, book.id));
 
     log(`[DELETE] Removed "${book.title}" from library`);
+
+    // Notify clients of library update
+    await incrementLibraryVersion();
   } catch (error) {
     log(`[ERROR] Failed to handle deletion of ${filePath}: ${error}`);
   }

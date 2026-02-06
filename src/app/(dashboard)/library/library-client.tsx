@@ -34,16 +34,55 @@ export default function LibraryClient() {
 
   // Fetch whenever URL params change
   useEffect(() => {
-    setLoading(true);
-    fetch(`/api/books?${paramsString}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setBooks(d.books);
-        setTotal(d.total);
-        setTotalPages(d.totalPages);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    const fetchBooks = () => {
+      setLoading(true);
+      fetch(`/api/books?${paramsString}`)
+        .then((r) => r.json())
+        .then((d) => {
+          setBooks(d.books);
+          setTotal(d.total);
+          setTotalPages(d.totalPages);
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    };
+
+    fetchBooks();
+  }, [paramsString]);
+
+  // Real-time updates: listen to watcher events via SSE
+  useEffect(() => {
+    const eventSource = new EventSource("/api/library/events");
+
+    eventSource.addEventListener("message", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Refresh library when watcher detects changes
+        if (data.type === "library-update") {
+          fetch(`/api/books?${paramsString}`)
+            .then((r) => r.json())
+            .then((d) => {
+              setBooks(d.books);
+              setTotal(d.total);
+              setTotalPages(d.totalPages);
+            })
+            .catch(() => {
+              // Silent fail for background refresh
+            });
+        }
+      } catch (err) {
+        // Ignore parsing errors
+      }
+    });
+
+    eventSource.addEventListener("error", () => {
+      // EventSource will automatically reconnect
+    });
+
+    return () => {
+      eventSource.close();
+    };
   }, [paramsString]);
 
   // Push a new set of search-param updates to the URL
@@ -94,7 +133,15 @@ export default function LibraryClient() {
             onClick={() => navigate({ q: searchInput })}
             aria-label="Search"
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.35-4.35" />
             </svg>
@@ -120,7 +167,15 @@ export default function LibraryClient() {
               onClick={() => setSearchInput("")}
               aria-label="Clear search"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -133,9 +188,18 @@ export default function LibraryClient() {
           status={status}
           sort={sort}
           hasFilters={hasFilters}
-          onTypeChange={(v) => { setLoading(true); navigate({ type: v === "all" ? "" : v }); }}
-          onStatusChange={(v) => { setLoading(true); navigate({ status: v === "all" ? "" : v }); }}
-          onSortChange={(v) => { setLoading(true); navigate({ sort: v === "added" ? "" : v }); }}
+          onTypeChange={(v) => {
+            setLoading(true);
+            navigate({ type: v === "all" ? "" : v });
+          }}
+          onStatusChange={(v) => {
+            setLoading(true);
+            navigate({ status: v === "all" ? "" : v });
+          }}
+          onSortChange={(v) => {
+            setLoading(true);
+            navigate({ sort: v === "added" ? "" : v });
+          }}
           onClearFilters={clearFilters}
         />
       </div>
@@ -181,13 +245,18 @@ export default function LibraryClient() {
               : "Add some books to your library to get started."}
           </p>
           {hasFilters && (
-            <Button variant="link" size="sm" onClick={clearFilters} className="mt-2">
+            <Button
+              variant="link"
+              size="sm"
+              onClick={clearFilters}
+              className="mt-2"
+            >
               Clear filters
             </Button>
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
           {books.map((book) => (
             <BookCard key={book.id} book={book} />
           ))}

@@ -7,6 +7,7 @@ import { books } from "../src/lib/db/schema";
 import { log } from "./log";
 import { extractPdfMetadata } from "./extractors/pdf";
 import { extractEpubMetadata } from "./extractors/epub";
+import { incrementLibraryVersion } from "../src/lib/db/library-version";
 
 function computeHash(filePath: string): string {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -55,6 +56,9 @@ export async function handleAdd(filePath: string) {
     });
 
     log(`[OK] Added "${metadata.title}" (${fileType})`);
+
+    // Notify clients of library update
+    await incrementLibraryVersion();
   } catch (error) {
     log(`[ERROR] Failed to process ${filePath}: ${error}`);
   }
