@@ -1,9 +1,11 @@
 # Book Library App (Plex-like for PDFs and ePubs)
 
 ## Overview
+
 Build a self-hosted media server for PDF and ePub files with automatic library management, built-in readers, and admin-managed user authentication.
 
 ## Tech Stack
+
 - **Framework**: Next.js 15 (App Router) - unified frontend/backend
 - **Database**: SQLite with Drizzle ORM - zero-config, type-safe
 - **Auth**: NextAuth.js with Credentials provider - admin-managed accounts
@@ -13,8 +15,9 @@ Build a self-hosted media server for PDF and ePub files with automatic library m
 - **UI Components**: shadcn/ui (Radix UI primitives + Tailwind CSS)
 
 ## Project Structure
+
 ```
-book-app/
+alex/
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/login/page.tsx
@@ -50,6 +53,7 @@ book-app/
 ## Database Schema
 
 ### Tables
+
 1. **users** - id, email, passwordHash, displayName, role (admin/user)
 2. **books** - id, title, author, filePath, fileType (pdf/epub), fileHash, coverPath, pageCount
 3. **reading_progress** - userId, bookId, currentPage/epubLocation, percentComplete, status
@@ -59,6 +63,7 @@ book-app/
 ## Implementation Phases
 
 ### Phase 1: Project Setup
+
 - Initialize Next.js 15 with TypeScript
 - Initialize shadcn/ui (configures Tailwind CSS automatically)
 - Add core shadcn components: Button, Card, Input, Dialog, Table, DropdownMenu, Avatar, Badge, Skeleton
@@ -66,6 +71,7 @@ book-app/
 - Create database schema and migrations
 
 ### Phase 2: Authentication
+
 - Configure NextAuth.js with Credentials provider
 - Create login page
 - Implement role-based middleware (admin vs user)
@@ -73,6 +79,7 @@ book-app/
 - Build admin user management page
 
 ### Phase 3: File Watcher Service
+
 - Create separate Node.js watcher process using chokidar
 - Implement PDF metadata extraction (pdf-parse)
 - Implement ePub metadata extraction (epub2)
@@ -81,12 +88,14 @@ book-app/
 - File hashing for change detection
 
 ### Phase 4: Library UI
+
 - Books API endpoints (list, get, search)
 - BookGrid component with cover display
 - Search, filter, and sort functionality
 - Responsive layout
 
 ### Phase 5: PDF Reader
+
 - Integrate react-pdf
 - Page navigation (buttons, keyboard, jump-to-page)
 - Zoom controls
@@ -94,33 +103,38 @@ book-app/
 - Progress saving (debounced)
 
 ### Phase 6: ePub Reader
+
 - Integrate react-reader
 - Chapter navigation with TOC
 - Font size and theme controls
 - Progress tracking via CFI locations
 
 ### Phase 7: Collections & Progress
+
 - Collections CRUD API and UI
 - Add/remove books from collections
 - Reading progress display on library page
 - "Continue Reading" section
 
 ### Phase 8: Polish
+
 - Loading states and skeletons
 - Error handling
 - Keyboard shortcuts
 - Mobile responsiveness
 
 ## Key API Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/books | List books with filters |
-| GET | /api/books/[id]/file | Stream book file |
-| PUT | /api/books/[id]/progress | Update reading progress |
-| POST | /api/users | Create user (admin only) |
-| POST | /api/library/scan | Trigger manual rescan |
+
+| Method | Endpoint                 | Description              |
+| ------ | ------------------------ | ------------------------ |
+| GET    | /api/books               | List books with filters  |
+| GET    | /api/books/[id]/file     | Stream book file         |
+| PUT    | /api/books/[id]/progress | Update reading progress  |
+| POST   | /api/users               | Create user (admin only) |
+| POST   | /api/library/scan        | Trigger manual rescan    |
 
 ## Verification Plan
+
 1. **Auth**: Login as admin, create a user, login as that user
 2. **Library**: Add PDFs/ePubs to watched directory, verify they appear
 3. **PDF Reader**: Open PDF, navigate pages, close, reopen to verify progress saved

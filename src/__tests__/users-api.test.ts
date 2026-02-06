@@ -6,7 +6,7 @@ import os from "os";
 import path from "path";
 import Database from "better-sqlite3";
 
-const testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), "book-app-"));
+const testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alex-"));
 const dbFile = path.join(testDbDir, "users.db");
 process.env.DATABASE_PATH = dbFile;
 
