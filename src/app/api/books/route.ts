@@ -132,5 +132,6 @@ export async function GET(req: Request) {
     total,
     page,
     totalPages: Math.ceil(total / limit),
+    hasMore: page * limit < total,
   });
 }

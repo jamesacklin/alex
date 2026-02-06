@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { books, collectionBooks, collections } from "@/lib/db/schema";
 
 // GET /api/collections/[id] — get collection with its books
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
@@ -15,6 +15,10 @@ export async function GET(
   }
 
   const { id } = await params;
+  const url = new URL(req.url);
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 24));
+  const offset = (page - 1) * limit;
 
   const [collection] = await db
     .select({
@@ -30,6 +34,13 @@ export async function GET(
     return NextResponse.json({ error: "Collection not found" }, { status: 404 });
   }
 
+  // Get total count of books in this collection
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(collectionBooks)
+    .where(eq(collectionBooks.collectionId, id));
+
+  // Get paginated books
   const bookRows = await db
     .select({
       id: books.id,
@@ -44,9 +55,18 @@ export async function GET(
     .from(collectionBooks)
     .innerJoin(books, eq(collectionBooks.bookId, books.id))
     .where(eq(collectionBooks.collectionId, id))
-    .orderBy(asc(books.title));
+    .orderBy(asc(books.title))
+    .limit(limit)
+    .offset(offset);
 
-  return NextResponse.json({ ...collection, books: bookRows });
+  return NextResponse.json({
+    collection,
+    books: bookRows,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+    hasMore: page * limit < total,
+  });
 }
 
 // PUT /api/collections/[id] — update collection { name?, description? }
