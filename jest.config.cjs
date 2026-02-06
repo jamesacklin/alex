@@ -24,7 +24,7 @@ const watcherConfig = {
 };
 
 module.exports = async () => {
-  const resolvedAppConfig = await appConfig;
+  const resolvedAppConfig = await appConfig();
   return {
     projects: [resolvedAppConfig, watcherConfig]
   };
