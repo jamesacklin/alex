@@ -1,5 +1,7 @@
 # Alex
 
+[![CI:main](https://github.com/jamesacklin/book-app/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesacklin/book-app/actions/workflows/ci.yml)
+
 A self-hosted personal library for your ebook collection. Drop PDFs into a folder and Alex takes care of the rest — extracting metadata, generating covers, and making everything readable from a clean, fast web interface.
 
 ## Features
