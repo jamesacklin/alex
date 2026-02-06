@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -26,6 +27,27 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `(() => {
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const apply = (isDark) => {
+    document.body.classList.toggle('dark', isDark);
+  };
+  apply(media.matches);
+  const handler = (event) => apply(event.matches);
+  if (typeof media.addEventListener === 'function') {
+    media.addEventListener('change', handler);
+  } else {
+    media.addListener(handler);
+  }
+})();`,
+          }}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
         <Toaster />
