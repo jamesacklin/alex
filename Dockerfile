@@ -29,17 +29,17 @@ RUN pnpm build
 FROM node:22-bookworm-slim
 
 # Runtime libraries only:
-#   poppler-utils   – provides pdftoppm for PDF cover extraction
-#   libcairo2       – canvas fallback cover rendering
-#   libpango1.0-0   – text layout for canvas
-#   libjpeg8        – JPEG encoding for canvas
-#   libpng16-2      – PNG support for canvas
+#   poppler-utils       – provides pdftoppm for PDF cover extraction
+#   libcairo2           – canvas fallback cover rendering
+#   libpango1.0-0       – text layout for canvas
+#   libjpeg62-turbo     – JPEG encoding for canvas
+#   libpng16-16         – PNG support for canvas
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libcairo2 \
     libpango1.0-0 \
-    libjpeg8 \
-    libpng16-2 \
+    libjpeg62-turbo \
+    libpng16-16 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable pnpm
