@@ -23,8 +23,8 @@ COPY package.json pnpm-lock.yaml .pnpm-build-approval.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # Build native modules (better-sqlite3 and canvas)
-RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release && \
-    cd ../../../../canvas@3.2.1/node_modules/canvas && npm run install
+RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release
+RUN cd node_modules/.pnpm/canvas@3.2.1/node_modules/canvas && npm run install
 
 # Copy source and build Next.js
 COPY . .
