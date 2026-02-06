@@ -192,9 +192,12 @@ describe("Collections API", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.id).toBe("col-1");
+    expect(body.collection.id).toBe("col-1");
     expect(body.books).toHaveLength(1);
     expect(body.books[0].id).toBe(book.id);
+    expect(body.total).toBe(1);
+    expect(body.page).toBe(1);
+    expect(body.hasMore).toBe(false);
   });
 
   it("updates and deletes a collection", async () => {

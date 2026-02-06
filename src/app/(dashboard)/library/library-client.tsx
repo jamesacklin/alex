@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookCard, type Book } from "@/components/library/BookCard";
 import { BookFilters } from "@/components/library/BookFilters";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 
 export default function LibraryClient() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function LibraryClient() {
   const type = searchParams.get("type") || "all";
   const status = searchParams.get("status") || "all";
   const sort = searchParams.get("sort") || "added";
-  const page = Number(searchParams.get("page")) || 1;
+  const initialPage = Number(searchParams.get("page")) || 1;
 
   // Local search state — debounced before pushing to URL
   const [searchInput, setSearchInput] = useState(q);
@@ -29,28 +30,58 @@ export default function LibraryClient() {
   // Fetched data
   const [books, setBooks] = useState<Book[]>([]);
   const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fetch whenever URL params change
+  // Fetch initial page or when filters change
   useEffect(() => {
-    const fetchBooks = () => {
+    // Cancel any in-flight requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const fetchInitialBooks = async () => {
       setLoading(true);
-      fetch(`/api/books?${paramsString}`)
-        .then((r) => r.json())
-        .then((d) => {
-          setBooks(d.books);
-          setTotal(d.total);
-          setTotalPages(d.totalPages);
+      setCurrentPage(1);
+
+      try {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("page"); // Always start from page 1 on filter change
+
+        const response = await fetch(`/api/books?${params}`, {
+          signal: controller.signal,
+        });
+        const data = await response.json();
+
+        setBooks(data.books);
+        setTotal(data.total);
+        setHasMore(data.hasMore);
+        setLoading(false);
+      } catch (error) {
+        if (error instanceof Error && error.name !== "AbortError") {
           setLoading(false);
-        })
-        .catch(() => setLoading(false));
+        }
+      }
     };
 
-    fetchBooks();
-  }, [paramsString]);
+    fetchInitialBooks();
+
+    return () => {
+      controller.abort();
+    };
+    // Only re-fetch when filter params change, not page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, type, status, sort]);
 
   // Real-time updates: listen to watcher events via SSE
+  const [libraryUpdateDetected, setLibraryUpdateDetected] = useState(false);
+
   useEffect(() => {
     const eventSource = new EventSource("/api/library/events");
 
@@ -58,18 +89,9 @@ export default function LibraryClient() {
       try {
         const data = JSON.parse(event.data);
 
-        // Refresh library when watcher detects changes
+        // Show banner instead of auto-refresh to preserve scroll position
         if (data.type === "library-update") {
-          fetch(`/api/books?${paramsString}`)
-            .then((r) => r.json())
-            .then((d) => {
-              setBooks(d.books);
-              setTotal(d.total);
-              setTotalPages(d.totalPages);
-            })
-            .catch(() => {
-              // Silent fail for background refresh
-            });
+          setLibraryUpdateDetected(true);
         }
       } catch {
         // Ignore parsing errors
@@ -83,7 +105,28 @@ export default function LibraryClient() {
     return () => {
       eventSource.close();
     };
-  }, [paramsString]);
+  }, []);
+
+  const handleRefreshLibrary = () => {
+    setLibraryUpdateDetected(false);
+    // Reset to initial state and re-fetch
+    setCurrentPage(1);
+    setBooks([]);
+    setLoading(true);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("page");
+
+    fetch(`/api/books?${params}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setBooks(d.books);
+        setTotal(d.total);
+        setHasMore(d.hasMore);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
 
   // Push a new set of search-param updates to the URL
   const navigate = (updates: Record<string, string>, resetPage = true) => {
@@ -110,6 +153,51 @@ export default function LibraryClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput, q]);
 
+  // Update URL page param as user loads more (debounced 500ms)
+  useEffect(() => {
+    if (currentPage === 1) return;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", String(currentPage));
+      router.replace(`/library?${params}`, { scroll: false });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [currentPage, router, searchParams]);
+
+  // Load more handler
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    const nextPage = currentPage + 1;
+
+    try {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", String(nextPage));
+
+      const response = await fetch(`/api/books?${params}`);
+      const data = await response.json();
+
+      setBooks((prev) => [...prev, ...data.books]);
+      setCurrentPage(nextPage);
+      setHasMore(data.hasMore);
+      setTotal(data.total);
+    } catch (error) {
+      console.error("Failed to load more books:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Infinite scroll hook
+  const { sentinelRef } = useInfiniteScroll({
+    onLoadMore: handleLoadMore,
+    hasMore,
+    isLoading: isLoadingMore || loading,
+    threshold: 400,
+    enabled: true,
+  });
+
   // --- derived flags ---
   const hasFilters = q !== "" || type !== "all" || status !== "all";
 
@@ -123,6 +211,34 @@ export default function LibraryClient() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Library</h1>
+
+      {/* Library update banner */}
+      {libraryUpdateDetected && (
+        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <svg
+            className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+          </svg>
+          <p className="text-sm text-blue-900 dark:text-blue-100 flex-1">
+            Library updated. Refresh to see changes.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRefreshLibrary}
+            className="border-blue-300 dark:border-blue-700"
+          >
+            Refresh
+          </Button>
+        </div>
+      )}
 
       {/* Search + filter row */}
       <div className="flex flex-wrap gap-3 items-end">
@@ -207,7 +323,7 @@ export default function LibraryClient() {
       {/* Book count */}
       {!loading && (
         <p className="text-sm text-muted-foreground">
-          {total} {total === 1 ? "book" : "books"}
+          Showing {books.length} of {total} {total === 1 ? "book" : "books"}
         </p>
       )}
 
@@ -256,44 +372,56 @@ export default function LibraryClient() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
-          {books.map((book) => (
-            <BookCard key={book.id} book={book} />
-          ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {!loading && totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} · {total} books
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => {
-                setLoading(true);
-                navigate({ page: page > 2 ? String(page - 1) : "" }, false);
-              }}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => {
-                setLoading(true);
-                navigate({ page: String(page + 1) }, false);
-              }}
-            >
-              Next
-            </Button>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+            {books.map((book) => (
+              <BookCard key={book.id} book={book} />
+            ))}
           </div>
-        </div>
+
+          {/* Infinite scroll sentinel */}
+          <div ref={sentinelRef} className="h-20" />
+
+          {/* Loading more skeletons */}
+          {isLoadingMore && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-lg border overflow-hidden">
+                  <Skeleton className="aspect-[2/3]" />
+                  <div className="p-3 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Load More button */}
+          {hasMore && !loading && (
+            <div className="flex justify-center pt-6">
+              <Button
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+                variant="outline"
+                size="lg"
+              >
+                {isLoadingMore
+                  ? "Loading..."
+                  : `Load More Books (${books.length} of ${total})`}
+              </Button>
+            </div>
+          )}
+
+          {/* All loaded message */}
+          {!hasMore && books.length > 0 && !loading && (
+            <div className="flex justify-center pt-6">
+              <p className="text-sm text-muted-foreground">
+                All books loaded ({total} total)
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

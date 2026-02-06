@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,10 +16,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { BookCard, type Book } from "@/components/library/BookCard";
 
 interface CollectionResponse {
-  id: string;
-  name: string;
-  description: string | null;
-  createdAt: number;
+  collection: {
+    id: string;
+    name: string;
+    description: string | null;
+    createdAt: number;
+  };
   books: Array<{
     id: string;
     title: string;
@@ -30,6 +32,10 @@ interface CollectionResponse {
     addedAt: number;
     updatedAt: number;
   }>;
+  total: number;
+  page: number;
+  totalPages: number;
+  hasMore: boolean;
 }
 
 const editSchema = z.object({
@@ -55,6 +61,13 @@ export default function CollectionDetailClient() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Pagination state
+  const [allBooks, setAllBooks] = useState<Book[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
     defaultValues: { name: "", description: "" },
@@ -64,14 +77,30 @@ export default function CollectionDetailClient() {
     if (!collectionId) return;
     setLoading(true);
     setError(null);
+    setCurrentPage(1);
 
-    fetch(`/api/collections/${collectionId}`)
+    fetch(`/api/collections/${collectionId}?page=1&limit=24`)
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load collection");
         return r.json();
       })
-      .then((data) => {
+      .then((data: CollectionResponse) => {
         setCollection(data);
+        setTotal(data.total);
+        setHasMore(data.hasMore);
+
+        // Convert to Book type
+        const books: Book[] = data.books.map((book) => ({
+          id: book.id,
+          title: book.title,
+          author: book.author,
+          coverPath: book.coverPath,
+          fileType: book.fileType,
+          pageCount: book.pageCount,
+          updatedAt: book.updatedAt,
+          readingProgress: null,
+        }));
+        setAllBooks(books);
         setLoading(false);
       })
       .catch((err) => {
@@ -87,24 +116,45 @@ export default function CollectionDetailClient() {
   useEffect(() => {
     if (!collection) return;
     form.reset({
-      name: collection.name,
-      description: collection.description ?? "",
+      name: collection.collection.name,
+      description: collection.collection.description ?? "",
     });
   }, [collection, form]);
 
-  const books: Book[] = useMemo(() => {
-    if (!collection) return [];
-    return collection.books.map((book) => ({
-      id: book.id,
-      title: book.title,
-      author: book.author,
-      coverPath: book.coverPath,
-      fileType: book.fileType,
-      pageCount: book.pageCount,
-      updatedAt: book.updatedAt,
-      readingProgress: null,
-    }));
-  }, [collection]);
+  // Load more handler
+  const handleLoadMore = async () => {
+    if (!collectionId || isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    const nextPage = currentPage + 1;
+
+    try {
+      const response = await fetch(
+        `/api/collections/${collectionId}?page=${nextPage}&limit=24`
+      );
+      const data: CollectionResponse = await response.json();
+
+      const newBooks: Book[] = data.books.map((book) => ({
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        coverPath: book.coverPath,
+        fileType: book.fileType,
+        pageCount: book.pageCount,
+        updatedAt: book.updatedAt,
+        readingProgress: null,
+      }));
+
+      setAllBooks((prev) => [...prev, ...newBooks]);
+      setCurrentPage(nextPage);
+      setHasMore(data.hasMore);
+      setTotal(data.total);
+    } catch (error) {
+      console.error("Failed to load more books:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   async function onEditSubmit(values: EditValues) {
     if (!collectionId) return;
@@ -214,14 +264,14 @@ export default function CollectionDetailClient() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{collection.name}</h1>
-          {collection.description && (
+          <h1 className="text-2xl font-bold">{collection.collection.name}</h1>
+          {collection.collection.description && (
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-              {collection.description}
+              {collection.collection.description}
             </p>
           )}
           <p className="text-sm text-muted-foreground mt-2">
-            {collection.books.length} {collection.books.length === 1 ? "book" : "books"}
+            Showing {allBooks.length} of {total} {total === 1 ? "book" : "books"}
           </p>
         </div>
         <div className="flex gap-2">
@@ -234,7 +284,7 @@ export default function CollectionDetailClient() {
         </div>
       </div>
 
-      {collection.books.length === 0 ? (
+      {total === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <svg
             className="h-12 w-12 text-muted-foreground mb-4"
@@ -253,16 +303,58 @@ export default function CollectionDetailClient() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
-          {books.map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              actionLabel="Remove from collection"
-              onAction={() => onRemoveBook(book.id)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+            {allBooks.map((book) => (
+              <BookCard
+                key={book.id}
+                book={book}
+                actionLabel="Remove from collection"
+                onAction={() => onRemoveBook(book.id)}
+              />
+            ))}
+          </div>
+
+          {/* Loading more skeletons */}
+          {isLoadingMore && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-lg border overflow-hidden">
+                  <Skeleton className="aspect-[2/3]" />
+                  <div className="p-3 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Load More button */}
+          {hasMore && (
+            <div className="flex justify-center pt-6">
+              <Button
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+                variant="outline"
+                size="lg"
+              >
+                {isLoadingMore
+                  ? "Loading..."
+                  : `Load More Books (${allBooks.length} of ${total})`}
+              </Button>
+            </div>
+          )}
+
+          {/* All loaded message */}
+          {!hasMore && allBooks.length > 0 && (
+            <div className="flex justify-center pt-6">
+              <p className="text-sm text-muted-foreground">
+                All books loaded ({total} total)
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       <Dialog
@@ -271,8 +363,8 @@ export default function CollectionDetailClient() {
           setEditOpen(open);
           if (!open) {
             form.reset({
-              name: collection.name,
-              description: collection.description ?? "",
+              name: collection.collection.name,
+              description: collection.collection.description ?? "",
             });
             setSubmitError(null);
           }
