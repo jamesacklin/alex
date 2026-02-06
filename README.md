@@ -5,8 +5,10 @@ A self-hosted personal library for your ebook collection. Drop PDFs into a folde
 ## Features
 
 - **Zero-effort ingestion.** A background watcher monitors a folder on disk. Add a PDF or EPUB and it appears in your library automatically, complete with title, author, and a cover pulled from the first page.
-- **Read in the browser.** A full-featured PDF reader with page navigation, continuous zoom, and fit-to-width rendering. Jump to any page, search across the entire document, and pick up exactly where you left off.
-- **Reading progress.** Every page turn is saved. Books move through *not started → reading → completed* on their own, and a progress bar on each card keeps your at-a-glance view honest.
+- **Read in the browser.** Full-featured readers for both PDFs and EPUBs:
+  - **PDF:** Page navigation, continuous zoom, fit-to-width rendering, and full-text search
+  - **EPUB:** Table of contents navigation, chapter skipping, customizable font sizes (displayed in Times New Roman), and reflowable text that adapts to any screen
+- **Reading progress.** Every page turn and location change is saved. Books move through *not started → reading → completed* on their own, and a progress bar on each card keeps your at-a-glance view honest.
 - **Search and filter.** Find books by title or author. Filter by format and reading status, sort by what matters to you.
 - **Multi-user.** Built-in user management with admin and user roles. Each reader keeps their own progress; admins can add or remove accounts.
 - **Docker-ready.** Ships as a single container with everything it needs. Mount your book folder, set one secret, and it runs.
@@ -20,7 +22,7 @@ A self-hosted personal library for your ebook collection. Drop PDFs into a folde
 | UI | React 19, [Tailwind CSS v4](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com) |
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
 | Database | SQLite via [better-sqlite3](https://github.com/JoshuaWise/better-sqlite3) + [Drizzle ORM](https://orm.drizzle.team) |
-| PDF rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (browser), [pdf-parse](https://www.npmjs.com/package/pdf-parse) (metadata) |
+| Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs), [pdf-parse](https://www.npmjs.com/package/pdf-parse) (metadata) |
 | Cover generation | [poppler-utils](https://poppler.freedesktop.org/) (`pdftoppm`) with a [node-canvas](https://github.com/Automattic/node-canvas) synthetic fallback |
 | File watching | [chokidar](https://github.com/paulmillr/chokidar) |
 

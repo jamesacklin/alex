@@ -22,7 +22,14 @@ interface User {
   role: string;
 }
 
-const NAV_ITEMS = [
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ReactNode;
+  comingSoon?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
   {
     label: "Library",
     href: "/library",
@@ -36,6 +43,7 @@ const NAV_ITEMS = [
   {
     label: "Collections",
     href: "/collections",
+    comingSoon: true,
     icon: (
       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <polygon points="12 2 2 7 12 12 22 7 12 2" />
@@ -46,7 +54,7 @@ const NAV_ITEMS = [
   },
 ];
 
-const ADMIN_NAV_ITEM = {
+const ADMIN_NAV_ITEM: NavItem = {
   label: "Admin",
   href: "/admin/users",
   icon: (
@@ -120,6 +128,22 @@ export default function DashboardLayout({
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+
+            if (item.comingSoon) {
+              return (
+                <div
+                  key={item.href}
+                  className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed"
+                >
+                  {item.icon}
+                  <span className="flex-1">{item.label}</span>
+                  <span className="px-1.5 py-0.5 text-xs font-semibold bg-muted text-muted-foreground rounded">
+                    SOON
+                  </span>
+                </div>
+              );
+            }
+
             return (
               <Link
                 key={item.href}
