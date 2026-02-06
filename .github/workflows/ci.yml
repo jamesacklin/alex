@@ -36,6 +36,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y python3 make g++
+
       - name: Enable Corepack
         run: corepack enable
 
@@ -47,6 +50,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build native modules
+        run: |
+          cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release
+          cd ../../../canvas@3.2.1/node_modules/canvas && npm run install
 
       - name: Build
         run: pnpm build
