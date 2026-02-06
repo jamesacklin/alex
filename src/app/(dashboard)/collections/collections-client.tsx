@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 
 interface CollectionSummary {
   id: string;
@@ -14,41 +22,163 @@ interface CollectionSummary {
   bookCount: number;
 }
 
+const createCollectionSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required")
+    .max(100, "Name must be 100 characters or fewer"),
+  description: z.string().trim().optional(),
+});
+
+type CreateCollectionValues = z.infer<typeof createCollectionSchema>;
+
 export default function CollectionsClient() {
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const form = useForm<CreateCollectionValues>({
+    resolver: zodResolver(createCollectionSchema),
+    defaultValues: { name: "", description: "" },
+  });
+
+  const loadCollections = useCallback(() => {
+    setLoading(true);
+    setError(null);
+
+    fetch("/api/collections")
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load collections");
+        return r.json();
+      })
+      .then((data) => {
+        setCollections(Array.isArray(data.collections) ? data.collections : []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load collections");
+        setCollections([]);
+        setLoading(false);
+      });
+  }, []);
 
   useEffect(() => {
-    const load = () => {
-      setLoading(true);
-      setError(null);
+    loadCollections();
+  }, [loadCollections]);
 
-      fetch("/api/collections")
-        .then((r) => {
-          if (!r.ok) throw new Error("Failed to load collections");
-          return r.json();
-        })
-        .then((data) => {
-          setCollections(Array.isArray(data.collections) ? data.collections : []);
-          setLoading(false);
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : "Failed to load collections");
-          setCollections([]);
-          setLoading(false);
-        });
+  async function onCreateSubmit(values: CreateCollectionValues) {
+    setSubmitError(null);
+    const payload = {
+      name: values.name.trim(),
+      description: values.description?.trim() || undefined,
     };
 
-    load();
-  }, []);
+    try {
+      const res = await fetch("/api/collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      const data = text ? (() => {
+        try {
+          return JSON.parse(text) as { error?: string };
+        } catch {
+          return null;
+        }
+      })() : null;
+
+      if (!res.ok) {
+        const message =
+          typeof data?.error === "string"
+            ? data.error
+            : res.statusText || "Failed to create collection";
+        setSubmitError(message);
+        return;
+      }
+      toast.success("Collection created");
+      form.reset();
+      setCreateOpen(false);
+      loadCollections();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to create collection");
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Collections</h1>
-        <Button type="button">New Collection</Button>
+        <Button type="button" onClick={() => setCreateOpen(true)}>
+          New Collection
+        </Button>
       </div>
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) {
+            form.reset();
+            setSubmitError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Collection</DialogTitle>
+            <DialogDescription>
+              Create a collection to organize your books.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onCreateSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Sci-Fi Favorites" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Optional description" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {submitError && (
+                <div className="text-sm text-destructive">{submitError}</div>
+              )}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button type="submit" disabled={form.formState.isSubmitting}>
+                  {form.formState.isSubmitting ? "Creating…" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, desc, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
-import { collectionBooks, collections } from "@/lib/db/schema";
+import { collectionBooks, collections, users } from "@/lib/db/schema";
 
 // GET /api/collections — list current user's collections with book counts
 export async function GET() {
@@ -54,6 +54,15 @@ export async function POST(req: Request) {
 
   const id = crypto.randomUUID();
   const createdAt = Math.floor(Date.now() / 1000);
+
+  const [existingUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, session.user.id));
+
+  if (!existingUser) {
+    return NextResponse.json({ error: "User not found, try logging in again" }, { status: 404 });
+  }
 
   await db.insert(collections).values({
     id,
