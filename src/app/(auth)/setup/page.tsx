@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import SetupForm from "./setup-form";
 
+export const dynamic = "force-dynamic";
+
 export default async function SetupPage() {
   const [existing] = await db.select().from(users).limit(1);
 
