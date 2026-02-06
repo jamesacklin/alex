@@ -3,8 +3,11 @@
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm AS builder
 
-# canvas requires cairo/pango/png/jpeg headers to compile its native addon
+# Build tools and native dependencies for canvas and better-sqlite3
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
     libcairo2-dev \
     libpango1.0-dev \
     libjpeg-dev \
@@ -18,6 +21,10 @@ WORKDIR /app
 # Install dependencies (layer-cached: only re-runs when lock file changes)
 COPY package.json pnpm-lock.yaml .pnpm-build-approval.yaml ./
 RUN pnpm install --frozen-lockfile
+
+# Build native modules (better-sqlite3 and canvas)
+RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release && \
+    cd ../../../../canvas@3.2.1/node_modules/canvas && npm run install
 
 # Copy source and build Next.js
 COPY . .
