@@ -62,8 +62,9 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
 
   useEffect(() => {
     if (!docProxyRef.current) return;
-    docProxyRef.current.getPage(currentPage).then((page: { getViewport: (opts: { scale: number }) => { width: number; height: number } }) => {
-      const vp = page.getViewport({ scale: 1 });
+    docProxyRef.current.getPage(currentPage).then((page) => {
+      const typedPage = page as { getViewport: (opts: { scale: number }) => { width: number; height: number } };
+      const vp = typedPage.getViewport({ scale: 1 });
       setPageNaturalWidth(vp.width);
       setPageNaturalHeight(vp.height);
     });
@@ -139,9 +140,13 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
     const promises: Promise<string[]>[] = [];
     for (let i = 1; i <= doc.numPages; i++) {
       promises.push(
-        doc.getPage(i).then((page: { getTextContent: () => Promise<{ items: { str: string }[] }> }) => page.getTextContent()).then((content: { items: { str: string }[] }) =>
-          content.items.map((item: { str: string }) => item.str)
-        )
+        doc.getPage(i).then((page) => {
+          const typedPage = page as { getTextContent: () => Promise<{ items: { str: string }[] }> };
+          return typedPage.getTextContent();
+        }).then((content) => {
+          const typedContent = content as { items: { str: string }[] };
+          return typedContent.items.map((item) => item.str);
+        })
       );
     }
     Promise.all(promises).then((texts) => setAllPagesText(texts));
@@ -371,8 +376,9 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
               setCurrentPage((prev) => Math.min(prev, doc.numPages));
               docProxyRef.current = doc;
               setDocReady((n) => n + 1);
-              doc.getPage(Math.min(initialPage, doc.numPages)).then((page: { getViewport: (opts: { scale: number }) => { width: number; height: number } }) => {
-                const vp = page.getViewport({ scale: 1 });
+              doc.getPage(Math.min(initialPage, doc.numPages)).then((page) => {
+                const typedPage = page as { getViewport: (opts: { scale: number }) => { width: number; height: number } };
+                const vp = typedPage.getViewport({ scale: 1 });
                 setPageNaturalWidth(vp.width);
                 setPageNaturalHeight(vp.height);
               });
