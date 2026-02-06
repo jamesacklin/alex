@@ -1,7 +1,8 @@
 # Alex
 
 [![CI:main](https://github.com/jamesacklin/book-app/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesacklin/book-app/actions/workflows/ci.yml)
-[![Docker Hub](https://img.shields.io/docker/v/jamesacklin/alex?label=docker%20hub&logo=docker)](https://hub.docker.com/r/jamesacklin/alex)
+[![Docker Image](https://img.shields.io/badge/docker-jamesacklin%2Falex-blue?logo=docker)](https://hub.docker.com/r/jamesacklin/alex)
+[![Docker Pulls](https://img.shields.io/docker/pulls/jamesacklin/alex)](https://hub.docker.com/r/jamesacklin/alex)
 
 A self-hosted personal library for your ebook collection. Drop PDFs into a folder and Alex takes care of the rest — extracting metadata, generating covers, and making everything readable from a clean, fast web interface.
 
