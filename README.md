@@ -1,6 +1,7 @@
 # Alex
 
 [![CI:main](https://github.com/jamesacklin/book-app/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesacklin/book-app/actions/workflows/ci.yml)
+[![Docker Hub](https://img.shields.io/docker/v/jamesacklin/alex?label=docker%20hub&logo=docker)](https://hub.docker.com/r/jamesacklin/alex)
 
 A self-hosted personal library for your ebook collection. Drop PDFs into a folder and Alex takes care of the rest — extracting metadata, generating covers, and making everything readable from a clean, fast web interface.
 
@@ -30,7 +31,39 @@ A self-hosted personal library for your ebook collection. Drop PDFs into a folde
 
 ## Getting Started
 
-### Docker (recommended)
+### Docker Hub (quickest)
+
+Pull and run the pre-built image:
+
+```sh
+docker pull jamesacklin/alex:latest
+```
+
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  alex:
+    image: jamesacklin/alex:latest
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_PATH: /app/data/library.db
+      LIBRARY_PATH: /app/data/library
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Create a .env file and set NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+    volumes:
+      - alex-data:/app/data
+      - ./library:/app/data/library  # Change to your books folder
+    restart: unless-stopped
+
+volumes:
+  alex-data:
+```
+
+Then follow steps 1, 3-5 from the "Docker (build from source)" section below.
+
+### Docker (build from source)
 
 1. Create a `.env` file in the project root:
 

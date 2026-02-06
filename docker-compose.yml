@@ -1,6 +1,11 @@
 services:
   alex:
-    build: .
+    # Option 1: Use pre-built image from Docker Hub (recommended)
+    image: jamesacklin/alex:latest
+
+    # Option 2: Build from source (comment out 'image' above and uncomment below)
+    # build: .
+
     ports:
       - "${PORT:-3000}:3000"
 
