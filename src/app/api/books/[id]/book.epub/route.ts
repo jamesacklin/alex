@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import { books } from "@/lib/db/schema";
 import fs from "fs";
 
+// Prevent Next.js from attempting to statically analyze this route during build
+export const dynamic = 'force-dynamic';
+
 // GET /api/books/[id]/book.epub — serves the epub file with .epub extension
 // This endpoint exists solely for epub.js compatibility, which needs a URL ending in .epub
 export async function GET(

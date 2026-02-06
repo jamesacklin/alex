@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { collectionBooks, collections, users } from "@/lib/db/schema";
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/collections — list current user's collections with book counts
 export async function GET(req: Request) {
   const session = await auth();

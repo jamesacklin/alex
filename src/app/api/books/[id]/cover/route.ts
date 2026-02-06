@@ -5,6 +5,8 @@ import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { books } from "@/lib/db/schema";
 
+export const dynamic = 'force-dynamic';
+
 const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">
   <rect width="200" height="300" fill="#e2e8f0" rx="4"/>
   <rect x="70" y="90" width="60" height="80" fill="#cbd5e1" rx="2"/>

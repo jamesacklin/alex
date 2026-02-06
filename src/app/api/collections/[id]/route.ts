@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { books, collectionBooks, collections } from "@/lib/db/schema";
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/collections/[id] — get collection with its books
 export async function GET(
   req: Request,

@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { collectionBooks, collections } from "@/lib/db/schema";
 
+export const dynamic = 'force-dynamic';
+
 // DELETE /api/collections/[id]/books/[bookId] — remove book
 export async function DELETE(
   _req: Request,

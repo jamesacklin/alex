@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { books, collectionBooks, collections } from "@/lib/db/schema";
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/collections/[id]/books — add book { bookId }
 export async function POST(
   req: Request,

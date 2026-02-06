@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { books, readingProgress } from "@/lib/db/schema";
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/books/[id]/progress — current user's progress or null
 export async function GET(
   _req: Request,
