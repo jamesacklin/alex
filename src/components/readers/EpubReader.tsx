@@ -2,13 +2,18 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Menu, ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import {
+  ArrowLeft,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Settings,
+} from "lucide-react";
 import { ReactReader } from "react-reader";
 import type { Rendition } from "epubjs";
 
 type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
-type Theme = "light" | "dark" | "sepia";
 
 interface EpubReaderProps {
   bookId: string;
@@ -17,8 +22,15 @@ interface EpubReaderProps {
   onLocationChange: (epubLocation: string, percentComplete: number) => void;
 }
 
-export function EpubReader({ bookId, title, initialLocation, onLocationChange }: EpubReaderProps) {
-  const [location, setLocation] = useState<string | number>(initialLocation ?? 0);
+export function EpubReader({
+  bookId,
+  title,
+  initialLocation,
+  onLocationChange,
+}: EpubReaderProps) {
+  const [location, setLocation] = useState<string | number>(
+    initialLocation ?? 0,
+  );
   const renditionRef = useRef<Rendition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +39,8 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
   const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fontSize, setFontSize] = useState<FontSize>("medium");
-  const [theme, setTheme] = useState<Theme>("light");
   const [epubData, setEpubData] = useState<ArrayBuffer | null>(null);
+  const [renditionReady, setRenditionReady] = useState(false);
 
   // Fetch epub as ArrayBuffer
   useEffect(() => {
@@ -49,9 +61,8 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
     const saved = localStorage.getItem("epub-reader-settings");
     if (saved) {
       try {
-        const { fontSize: savedFontSize, theme: savedTheme } = JSON.parse(saved);
+        const { fontSize: savedFontSize } = JSON.parse(saved);
         if (savedFontSize) setFontSize(savedFontSize);
-        if (savedTheme) setTheme(savedTheme);
       } catch (err) {
         console.error("Failed to load reader settings:", err);
       }
@@ -60,23 +71,23 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
 
   // Save settings to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem("epub-reader-settings", JSON.stringify({ fontSize, theme }));
-  }, [fontSize, theme]);
+    localStorage.setItem("epub-reader-settings", JSON.stringify({ fontSize }));
+  }, [fontSize]);
 
   // Apply settings to rendition whenever they change
   useEffect(() => {
-    if (!renditionRef.current) return;
+    if (!renditionRef.current || !renditionReady) return;
 
     const fontSizeMap = {
-      small: "14px",
-      medium: "16px",
-      large: "18px",
-      xl: "20px",
+      small: "18px",
+      medium: "24px",
+      large: "32px",
+      xl: "40px",
     };
 
+    renditionRef.current.themes.font("Times New Roman");
     renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
-    renditionRef.current.themes.select(theme);
-  }, [fontSize, theme]);
+  }, [fontSize, renditionReady]);
 
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
@@ -103,7 +114,11 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
           onLocationChange(epubcfi, percent);
         } catch (err) {
-          console.error("Failed to calculate percentage from CFI:", epubcfi, err);
+          console.error(
+            "Failed to calculate percentage from CFI:",
+            epubcfi,
+            err,
+          );
         }
       }
     },
@@ -113,6 +128,9 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
   const handleGetRendition = useCallback((rendition: Rendition) => {
     renditionRef.current = rendition;
 
+    // Set font to Times New Roman
+    rendition.themes.font("Times New Roman");
+
     // Hook error listener for book load failures
     rendition.book.on("openFailed", (err: unknown) => {
       console.error("ePub load error:", err);
@@ -121,31 +139,13 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
     });
 
     // Hide loading spinner once book is ready
-    rendition.book.ready.then(() => {
-      setLoading(false);
-    }).catch((err: unknown) => {
-      console.error("Failed to load book:", err);
-    });
-
-    // Register themes once (cleaner than repeated overrides)
-    rendition.themes.register("light", {
-      body: {
-        color: "#1a1a1a !important",
-        "background-color": "#ffffff !important",
-      },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: "#e5e5e5 !important",
-        "background-color": "#1a1a1a !important",
-      },
-    });
-    rendition.themes.register("sepia", {
-      body: {
-        color: "#5b4636 !important",
-        "background-color": "#f4ecd8 !important",
-      },
-    });
+    rendition.book.ready
+      .then(() => {
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to load book:", err);
+      });
 
     // Extract table of contents
     rendition.book.loaded.navigation.then((nav: any) => {
@@ -154,7 +154,11 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
 
     // Generate location spine for percentage tracking
     rendition.book.ready
-      .then(() => rendition.book.locations.generate(1024))
+      .then(() => {
+        rendition.book.locations.generate(1024);
+        // Signal that rendition is ready for theme application
+        setRenditionReady(true);
+      })
       .catch((err: unknown) => {
         console.error("Failed to generate locations:", err);
         // Don't block the reader — percentage tracking just won't work
@@ -201,14 +205,20 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
     return (
       <div className="flex flex-col h-full bg-background">
         <header className="flex items-center gap-3 px-4 h-12 bg-gray-900 text-white shrink-0">
-          <Link href="/library" className="p-1 rounded hover:bg-gray-800 transition-colors">
+          <Link
+            href="/library"
+            className="p-1 rounded hover:bg-gray-800 transition-colors"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <h1 className="text-sm font-medium truncate">{title}</h1>
         </header>
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
           <p>{error}</p>
-          <Link href="/library" className="text-sm text-primary hover:underline">
+          <Link
+            href="/library"
+            className="text-sm text-primary hover:underline"
+          >
             Back to library
           </Link>
         </div>
@@ -220,7 +230,10 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
     <div className="flex flex-col h-full bg-background">
       {/* Toolbar */}
       <header className="flex items-center gap-3 px-4 h-12 bg-gray-900 text-white shrink-0">
-        <Link href="/library" className="p-1 rounded hover:bg-gray-800 transition-colors">
+        <Link
+          href="/library"
+          className="p-1 rounded hover:bg-gray-800 transition-colors"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <h1 className="text-sm font-medium truncate flex-1">{title}</h1>
@@ -288,7 +301,9 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
               </div>
               <nav className="p-2">
                 {toc.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-3">Loading chapters…</p>
+                  <p className="text-sm text-muted-foreground p-3">
+                    Loading chapters…
+                  </p>
                 ) : (
                   toc.map((item, index) => (
                     <button
@@ -323,7 +338,9 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
 
               {/* Font Size */}
               <div className="mb-4">
-                <label className="text-sm font-medium mb-2 block">Font Size</label>
+                <label className="text-sm font-medium mb-2 block">
+                  Font Size
+                </label>
                 <div className="grid grid-cols-4 gap-2">
                   {(["small", "medium", "large", "xl"] as const).map((size) => (
                     <button
@@ -335,27 +352,13 @@ export function EpubReader({ bookId, title, initialLocation, onLocationChange }:
                           : "bg-background hover:bg-accent"
                       }`}
                     >
-                      {size === "small" ? "S" : size === "medium" ? "M" : size === "large" ? "L" : "XL"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Theme */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">Theme</label>
-                <div className="space-y-2">
-                  {(["light", "dark", "sepia"] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setTheme(t)}
-                      className={`w-full px-3 py-2 rounded text-sm border text-left transition-colors ${
-                        theme === t
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-background hover:bg-accent"
-                      }`}
-                    >
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                      {size === "small"
+                        ? "S"
+                        : size === "medium"
+                          ? "M"
+                          : size === "large"
+                            ? "L"
+                            : "XL"}
                     </button>
                   ))}
                 </div>
