@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { BookCard, type Book } from "@/components/library/BookCard";
-import { Share2 } from "lucide-react";
+import { Share2, Copy, Check } from "lucide-react";
 
 interface CollectionResponse {
   collection: {
@@ -66,6 +66,7 @@ export default function CollectionDetailClient() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
   const [isEnablingShare, setIsEnablingShare] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Pagination state
   const [allBooks, setAllBooks] = useState<Book[]>([]);
@@ -257,6 +258,21 @@ export default function CollectionDetailClient() {
     }
   }
 
+  async function onCopyShareLink() {
+    if (!collection?.collection.shareToken) return;
+
+    const shareUrl = `${window.location.origin}/shared/${collection.collection.shareToken}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -305,11 +321,34 @@ export default function CollectionDetailClient() {
             Showing {allBooks.length} of {total} {total === 1 ? "book" : "books"}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShareOpen(true)}>
-            <Share2 className="h-4 w-4 mr-2" />
-            Share
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {collection.collection.shareToken ? (
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Input
+                readOnly
+                value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${collection.collection.shareToken}`}
+                className="flex-1 min-w-0 font-mono text-sm"
+              />
+              <Button variant="outline" onClick={onCopyShareLink} className="shrink-0">
+                {copied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Link
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-4 w-4 mr-2" />
+              Share
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setEditOpen(true)}>
             Edit
           </Button>
