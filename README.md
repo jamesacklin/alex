@@ -104,8 +104,15 @@ docker compose up -d --build
 
 ### Local Development
 
+**One-command setup:**
+```sh
+pnpm setup          # installs deps, builds native modules, creates schema, seeds admin
+```
+
+**Or step-by-step:**
 ```sh
 pnpm install
+pnpm build:native   # builds better-sqlite3 for your Node.js version
 pnpm db:push        # create the SQLite schema
 pnpm db:seed        # seed the default admin user
 ```
@@ -117,10 +124,14 @@ pnpm dev            # Next.js dev server → http://localhost:3000
 pnpm watcher        # file watcher (watches ./data/library by default)
 ```
 
+> **Note:** If you see errors about missing `better_sqlite3.node` bindings, run `pnpm build:native` to compile the native modules for your platform.
+
 ### Useful scripts
 
 | Script | What it does |
 |---|---|
+| `pnpm setup` | Complete initial setup (install, build native deps, create schema, seed admin) |
+| `pnpm build:native` | Build native dependencies (better-sqlite3, canvas) for your platform |
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |
