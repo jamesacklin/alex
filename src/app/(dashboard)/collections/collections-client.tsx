@@ -13,12 +13,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Link2 } from "lucide-react";
 
 interface CollectionSummary {
   id: string;
   name: string;
   description: string | null;
   createdAt: number;
+  shareToken: string | null;
   bookCount: number;
 }
 
@@ -225,7 +227,14 @@ export default function CollectionsClient() {
             <Link key={collection.id} href={`/collections/${collection.id}`} className="group">
               <Card className="h-full transition-shadow group-hover:shadow-md">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">{collection.name}</CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-lg flex-1">{collection.name}</CardTitle>
+                    {collection.shareToken && (
+                      <div className="shrink-0" title="This collection is publicly shared">
+                        <Link2 className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
                   <CardAction className="text-sm text-muted-foreground">
                     {collection.bookCount} {collection.bookCount === 1 ? "book" : "books"}
                   </CardAction>

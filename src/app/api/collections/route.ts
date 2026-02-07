@@ -22,6 +22,7 @@ export async function GET(req: Request) {
       name: collections.name,
       description: collections.description,
       createdAt: collections.createdAt,
+      shareToken: collections.shareToken,
       bookCount: count(collectionBooks.bookId),
     })
     .from(collections)
