@@ -1,0 +1,48 @@
+import { NextResponse } from "next/server";
+import fs from "fs";
+import { getSharedBook } from "@/lib/shared";
+
+export const dynamic = "force-dynamic";
+
+const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">
+  <rect width="200" height="300" fill="#e2e8f0" rx="4"/>
+  <rect x="70" y="90" width="60" height="80" fill="#cbd5e1" rx="2"/>
+  <rect x="75" y="95" width="50" height="70" fill="#94a3b8" rx="1"/>
+  <rect x="50" y="190" width="100" height="10" fill="#94a3b8" rx="2"/>
+  <rect x="65" y="210" width="70" height="8" fill="#cbd5e1" rx="2"/>
+</svg>`;
+
+function placeholderResponse() {
+  return new NextResponse(PLACEHOLDER_SVG, {
+    headers: {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "public, max-age=3600",
+    },
+  });
+}
+
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ token: string; bookId: string }> }
+) {
+  const { token, bookId } = await params;
+
+  // Validate token and book membership
+  const book = await getSharedBook(token, bookId);
+  if (!book) {
+    return NextResponse.json({ error: "Book not found" }, { status: 404 });
+  }
+
+  // Serve placeholder if no cover exists
+  if (!book.coverPath || !fs.existsSync(book.coverPath)) {
+    return placeholderResponse();
+  }
+
+  // Serve the cover image
+  return new NextResponse(fs.readFileSync(book.coverPath), {
+    headers: {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
+}
