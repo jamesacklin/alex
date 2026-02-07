@@ -23,6 +23,12 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Public shared collection API endpoints — no auth required.
+  // Token validation happens within each endpoint.
+  if (nextUrl.pathname.startsWith("/api/shared/")) {
+    return NextResponse.next();
+  }
+
   // Other API routes — return JSON errors instead of redirecting.
   if (nextUrl.pathname.startsWith("/api/")) {
     if (!isAuthenticated) {
