@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { BookCard, type Book } from "@/components/library/BookCard";
+import { Share2, Copy, Check } from "lucide-react";
 
 interface CollectionResponse {
   collection: {
@@ -21,6 +22,8 @@ interface CollectionResponse {
     name: string;
     description: string | null;
     createdAt: number;
+    shareToken: string | null;
+    sharedAt: number | null;
   };
   books: Array<{
     id: string;
@@ -59,7 +62,12 @@ export default function CollectionDetailClient() {
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [stopSharingOpen, setStopSharingOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [isEnablingShare, setIsEnablingShare] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Pagination state
   const [allBooks, setAllBooks] = useState<Book[]>([]);
@@ -226,6 +234,68 @@ export default function CollectionDetailClient() {
     }
   }
 
+  async function onEnableSharing() {
+    if (!collectionId) return;
+    setShareError(null);
+    setIsEnablingShare(true);
+
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/share`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to enable sharing");
+      }
+
+      toast.success("Sharing enabled");
+      setShareOpen(false);
+      loadCollection();
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Failed to enable sharing");
+    } finally {
+      setIsEnablingShare(false);
+    }
+  }
+
+  async function onCopyShareLink() {
+    if (!collection?.collection.shareToken) return;
+
+    const shareUrl = `${window.location.origin}/shared/${collection.collection.shareToken}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy link");
+    }
+  }
+
+  async function onStopSharing() {
+    if (!collectionId) return;
+
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/share`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to stop sharing");
+      }
+
+      toast.success("Sharing stopped");
+      setStopSharingOpen(false);
+      loadCollection();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop sharing");
+      setStopSharingOpen(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -274,7 +344,39 @@ export default function CollectionDetailClient() {
             Showing {allBooks.length} of {total} {total === 1 ? "book" : "books"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {collection.collection.shareToken ? (
+            <>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Input
+                  readOnly
+                  value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${collection.collection.shareToken}`}
+                  className="flex-1 min-w-0 font-mono text-sm"
+                />
+                <Button variant="outline" onClick={onCopyShareLink} className="shrink-0">
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Link
+                    </>
+                  )}
+                </Button>
+              </div>
+              <Button variant="outline" onClick={() => setStopSharingOpen(true)}>
+                Stop Sharing
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-4 w-4 mr-2" />
+              Share
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setEditOpen(true)}>
             Edit
           </Button>
@@ -433,6 +535,53 @@ export default function CollectionDetailClient() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={onDeleteCollection}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={shareOpen}
+        onOpenChange={(open) => {
+          setShareOpen(open);
+          if (!open) setShareError(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Collection</DialogTitle>
+            <DialogDescription>
+              Anyone with the link can view this collection and read the books in their browser.
+            </DialogDescription>
+          </DialogHeader>
+          {shareError && (
+            <div className="text-sm text-destructive">{shareError}</div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={isEnablingShare}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button onClick={onEnableSharing} disabled={isEnablingShare}>
+              {isEnablingShare ? "Enabling…" : "Enable Sharing"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={stopSharingOpen} onOpenChange={setStopSharingOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Stop sharing this collection?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will break any existing share links. People who have the current link will no longer be able to access this collection.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onStopSharing} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Stop Sharing
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
