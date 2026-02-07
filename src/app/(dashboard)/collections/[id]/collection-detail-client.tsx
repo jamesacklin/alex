@@ -64,6 +64,8 @@ export default function CollectionDetailClient() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [isEnablingShare, setIsEnablingShare] = useState(false);
 
   // Pagination state
   const [allBooks, setAllBooks] = useState<Book[]>([]);
@@ -227,6 +229,31 @@ export default function CollectionDetailClient() {
       loadCollection();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove book");
+    }
+  }
+
+  async function onEnableSharing() {
+    if (!collectionId) return;
+    setShareError(null);
+    setIsEnablingShare(true);
+
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/share`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to enable sharing");
+      }
+
+      toast.success("Sharing enabled");
+      setShareOpen(false);
+      loadCollection();
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Failed to enable sharing");
+    } finally {
+      setIsEnablingShare(false);
     }
   }
 
@@ -446,14 +473,33 @@ export default function CollectionDetailClient() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+      <Dialog
+        open={shareOpen}
+        onOpenChange={(open) => {
+          setShareOpen(open);
+          if (!open) setShareError(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Share Collection</DialogTitle>
             <DialogDescription>
-              Share placeholder dialog - to be implemented
+              Anyone with the link can view this collection and read the books in their browser.
             </DialogDescription>
           </DialogHeader>
+          {shareError && (
+            <div className="text-sm text-destructive">{shareError}</div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={isEnablingShare}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button onClick={onEnableSharing} disabled={isEnablingShare}>
+              {isEnablingShare ? "Enabling…" : "Enable Sharing"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
