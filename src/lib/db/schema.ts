@@ -43,6 +43,8 @@ export const collections = sqliteTable("collections", {
   userId: text("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   description: text("description"),
+  shareToken: text("share_token").unique(),
+  sharedAt: integer("shared_at"),
   createdAt: integer("created_at").notNull().$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
 
