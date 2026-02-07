@@ -85,6 +85,8 @@ function initSchema(db: Database.Database) {
       user_id TEXT NOT NULL REFERENCES users(id),
       name TEXT NOT NULL,
       description TEXT,
+      share_token TEXT UNIQUE,
+      shared_at INTEGER,
       created_at INTEGER NOT NULL
     );
 
