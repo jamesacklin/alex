@@ -63,6 +63,7 @@ export default function CollectionDetailClient() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [stopSharingOpen, setStopSharingOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
   const [isEnablingShare, setIsEnablingShare] = useState(false);
@@ -273,6 +274,28 @@ export default function CollectionDetailClient() {
     }
   }
 
+  async function onStopSharing() {
+    if (!collectionId) return;
+
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/share`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to stop sharing");
+      }
+
+      toast.success("Sharing stopped");
+      setStopSharingOpen(false);
+      loadCollection();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop sharing");
+      setStopSharingOpen(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -323,26 +346,31 @@ export default function CollectionDetailClient() {
         </div>
         <div className="flex flex-wrap gap-2">
           {collection.collection.shareToken ? (
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Input
-                readOnly
-                value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${collection.collection.shareToken}`}
-                className="flex-1 min-w-0 font-mono text-sm"
-              />
-              <Button variant="outline" onClick={onCopyShareLink} className="shrink-0">
-                {copied ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy Link
-                  </>
-                )}
+            <>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Input
+                  readOnly
+                  value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${collection.collection.shareToken}`}
+                  className="flex-1 min-w-0 font-mono text-sm"
+                />
+                <Button variant="outline" onClick={onCopyShareLink} className="shrink-0">
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Link
+                    </>
+                  )}
+                </Button>
+              </div>
+              <Button variant="outline" onClick={() => setStopSharingOpen(true)}>
+                Stop Sharing
               </Button>
-            </div>
+            </>
           ) : (
             <Button variant="outline" onClick={() => setShareOpen(true)}>
               <Share2 className="h-4 w-4 mr-2" />
@@ -541,6 +569,23 @@ export default function CollectionDetailClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={stopSharingOpen} onOpenChange={setStopSharingOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Stop sharing this collection?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will break any existing share links. People who have the current link will no longer be able to access this collection.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onStopSharing} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Stop Sharing
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
