@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { BookCard, type Book } from "@/components/library/BookCard";
+import { Share2 } from "lucide-react";
 
 interface CollectionResponse {
   collection: {
@@ -21,6 +22,8 @@ interface CollectionResponse {
     name: string;
     description: string | null;
     createdAt: number;
+    shareToken: string | null;
+    sharedAt: number | null;
   };
   books: Array<{
     id: string;
@@ -59,6 +62,7 @@ export default function CollectionDetailClient() {
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Pagination state
@@ -275,6 +279,10 @@ export default function CollectionDetailClient() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShareOpen(true)}>
+            <Share2 className="h-4 w-4 mr-2" />
+            Share
+          </Button>
           <Button variant="outline" onClick={() => setEditOpen(true)}>
             Edit
           </Button>
@@ -437,6 +445,17 @@ export default function CollectionDetailClient() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Collection</DialogTitle>
+            <DialogDescription>
+              Share placeholder dialog - to be implemented
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
