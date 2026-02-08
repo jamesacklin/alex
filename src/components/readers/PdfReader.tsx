@@ -24,10 +24,11 @@ interface PdfReaderProps {
   bookId: string;
   title: string;
   initialPage: number;
+  fileUrl?: string;
   onPageChange: (currentPage: number, totalPages: number) => void;
 }
 
-export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReaderProps) {
+export function PdfReader({ bookId, title, initialPage, fileUrl, onPageChange }: PdfReaderProps) {
   // --- Page state ---
   const [numPages, setNumPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(initialPage);
@@ -370,7 +371,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
           </div>
         ) : (
           <Document
-            file={`/api/books/${bookId}/file`}
+            file={fileUrl ?? `/api/books/${bookId}/file`}
             onLoadSuccess={(doc) => {
               setNumPages(doc.numPages);
               setCurrentPage((prev) => Math.min(prev, doc.numPages));
