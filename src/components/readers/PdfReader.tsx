@@ -34,6 +34,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
   const [numPages, setNumPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [error, setError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   // --- Container dimensions ---
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
@@ -366,11 +367,21 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
         className="flex-1 min-h-0 overflow-auto flex items-start justify-center p-4"
       >
         {error ? (
-          <div className="flex items-center justify-center h-full text-red-400">
-            {error}
+          <div className="flex flex-col items-center justify-center h-full text-red-400 gap-3">
+            <p className="text-sm">{error}</p>
+            <button
+              className="text-xs px-3 py-1 rounded bg-gray-800 text-white hover:bg-gray-700"
+              onClick={() => {
+                setError(null);
+                setRetryToken((prev) => prev + 1);
+              }}
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <Document
+            key={retryToken}
             file={fileUrl ?? `/api/books/${bookId}/file`}
             onLoadSuccess={(doc) => {
               setNumPages(doc.numPages);
@@ -384,7 +395,14 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
                 setPageNaturalHeight(vp.height);
               });
             }}
-            onLoadError={() => setError("Failed to load PDF.")}
+            onLoadError={(err) => {
+              const message = String((err as Error | undefined)?.message ?? "");
+              if (message.includes("404") || message.includes("410")) {
+                setError("This shared link is no longer available.");
+              } else {
+                setError("Failed to load book. Please try again.");
+              }
+            }}
             loading={<Spinner />}
           >
             {numPages && fitReady && (
@@ -392,7 +410,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
                 pageNumber={currentPage}
                 width={effectiveWidth}
                 loading={<Spinner />}
-                onError={() => setError("Failed to render this page.")}
+                onError={() => setError("Failed to load book. Please try again.")}
                 renderTextLayer={true}
                 renderAnnotationLayer={true}
                 customTextRenderer={customTextRenderer as (props: { str: string; itemIndex: number }) => string}
