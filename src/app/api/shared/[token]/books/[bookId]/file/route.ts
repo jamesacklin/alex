@@ -22,7 +22,7 @@ export async function GET(
   try {
     stat = fs.statSync(book.filePath);
   } catch {
-    return NextResponse.json({ error: "File not found on disk" }, { status: 404 });
+    return NextResponse.json({ error: "File not found on disk" }, { status: 500 });
   }
 
   const fileSize = stat.size;
