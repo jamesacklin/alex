@@ -19,6 +19,7 @@ interface EpubReaderProps {
   bookId: string;
   title: string;
   initialLocation?: string;
+  backUrl?: string;
   onLocationChange: (epubLocation: string, percentComplete: number) => void;
 }
 
@@ -26,6 +27,7 @@ export function EpubReader({
   bookId,
   title,
   initialLocation,
+  backUrl,
   onLocationChange,
 }: EpubReaderProps) {
   const [location, setLocation] = useState<string | number>(
@@ -206,7 +208,7 @@ export function EpubReader({
       <div className="flex flex-col h-full bg-background">
         <header className="flex items-center gap-3 px-4 h-12 bg-gray-900 text-white shrink-0">
           <Link
-            href="/library"
+            href={backUrl ?? "/library"}
             className="p-1 rounded hover:bg-gray-800 transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -216,7 +218,7 @@ export function EpubReader({
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
           <p>{error}</p>
           <Link
-            href="/library"
+            href={backUrl ?? "/library"}
             className="text-sm text-primary hover:underline"
           >
             Back to library
@@ -231,7 +233,7 @@ export function EpubReader({
       {/* Toolbar */}
       <header className="flex items-center gap-3 px-4 h-12 bg-gray-900 text-white shrink-0">
         <Link
-          href="/library"
+          href={backUrl ?? "/library"}
           className="p-1 rounded hover:bg-gray-800 transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
