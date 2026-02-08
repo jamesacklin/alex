@@ -1,10 +1,22 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export default function SharedLayout({
   children,
+  params,
 }: {
   children: React.ReactNode;
+  params: { token: string };
 }) {
+  const pathname = usePathname();
+  const isReader = pathname?.includes(`/shared/${params.token}/read/`);
+
+  if (isReader) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Minimal header */}
