@@ -24,14 +24,17 @@ interface PdfReaderProps {
   bookId: string;
   title: string;
   initialPage: number;
+  fileUrl?: string;
+  backUrl?: string;
   onPageChange: (currentPage: number, totalPages: number) => void;
 }
 
-export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReaderProps) {
+export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPageChange }: PdfReaderProps) {
   // --- Page state ---
   const [numPages, setNumPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [error, setError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   // --- Container dimensions ---
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
@@ -287,22 +290,21 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
   return (
     <div className="flex flex-col h-full bg-gray-900">
       {/* Toolbar */}
-      {numPages && (
-        <PdfToolbar
-          title={title}
-          currentPage={currentPage}
-          numPages={numPages}
-          zoomPercent={zoomPercent}
-          onPrevPage={() => goTo(currentPage - 1)}
-          onNextPage={() => goTo(currentPage + 1)}
-          onGoToPage={goTo}
-          onZoomIn={zoomIn}
-          onZoomOut={zoomOut}
-          onFit={() => { userZoomed.current = true; fit(); }}
-          onSearchToggle={() => setSearchOpen((o) => !o)}
-          pageInputRef={pageInputRef}
-        />
-      )}
+      <PdfToolbar
+        title={title}
+        backUrl={backUrl}
+        currentPage={currentPage}
+        numPages={numPages}
+        zoomPercent={zoomPercent}
+        onPrevPage={() => goTo(currentPage - 1)}
+        onNextPage={() => goTo(currentPage + 1)}
+        onGoToPage={goTo}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onFit={() => { userZoomed.current = true; fit(); }}
+        onSearchToggle={() => setSearchOpen((o) => !o)}
+        pageInputRef={pageInputRef}
+      />
 
       {/* Search panel */}
       {searchOpen && (
@@ -365,12 +367,22 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
         className="flex-1 min-h-0 overflow-auto flex items-start justify-center p-4"
       >
         {error ? (
-          <div className="flex items-center justify-center h-full text-red-400">
-            {error}
+          <div className="flex flex-col items-center justify-center h-full text-red-400 gap-3">
+            <p className="text-sm">{error}</p>
+            <button
+              className="text-xs px-3 py-1 rounded bg-gray-800 text-white hover:bg-gray-700"
+              onClick={() => {
+                setError(null);
+                setRetryToken((prev) => prev + 1);
+              }}
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <Document
-            file={`/api/books/${bookId}/file`}
+            key={retryToken}
+            file={fileUrl ?? `/api/books/${bookId}/file`}
             onLoadSuccess={(doc) => {
               setNumPages(doc.numPages);
               setCurrentPage((prev) => Math.min(prev, doc.numPages));
@@ -383,7 +395,14 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
                 setPageNaturalHeight(vp.height);
               });
             }}
-            onLoadError={() => setError("Failed to load PDF.")}
+            onLoadError={(err) => {
+              const message = String((err as Error | undefined)?.message ?? "");
+              if (message.includes("404") || message.includes("410")) {
+                setError("This shared link is no longer available.");
+              } else {
+                setError("Failed to load book. Please try again.");
+              }
+            }}
             loading={<Spinner />}
           >
             {numPages && fitReady && (
@@ -391,7 +410,7 @@ export function PdfReader({ bookId, title, initialPage, onPageChange }: PdfReade
                 pageNumber={currentPage}
                 width={effectiveWidth}
                 loading={<Spinner />}
-                onError={() => setError("Failed to render this page.")}
+                onError={() => setError("Failed to load book. Please try again.")}
                 renderTextLayer={true}
                 renderAnnotationLayer={true}
                 customTextRenderer={customTextRenderer as (props: { str: string; itemIndex: number }) => string}

@@ -4,8 +4,9 @@ import Link from "next/link";
 
 interface PdfToolbarProps {
   title: string;
+  backUrl?: string;
   currentPage: number;
-  numPages: number;
+  numPages: number | null;
   zoomPercent: number;
   onPrevPage: () => void;
   onNextPage: () => void;
@@ -19,6 +20,7 @@ interface PdfToolbarProps {
 
 export function PdfToolbar({
   title,
+  backUrl,
   currentPage,
   numPages,
   zoomPercent,
@@ -31,13 +33,14 @@ export function PdfToolbar({
   onSearchToggle,
   pageInputRef,
 }: PdfToolbarProps) {
+  const hasPages = typeof numPages === "number" && numPages > 0;
   return (
     <header className="shrink-0 flex items-center px-3 h-11 bg-gray-800 border-b border-gray-700 gap-3">
       {/* Left: back + title */}
       <Link
-        href="/library"
+        href={backUrl ?? "/library"}
         className="text-gray-400 hover:text-white transition-colors shrink-0"
-        aria-label="Back to library"
+        aria-label="Back"
       >
         <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
@@ -49,7 +52,7 @@ export function PdfToolbar({
       <div className="flex items-center gap-2 mx-auto">
         <button
           className="text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          disabled={currentPage <= 1}
+          disabled={!hasPages || currentPage <= 1}
           onClick={onPrevPage}
           aria-label="Previous page"
         >
@@ -63,8 +66,9 @@ export function PdfToolbar({
             ref={pageInputRef}
             type="number"
             min={1}
-            max={numPages}
+            max={hasPages ? numPages : undefined}
             value={currentPage}
+            disabled={!hasPages}
             onChange={(e) => {
               const v = Number(e.target.value);
               if (!isNaN(v)) onGoToPage(v);
@@ -72,12 +76,12 @@ export function PdfToolbar({
             className="w-10 text-center bg-gray-700 text-white rounded px-1 py-0.5 text-sm"
           />
           <span className="text-gray-500">/</span>
-          <span>{numPages}</span>
+          <span>{hasPages ? numPages : "—"}</span>
         </span>
 
         <button
           className="text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          disabled={currentPage >= numPages}
+          disabled={!hasPages || currentPage >= numPages}
           onClick={onNextPage}
           aria-label="Next page"
         >
