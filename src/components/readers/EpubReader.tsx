@@ -19,6 +19,7 @@ interface EpubReaderProps {
   bookId: string;
   title: string;
   initialLocation?: string;
+  fileUrl?: string;
   backUrl?: string;
   onLocationChange: (epubLocation: string, percentComplete: number) => void;
 }
@@ -27,6 +28,7 @@ export function EpubReader({
   bookId,
   title,
   initialLocation,
+  fileUrl,
   backUrl,
   onLocationChange,
 }: EpubReaderProps) {
@@ -46,7 +48,8 @@ export function EpubReader({
 
   // Fetch epub as ArrayBuffer
   useEffect(() => {
-    fetch(`/api/books/${bookId}/book.epub`)
+    const url = fileUrl ?? `/api/books/${bookId}/book.epub`;
+    fetch(url)
       .then((res) => res.arrayBuffer())
       .then((buffer) => {
         setEpubData(buffer);
@@ -56,7 +59,7 @@ export function EpubReader({
         setError("Failed to load ePub file");
         setLoading(false);
       });
-  }, [bookId]);
+  }, [bookId, fileUrl]);
 
   // Load settings from localStorage on mount
   useEffect(() => {
