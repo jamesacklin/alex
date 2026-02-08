@@ -23,6 +23,13 @@ graph TB
         EPUB[epub.js Reader]
     end
 
+    subgraph "Public Viewer Browser"
+        PubUI[Shared Collection UI]
+        PubPDF[PDF.js Reader]
+        PubEPUB[epub.js Reader]
+        LocalStorage[localStorage<br/>Reading Progress]
+    end
+
     subgraph "Next.js App Router"
         Pages[Pages & Layouts]
         API[API Routes]
@@ -104,6 +111,19 @@ graph TB
     EPUB -->|Save Location| API
     API -->|Update Progress| DB
 
+    %% Public Collection Flow
+    PubUI -->|Browse Collection| API
+    API -->|/api/shared/[token]| DB
+    API -->|/api/shared/[token]/covers/[bookId]| Covers
+    PubUI -->|Read Book| PubPDF
+    PubUI -->|Read Book| PubEPUB
+    PubPDF -->|Request File| API
+    API -->|/api/shared/[token]/books/[bookId]/file| LibFolder
+    PubEPUB -->|Request File| API
+    API -->|/api/shared/[token]/books/[bookId]/book.epub| LibFolder
+    PubPDF -->|Save Progress| LocalStorage
+    PubEPUB -->|Save Progress| LocalStorage
+
     %% Database Tables
     subgraph "Database Schema"
         Users[users]
@@ -126,6 +146,7 @@ graph TB
     classDef process fill:#e8f5e9,stroke:#1b5e20
 
     class UI,SSE,PDF,EPUB client
+    class PubUI,PubPDF,PubEPUB,LocalStorage client
     class Pages,API,Auth,SSEEndpoint server
     class LibFolder,Covers,DB,Users,Books,Progress,Collections,Settings storage
     class Chokidar,HandleAdd,HandleChange,HandleDelete,Extract,CoverGen process
@@ -162,25 +183,46 @@ graph TB
 
 **Pages & Layouts**
 - `/library` - Main library grid view with search and filters
+- `/collections` - User's collections list
+- `/collections/[id]` - Collection detail with edit/delete/share controls
 - `/read/[id]` - Book reader (PDF or EPUB)
+- `/shared/[token]` - Public collection view (no auth required)
+- `/shared/[token]/read/[bookId]` - Public book reader (no auth required)
 - `/admin/users` - User management (admin only)
 - `/login` - Authentication page
 
 **API Routes**
+
+Authenticated:
 - `GET /api/books` - List books with pagination, search, filters
 - `GET /api/books/[id]` - Get book metadata
-- `GET /api/books/[id]/pdf` - Serve PDF file
+- `GET /api/books/[id]/file` - Serve book file (PDF or EPUB)
 - `GET /api/books/[id]/book.epub` - Serve EPUB file
 - `GET /api/books/[id]/cover` - Serve cover image
 - `GET /api/books/[id]/progress` - Get reading progress
 - `PUT /api/books/[id]/progress` - Update reading progress
+- `GET /api/collections` - List user's collections
+- `POST /api/collections` - Create collection
+- `GET /api/collections/[id]` - Get collection with books
+- `PUT /api/collections/[id]` - Update collection
+- `DELETE /api/collections/[id]` - Delete collection
+- `POST /api/collections/[id]/share` - Enable sharing (generates token)
+- `DELETE /api/collections/[id]/share` - Disable sharing (revokes token)
+- `GET /api/collections/[id]/share` - Check share status
 - `GET /api/library/events` - SSE endpoint for real-time updates
+
+Public (no auth):
+- `GET /api/shared/[token]` - Public collection metadata and paginated book list
+- `GET /api/shared/[token]/covers/[bookId]` - Public cover image (scoped to collection)
+- `GET /api/shared/[token]/books/[bookId]/file` - Public book file streaming (scoped to collection)
+- `GET /api/shared/[token]/books/[bookId]/book.epub` - Public EPUB file (scoped to collection)
 
 **NextAuth.js**
 - Credential-based authentication
 - JWT sessions
 - Role-based access control (admin/user)
 - Bcrypt password hashing
+- Middleware exempts `/shared/*` and `/api/shared/*` from auth
 
 **SSE Endpoint**
 - Long-lived HTTP connection for Server-Sent Events
@@ -259,6 +301,24 @@ graph TB
 9. Calculate percentage complete
 10. Update `reading_progress` table
 11. Update book status (not_started → reading → completed)
+
+### Public Collection Sharing
+1. Collection owner clicks "Share" on collection detail page
+2. Client calls `POST /api/collections/[id]/share`
+3. Server generates `crypto.randomUUID()` token, stores in `collections.shareToken`
+4. Server returns share URL: `/shared/<token>`
+5. Owner copies and sends the URL to recipient
+
+### Public Collection Viewing
+1. Recipient opens `/shared/<token>` — no login required
+2. Server validates token via `getSharedCollection(token)` helper
+3. If valid, renders collection name, description, and paginated book grid
+4. Cover images served via `/api/shared/[token]/covers/[bookId]` (validates book membership)
+5. Recipient clicks a book card to open the public reader at `/shared/[token]/read/[bookId]`
+6. Public reader loads the same `PdfReader`/`EpubReader` components as authenticated users
+7. Book files served via `/api/shared/[token]/books/[bookId]/file` (validates book membership)
+8. Reading progress saved to browser `localStorage` (key: `shared-progress:<token>:<bookId>`)
+9. No server-side state created for anonymous readers
 
 ### Real-time Updates
 1. Client opens library page
