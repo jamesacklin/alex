@@ -25,10 +25,11 @@ interface PdfReaderProps {
   title: string;
   initialPage: number;
   fileUrl?: string;
+  backUrl?: string;
   onPageChange: (currentPage: number, totalPages: number) => void;
 }
 
-export function PdfReader({ bookId, title, initialPage, fileUrl, onPageChange }: PdfReaderProps) {
+export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPageChange }: PdfReaderProps) {
   // --- Page state ---
   const [numPages, setNumPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(initialPage);
@@ -291,6 +292,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, onPageChange }:
       {numPages && (
         <PdfToolbar
           title={title}
+          backUrl={backUrl}
           currentPage={currentPage}
           numPages={numPages}
           zoomPercent={zoomPercent}

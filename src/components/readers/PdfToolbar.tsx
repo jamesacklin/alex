@@ -4,6 +4,7 @@ import Link from "next/link";
 
 interface PdfToolbarProps {
   title: string;
+  backUrl?: string;
   currentPage: number;
   numPages: number;
   zoomPercent: number;
@@ -19,6 +20,7 @@ interface PdfToolbarProps {
 
 export function PdfToolbar({
   title,
+  backUrl,
   currentPage,
   numPages,
   zoomPercent,
@@ -35,7 +37,7 @@ export function PdfToolbar({
     <header className="shrink-0 flex items-center px-3 h-11 bg-gray-800 border-b border-gray-700 gap-3">
       {/* Left: back + title */}
       <Link
-        href="/library"
+        href={backUrl ?? "/library"}
         className="text-gray-400 hover:text-white transition-colors shrink-0"
         aria-label="Back to library"
       >
