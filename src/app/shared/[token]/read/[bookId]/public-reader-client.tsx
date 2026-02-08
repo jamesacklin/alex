@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { PdfReader } from "@/components/readers/PdfReader";
+import { EpubReader } from "@/components/readers/EpubReader";
 
 interface PublicReaderClientProps {
   token: string;
@@ -15,6 +16,10 @@ interface PublicReaderClientProps {
 type PdfProgress = {
   currentPage: number;
   totalPages: number;
+  percentComplete: number;
+};
+type EpubProgress = {
+  epubLocation: string;
   percentComplete: number;
 };
 
@@ -42,6 +47,19 @@ export default function PublicReaderClient({
       return 1;
     }
   });
+  const [initialLocation] = useState(() => {
+    if (typeof window === "undefined") return undefined;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) return undefined;
+      const parsed = JSON.parse(saved) as EpubProgress;
+      return typeof parsed?.epubLocation === "string"
+        ? parsed.epubLocation
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  });
 
   const handlePageChange = useCallback(
     (currentPage: number, totalPages: number) => {
@@ -61,24 +79,48 @@ export default function PublicReaderClient({
     [storageKey],
   );
 
-  if (fileType !== "pdf") {
+  if (fileType === "epub") {
+    const handleLocationChange = (epubLocation: string, percentComplete: number) => {
+      const progress: EpubProgress = { epubLocation, percentComplete };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(progress));
+      } catch {
+        // ignore write failures (private mode, quota, etc.)
+      }
+    };
+
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        ePub reader coming soon…
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <EpubReader
+          bookId={bookId}
+          title={title}
+          fileUrl={fileUrl}
+          backUrl={backUrl}
+          initialLocation={initialLocation}
+          onLocationChange={handleLocationChange}
+        />
+      </div>
+    );
+  }
+
+  if (fileType === "pdf") {
+    return (
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <PdfReader
+          bookId={bookId}
+          title={title}
+          fileUrl={fileUrl}
+          backUrl={backUrl}
+          initialPage={initialPage}
+          onPageChange={handlePageChange}
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-hidden">
-      <PdfReader
-        bookId={bookId}
-        title={title}
-        fileUrl={fileUrl}
-        backUrl={backUrl}
-        initialPage={initialPage}
-        onPageChange={handlePageChange}
-      />
+    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+      Unsupported file type.
     </div>
   );
 }
