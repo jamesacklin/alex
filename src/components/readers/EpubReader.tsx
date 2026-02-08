@@ -224,7 +224,7 @@ export function EpubReader({
             href={backUrl ?? "/library"}
             className="text-sm text-primary hover:underline"
           >
-            Back to library
+            Back
           </Link>
         </div>
       </div>
