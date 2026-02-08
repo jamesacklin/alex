@@ -73,6 +73,7 @@ export async function GET(
     "Content-Disposition": "inline",
     "Accept-Ranges": "bytes",
     "Content-Length": String(end - start + 1),
+    "Cache-Control": "private, max-age=3600, must-revalidate",
   };
 
   if (status === 206) {
