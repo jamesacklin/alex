@@ -6,13 +6,13 @@ import { AppLogo } from "@/components/branding/AppLogo";
 
 export default function SharedLayout({
   children,
-  params,
 }: {
   children: React.ReactNode;
-  params: { token: string };
 }) {
   const pathname = usePathname();
-  const isReader = pathname?.includes(`/shared/${params.token}/read/`);
+  const isReader = pathname
+    ? /^\/shared\/[^/]+\/read(\/|$)/.test(pathname)
+    : false;
 
   if (isReader) {
     return <>{children}</>;
