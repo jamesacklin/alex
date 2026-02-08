@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <Script
           id="theme-init"
@@ -35,7 +35,7 @@ export default function RootLayout({
             __html: `(() => {
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   const apply = (isDark) => {
-    document.body.classList.toggle('dark', isDark);
+    document.documentElement.classList.toggle('dark', isDark);
   };
   apply(media.matches);
   const handler = (event) => apply(event.matches);

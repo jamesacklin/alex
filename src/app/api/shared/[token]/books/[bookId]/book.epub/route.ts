@@ -30,7 +30,7 @@ export async function GET(
     headers: {
       "Content-Type": "application/epub+zip",
       "Content-Disposition": `inline; filename="book.epub"`,
-      "Cache-Control": "public, max-age=31536000",
+      "Cache-Control": "private, max-age=3600, must-revalidate",
     },
   });
 }

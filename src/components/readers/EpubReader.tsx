@@ -43,35 +43,10 @@ export function EpubReader({
   const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fontSize, setFontSize] = useState<FontSize>("medium");
-  const [epubData, setEpubData] = useState<ArrayBuffer | null>(null);
   const [renditionReady, setRenditionReady] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
-  // Fetch epub as ArrayBuffer
-  useEffect(() => {
-    const url = fileUrl ?? `/api/books/${bookId}/book.epub`;
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) {
-          const error = new Error(`HTTP_${res.status}`);
-          (error as Error & { status?: number }).status = res.status;
-          throw error;
-        }
-        return res.arrayBuffer();
-      })
-      .then((buffer) => {
-        setEpubData(buffer);
-      })
-      .catch((err) => {
-        const status = (err as Error & { status?: number }).status;
-        if (status === 404 || status === 410) {
-          setError("This shared link is no longer available.");
-        } else {
-          setError("Failed to load book. Please try again.");
-        }
-        setLoading(false);
-      });
-  }, [bookId, fileUrl, reloadToken]);
+  const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -162,17 +137,25 @@ export function EpubReader({
       })
       .catch((err: unknown) => {
         console.error("Failed to load book:", err);
+        setError("Failed to load book. Please try again.");
+        setLoading(false);
       });
 
     // Extract table of contents
-    rendition.book.loaded.navigation.then((nav: { toc?: TocItem[] }) => {
-      setToc(nav.toc || []);
-    });
+    rendition.book.loaded.navigation
+      .then((nav: { toc?: TocItem[] }) => {
+        setToc(nav.toc || []);
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to load table of contents:", err);
+      });
 
     // Generate location spine for percentage tracking
     rendition.book.ready
       .then(() => {
-        rendition.book.locations.generate(1024);
+        return rendition.book.locations.generate(1024);
+      })
+      .then(() => {
         // Signal that rendition is ready for theme application
         setRenditionReady(true);
       })
@@ -236,7 +219,6 @@ export function EpubReader({
             onClick={() => {
               setError(null);
               setLoading(true);
-              setEpubData(null);
               setRenditionReady(false);
               setReloadToken((prev) => prev + 1);
             }}
@@ -396,15 +378,17 @@ export function EpubReader({
           </>
         )}
 
-        {epubData && (
-          <ReactReader
-            url={epubData}
-            location={location}
-            locationChanged={handleLocationChanged}
-            getRendition={handleGetRendition}
-            showToc={false}
-          />
-        )}
+        <ReactReader
+          key={reloadToken}
+          url={epubUrl}
+          location={location}
+          locationChanged={handleLocationChanged}
+          getRendition={handleGetRendition}
+          showToc={false}
+          epubOptions={{
+            allowScriptedContent: true,
+          }}
+        />
       </div>
     </div>
   );

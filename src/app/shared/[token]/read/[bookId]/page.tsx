@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getSharedBook } from "@/lib/shared";
-import PublicReaderClient from "./public-reader-client";
+import ReaderWrapper from "./reader-wrapper";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,7 @@ export default async function PublicReaderPage({ params }: PageProps) {
       : `/api/shared/${token}/books/${bookId}/book.epub`;
 
   return (
-    <PublicReaderClient
+    <ReaderWrapper
       token={token}
       bookId={bookId}
       title={book.title}
