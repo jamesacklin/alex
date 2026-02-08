@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AppLogo } from "@/components/branding/AppLogo";
 
 export default function SharedLayout({
   children,
@@ -25,9 +26,10 @@ export default function SharedLayout({
           <div className="flex items-center justify-between">
             <Link
               href="/"
-              className="text-xl font-bold hover:text-muted-foreground transition-colors"
+              className="inline-flex items-center gap-2 text-xl font-bold hover:text-muted-foreground transition-colors"
             >
-              Alex
+              <AppLogo className="h-6 w-6" />
+              <span>Alex</span>
             </Link>
           </div>
         </div>
