@@ -15,7 +15,7 @@ export default function SharedLayout({
               href="/"
               className="text-xl font-bold hover:text-muted-foreground transition-colors"
             >
-              BookVault
+              Alex
             </Link>
           </div>
         </div>
@@ -29,22 +29,8 @@ export default function SharedLayout({
       {/* Minimal footer */}
       <footer className="border-t bg-muted/30 py-6 mt-12">
         <div className="container mx-auto max-w-7xl px-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} BookVault. All rights reserved.</p>
-            <div className="flex gap-6">
-              <Link
-                href="/privacy"
-                className="hover:text-foreground transition-colors"
-              >
-                Privacy
-              </Link>
-              <Link
-                href="/terms"
-                className="hover:text-foreground transition-colors"
-              >
-                Terms
-              </Link>
-            </div>
+          <div className="flex justify-center text-sm text-muted-foreground">
+            <p>&copy; {new Date().getFullYear()} Alex. All rights reserved.</p>
           </div>
         </div>
       </footer>
