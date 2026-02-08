@@ -57,7 +57,10 @@ export default function PublicReaderClient({
 
   const [initialPage] = useState(() => {
     const parsed = readStoredProgress(storageKey) as PdfProgress | null;
-    return Number.isFinite(parsed?.currentPage) ? parsed.currentPage : 1;
+    const currentPage = parsed?.currentPage;
+    return typeof currentPage === "number" && Number.isFinite(currentPage)
+      ? currentPage
+      : 1;
   });
   const [initialLocation] = useState(() => {
     const parsed = readStoredProgress(storageKey) as EpubProgress | null;
