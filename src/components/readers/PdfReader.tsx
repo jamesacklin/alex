@@ -289,23 +289,21 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
   return (
     <div className="flex flex-col h-full bg-gray-900">
       {/* Toolbar */}
-      {numPages && (
-        <PdfToolbar
-          title={title}
-          backUrl={backUrl}
-          currentPage={currentPage}
-          numPages={numPages}
-          zoomPercent={zoomPercent}
-          onPrevPage={() => goTo(currentPage - 1)}
-          onNextPage={() => goTo(currentPage + 1)}
-          onGoToPage={goTo}
-          onZoomIn={zoomIn}
-          onZoomOut={zoomOut}
-          onFit={() => { userZoomed.current = true; fit(); }}
-          onSearchToggle={() => setSearchOpen((o) => !o)}
-          pageInputRef={pageInputRef}
-        />
-      )}
+      <PdfToolbar
+        title={title}
+        backUrl={backUrl}
+        currentPage={currentPage}
+        numPages={numPages}
+        zoomPercent={zoomPercent}
+        onPrevPage={() => goTo(currentPage - 1)}
+        onNextPage={() => goTo(currentPage + 1)}
+        onGoToPage={goTo}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onFit={() => { userZoomed.current = true; fit(); }}
+        onSearchToggle={() => setSearchOpen((o) => !o)}
+        pageInputRef={pageInputRef}
+      />
 
       {/* Search panel */}
       {searchOpen && (
