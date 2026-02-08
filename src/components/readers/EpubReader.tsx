@@ -45,21 +45,33 @@ export function EpubReader({
   const [fontSize, setFontSize] = useState<FontSize>("medium");
   const [epubData, setEpubData] = useState<ArrayBuffer | null>(null);
   const [renditionReady, setRenditionReady] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
   // Fetch epub as ArrayBuffer
   useEffect(() => {
     const url = fileUrl ?? `/api/books/${bookId}/book.epub`;
     fetch(url)
-      .then((res) => res.arrayBuffer())
+      .then((res) => {
+        if (!res.ok) {
+          const error = new Error(`HTTP_${res.status}`);
+          (error as Error & { status?: number }).status = res.status;
+          throw error;
+        }
+        return res.arrayBuffer();
+      })
       .then((buffer) => {
         setEpubData(buffer);
       })
       .catch((err) => {
-        console.error("Failed to load epub:", err);
-        setError("Failed to load ePub file");
+        const status = (err as Error & { status?: number }).status;
+        if (status === 404 || status === 410) {
+          setError("This shared link is no longer available.");
+        } else {
+          setError("Failed to load book. Please try again.");
+        }
         setLoading(false);
       });
-  }, [bookId, fileUrl]);
+  }, [bookId, fileUrl, reloadToken]);
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -139,7 +151,7 @@ export function EpubReader({
     // Hook error listener for book load failures
     rendition.book.on("openFailed", (err: unknown) => {
       console.error("ePub load error:", err);
-      setError("Failed to load ePub file");
+      setError("Failed to load book. Please try again.");
       setLoading(false);
     });
 
@@ -218,8 +230,20 @@ export function EpubReader({
           </Link>
           <h1 className="text-sm font-medium truncate">{title}</h1>
         </header>
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <p>{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              setEpubData(null);
+              setRenditionReady(false);
+              setReloadToken((prev) => prev + 1);
+            }}
+            className="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
+          >
+            Retry
+          </button>
           <Link
             href={backUrl ?? "/library"}
             className="text-sm text-primary hover:underline"
