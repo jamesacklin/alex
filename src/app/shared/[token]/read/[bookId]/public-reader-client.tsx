@@ -23,6 +23,25 @@ type EpubProgress = {
   percentComplete: number;
 };
 
+function readStoredProgress(key: string) {
+  if (typeof window === "undefined") return null;
+  const saved = localStorage.getItem(key);
+  if (!saved) return null;
+  try {
+    return JSON.parse(saved) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredProgress(key: string, progress: PdfProgress | EpubProgress) {
+  try {
+    localStorage.setItem(key, JSON.stringify(progress));
+  } catch {
+    // ignore write failures (private mode, quota, etc.)
+  }
+}
+
 export default function PublicReaderClient({
   token,
   bookId,
@@ -37,57 +56,34 @@ export default function PublicReaderClient({
   );
 
   const [initialPage] = useState(() => {
-    if (typeof window === "undefined") return 1;
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (!saved) return 1;
-      const parsed = JSON.parse(saved) as PdfProgress;
-      return Number.isFinite(parsed?.currentPage) ? parsed.currentPage : 1;
-    } catch {
-      return 1;
-    }
+    const parsed = readStoredProgress(storageKey) as PdfProgress | null;
+    return Number.isFinite(parsed?.currentPage) ? parsed.currentPage : 1;
   });
   const [initialLocation] = useState(() => {
-    if (typeof window === "undefined") return undefined;
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (!saved) return undefined;
-      const parsed = JSON.parse(saved) as EpubProgress;
-      return typeof parsed?.epubLocation === "string"
-        ? parsed.epubLocation
-        : undefined;
-    } catch {
-      return undefined;
-    }
+    const parsed = readStoredProgress(storageKey) as EpubProgress | null;
+    return typeof parsed?.epubLocation === "string"
+      ? parsed.epubLocation
+      : undefined;
   });
 
   const handlePageChange = useCallback(
     (currentPage: number, totalPages: number) => {
       const percentComplete =
         totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
-      const progress: PdfProgress = {
-        currentPage,
-        totalPages,
-        percentComplete,
-      };
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(progress));
-      } catch {
-        // ignore write failures (private mode, quota, etc.)
-      }
+      const progress: PdfProgress = { currentPage, totalPages, percentComplete };
+      writeStoredProgress(storageKey, progress);
     },
     [storageKey],
   );
 
   if (fileType === "epub") {
-    const handleLocationChange = (epubLocation: string, percentComplete: number) => {
-      const progress: EpubProgress = { epubLocation, percentComplete };
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(progress));
-      } catch {
-        // ignore write failures (private mode, quota, etc.)
-      }
-    };
+    const handleLocationChange = useCallback(
+      (epubLocation: string, percentComplete: number) => {
+        const progress: EpubProgress = { epubLocation, percentComplete };
+        writeStoredProgress(storageKey, progress);
+      },
+      [storageKey],
+    );
 
     return (
       <div className="flex-1 min-h-0 overflow-hidden">
