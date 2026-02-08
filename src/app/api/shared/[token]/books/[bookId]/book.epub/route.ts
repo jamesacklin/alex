@@ -20,7 +20,7 @@ export async function GET(
 
   // Check file exists on disk
   if (!fs.existsSync(book.filePath)) {
-    return NextResponse.json({ error: "File not found on disk" }, { status: 404 });
+    return NextResponse.json({ error: "File not found on disk" }, { status: 500 });
   }
 
   // Read and serve the EPUB file
