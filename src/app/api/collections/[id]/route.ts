@@ -28,6 +28,8 @@ export async function GET(
       name: collections.name,
       description: collections.description,
       createdAt: collections.createdAt,
+      shareToken: collections.shareToken,
+      sharedAt: collections.sharedAt,
     })
     .from(collections)
     .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
@@ -132,6 +134,8 @@ export async function PUT(
       name: collections.name,
       description: collections.description,
       createdAt: collections.createdAt,
+      shareToken: collections.shareToken,
+      sharedAt: collections.sharedAt,
     })
     .from(collections)
     .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));

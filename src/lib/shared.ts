@@ -1,10 +1,11 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { collections, books, collectionBooks } from "./db/schema";
 
 /**
- * Retrieves a collection by its share token.
- * Currently treats the token as the collection id.
+ * Retrieves a collection by its share token
+ * @param token - The share token to look up
+ * @returns The collection if found and shared, null otherwise
  */
 export async function getSharedCollection(token: string) {
   if (!token || typeof token !== "string") {
@@ -15,7 +16,12 @@ export async function getSharedCollection(token: string) {
     const result = await db
       .select()
       .from(collections)
-      .where(eq(collections.id, token))
+      .where(
+        and(
+          eq(collections.shareToken, token),
+          isNotNull(collections.shareToken)
+        )
+      )
       .limit(1);
 
     return result[0] ?? null;
@@ -26,20 +32,24 @@ export async function getSharedCollection(token: string) {
 }
 
 /**
- * Retrieves a book from a shared collection.
- * Validates the token via the collection lookup.
+ * Retrieves a book from a shared collection
+ * @param token - The share token of the collection
+ * @param bookId - The ID of the book to retrieve
+ * @returns The book if it exists in the shared collection, null otherwise
  */
 export async function getSharedBook(token: string, bookId: string) {
   if (!bookId || typeof bookId !== "string") {
     return null;
   }
 
+  // First validate the share token
   const collection = await getSharedCollection(token);
   if (!collection) {
     return null;
   }
 
   try {
+    // Verify the book exists in the collection
     const result = await db
       .select({
         id: books.id,
@@ -60,8 +70,8 @@ export async function getSharedBook(token: string, bookId: string) {
       .where(
         and(
           eq(collectionBooks.collectionId, collection.id),
-          eq(books.id, bookId),
-        ),
+          eq(books.id, bookId)
+        )
       )
       .limit(1);
 

@@ -7,33 +7,32 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ token: string; bookId: string }> },
+  { params }: { params: Promise<{ token: string; bookId: string }> }
 ) {
   const { token, bookId } = await params;
 
+  // Validate token and book membership
   const book = await getSharedBook(token, bookId);
   if (!book) {
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
   }
 
+  // Check file exists on disk
   let stat: fs.Stats;
   try {
     stat = fs.statSync(book.filePath);
   } catch {
-    return NextResponse.json(
-      { error: "File not found on disk" },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: "File not found on disk" }, { status: 404 });
   }
 
   const fileSize = stat.size;
-  const contentType =
-    book.fileType === "epub" ? "application/epub+zip" : "application/pdf";
+  const contentType = book.fileType === "epub" ? "application/epub+zip" : "application/pdf";
 
+  // Parse Range header
   const rangeHeader = req.headers.get("range");
   let start = 0;
   let end = fileSize - 1;
-  let status = 200;
+  let status: number = 200;
 
   if (rangeHeader) {
     const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
@@ -51,6 +50,7 @@ export async function GET(
       start = reqStart;
       end = reqEnd !== undefined ? reqEnd : fileSize - 1;
     } else if (reqEnd !== undefined) {
+      // suffix range: bytes=-N means last N bytes
       start = fileSize - reqEnd;
       end = fileSize - 1;
     }

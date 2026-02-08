@@ -12,8 +12,20 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Public shared collection pages — no auth required.
+  // Token validation happens within the page/API endpoints.
+  if (nextUrl.pathname.startsWith("/shared/")) {
+    return NextResponse.next();
+  }
+
   // NextAuth internals — always pass through.
   if (nextUrl.pathname.startsWith("/api/auth")) {
+    return NextResponse.next();
+  }
+
+  // Public shared collection API endpoints — no auth required.
+  // Token validation happens within each endpoint.
+  if (nextUrl.pathname.startsWith("/api/shared/")) {
     return NextResponse.next();
   }
 
