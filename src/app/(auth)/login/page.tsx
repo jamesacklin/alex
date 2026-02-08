@@ -23,6 +23,7 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
+import { AppLogo } from "@/components/branding/AppLogo";
 
 const loginSchema = z.object({
   email: z.string().regex(/^[^\s@]+@[^\s@]+$/, "Must be a valid email"),
@@ -58,10 +59,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-1">
-            <svg className="h-7 w-7" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" strokeWidth="12" />
-              <rect x="88" y="88" width="80" height="80" fill="currentColor" />
-            </svg>
+            <AppLogo className="h-7 w-7" />
             <CardTitle className="text-2xl">Alex</CardTitle>
           </div>
         </CardHeader>
