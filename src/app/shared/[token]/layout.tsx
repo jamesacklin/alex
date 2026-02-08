@@ -25,15 +25,6 @@ export default function SharedLayout({
       <main className="flex-1">
         <div className="container mx-auto max-w-7xl px-4 py-8">{children}</div>
       </main>
-
-      {/* Minimal footer */}
-      <footer className="border-t bg-muted/30 py-6 mt-12">
-        <div className="container mx-auto max-w-7xl px-4">
-          <div className="flex justify-center text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} Alex. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
