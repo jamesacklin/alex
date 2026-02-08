@@ -12,7 +12,7 @@
     "test:watcher": "jest --selectProjects watcher",
     "test:watch": "jest --watch",
     "env:setup": "bash -c 'ENV_HASH=$(node -e \"console.log(require(\\\"crypto\\\").randomBytes(32).toString(\\\"hex\\\"))\"); cp .env.example .env; if [[ \"$OSTYPE\" == \"darwin\"* ]]; then sed -i \"\" \"s/^NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=${ENV_HASH}/\" .env; else sed -i \"s/^NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=${ENV_HASH}/\" .env; fi'",
-    "setup": "pnpm install && pnpm env:setup && pnpm build:native && pnpm db:push && pnpm db:seed",
+    "setup": "pnpm install && pnpm env:setup && pnpm build:native && mkdir -p data && pnpm db:push && pnpm db:seed",
     "build:native": "cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release && cd ../../../canvas@3.2.1/node_modules/canvas && npm run install",
     "postinstall": "pnpm build:native || echo 'Warning: Failed to build native modules. Run: pnpm build:native'",
     "db:push": "drizzle-kit push",
