@@ -410,6 +410,91 @@ sequenceDiagram
     FS-->>Handler: Success
 ```
 
+## Public Collection Sharing Flow
+
+This diagram shows how a collection owner enables sharing and how a public viewer accesses the shared collection.
+
+```mermaid
+sequenceDiagram
+    participant Owner
+    participant OwnerUI as Owner's Browser
+    participant API as API Routes
+    participant DB as Database
+    participant Viewer
+    participant ViewerUI as Viewer's Browser
+    participant LS as localStorage
+
+    Note over Owner,DB: Owner Enables Sharing
+    Owner->>OwnerUI: Click "Share" on collection
+    OwnerUI->>API: POST /api/collections/[id]/share
+    API->>DB: Verify ownership (userId match)
+    API->>API: crypto.randomUUID()
+    API->>DB: UPDATE collections SET share_token, shared_at
+    DB-->>API: Success
+    API-->>OwnerUI: { shareToken, shareUrl }
+    OwnerUI->>OwnerUI: Display share URL with copy button
+    Owner->>Owner: Copy link, send to viewer
+
+    Note over Viewer,LS: Public Viewer Accesses Collection
+    Viewer->>ViewerUI: Open /shared/[token]
+    ViewerUI->>API: GET /api/shared/[token]
+    API->>DB: SELECT FROM collections WHERE share_token = ?
+    DB-->>API: Collection data
+    API->>DB: SELECT books via collection_books JOIN
+    DB-->>API: Book list
+    API-->>ViewerUI: { collection, books, pagination }
+    ViewerUI->>ViewerUI: Render collection grid
+
+    loop Cover images
+        ViewerUI->>API: GET /api/shared/[token]/covers/[bookId]
+        API->>DB: Verify book in collection
+        API-->>ViewerUI: Cover image (or SVG placeholder)
+    end
+
+    Note over Viewer,LS: Public Viewer Reads a Book
+    Viewer->>ViewerUI: Click book card
+    ViewerUI->>ViewerUI: Navigate to /shared/[token]/read/[bookId]
+    ViewerUI->>API: GET /api/shared/[token]/books/[bookId]/file
+    API->>DB: Verify token + book membership
+    API-->>ViewerUI: Stream book file
+
+    ViewerUI->>LS: Load saved progress (if any)
+    LS-->>ViewerUI: { currentPage } or null
+    ViewerUI->>ViewerUI: Render PdfReader or EpubReader
+
+    loop Viewer navigates pages
+        Viewer->>ViewerUI: Turn page
+        ViewerUI->>LS: Save progress
+        Note over LS: Key: shared-progress:[token]:[bookId]
+    end
+
+    Note over Owner,DB: Owner Revokes Sharing
+    Owner->>OwnerUI: Click "Stop Sharing"
+    OwnerUI->>API: DELETE /api/collections/[id]/share
+    API->>DB: UPDATE collections SET share_token = NULL
+    DB-->>API: Success
+    API-->>OwnerUI: { success: true }
+
+    Note over Viewer,API: Link No Longer Works
+    Viewer->>ViewerUI: Open /shared/[token]
+    ViewerUI->>API: GET /api/shared/[token]
+    API->>DB: SELECT WHERE share_token = ?
+    DB-->>API: No match
+    API-->>ViewerUI: 404 Not Found
+    ViewerUI->>ViewerUI: Show "Collection not found" page
+```
+
+### Key Points
+
+1. **Token generation**: `crypto.randomUUID()` produces 122-bit random tokens
+2. **Ownership check**: Only the collection owner can enable/disable sharing
+3. **Scoped access**: Every public endpoint validates that the book belongs to the shared collection
+4. **No server state for viewers**: Reading progress stored in browser `localStorage`, not the database
+5. **Instant revocation**: Setting `share_token = NULL` immediately invalidates all existing links
+6. **Reader reuse**: Public reader uses the same `PdfReader` and `EpubReader` components as authenticated users
+
+---
+
 ### Cover Generation Strategy
 
 1. **Primary (PDFs)**: Use `pdftoppm` from poppler-utils (highest quality)

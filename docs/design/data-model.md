@@ -54,6 +54,8 @@ erDiagram
         text user_id FK
         text name
         text description
+        text share_token UK
+        int shared_at
         int created_at
     }
 
@@ -190,19 +192,25 @@ User-created collections for organizing books (e.g., "Favorites", "To Read", "Sc
 | user_id | TEXT | NOT NULL, FK → users.id | User who owns this collection |
 | name | TEXT | NOT NULL | Collection name |
 | description | TEXT | NULL | Optional description |
+| share_token | TEXT | UNIQUE, NULL | UUID v4 share token (null = private) |
+| shared_at | INTEGER | NULL | Unix timestamp when sharing was enabled |
 | created_at | INTEGER | NOT NULL | Unix timestamp |
 
 **Indexes:**
 - Primary key on `id`
+- Unique index on `share_token` (for public URL lookups)
 - Index on `user_id` (for listing user's collections)
 
 **Foreign Keys:**
 - `user_id` references `users.id`
 
 **Notes:**
-- Collections are user-specific (not shared between users)
+- Collections are user-specific (owned by one user)
 - No constraint on duplicate names per user (intentional)
-- Future feature (currently UI shows "SOON" badge)
+- `share_token` is `null` by default (collection is private)
+- Setting `share_token` to a UUID v4 value makes the collection publicly viewable at `/shared/<token>`
+- Revoking sharing sets `share_token` back to `null`, invalidating any existing links
+- Re-sharing generates a new token (old URLs stop working)
 
 ---
 
@@ -330,6 +338,33 @@ ORDER BY rp.last_read_at DESC;
 ```sql
 SELECT title FROM books
 WHERE file_hash = ?
+LIMIT 1;
+```
+
+**Get shared collection by token:**
+```sql
+SELECT * FROM collections
+WHERE share_token = ?
+  AND share_token IS NOT NULL
+LIMIT 1;
+```
+
+**Get books in a shared collection (with membership check):**
+```sql
+SELECT b.id, b.title, b.author, b.file_type, b.page_count
+FROM books b
+INNER JOIN collection_books cb ON b.id = cb.book_id
+WHERE cb.collection_id = ?
+LIMIT 24 OFFSET ?;
+```
+
+**Verify book belongs to a shared collection:**
+```sql
+SELECT b.* FROM books b
+INNER JOIN collection_books cb ON b.id = cb.book_id
+INNER JOIN collections c ON cb.collection_id = c.id
+WHERE c.share_token = ?
+  AND b.id = ?
 LIMIT 1;
 ```
 

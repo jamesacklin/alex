@@ -13,9 +13,19 @@ A self-hosted personal library for your ebook collection. Drop PDFs into a folde
   - **PDF:** Page navigation, continuous zoom, fit-to-width rendering, and full-text search
   - **EPUB:** Table of contents navigation, chapter skipping, customizable font sizes (displayed in Times New Roman), and reflowable text that adapts to any screen
 - **Reading progress.** Every page turn and location change is saved. Books move through *not started → reading → completed* on their own, and a progress bar on each card keeps your at-a-glance view honest.
+- **Public collections.** Share a collection with anyone via a link — no account required. Recipients can browse the book list and read PDFs and EPUBs directly in the browser. Share links use unguessable tokens and can be revoked at any time.
 - **Search and filter.** Find books by title or author. Filter by format and reading status, sort by what matters to you.
 - **Multi-user.** Built-in user management with admin and user roles. Each reader keeps their own progress; admins can add or remove accounts.
 - **Docker-ready.** Ships as a single container with everything it needs. Mount your book folder, set one secret, and it runs.
+
+### Public Collections
+
+Any collection can be shared by generating a share link from the collection detail page. The recipient sees a standalone page — outside the normal authenticated UI — where they can browse the collection and open any book in the full PDF or EPUB reader.
+
+- **Token-based access.** Each shared collection gets a unique, unguessable UUID token. The public URL is `/shared/<token>`. Revoking sharing invalidates the token; re-sharing generates a new one.
+- **Scoped endpoints.** Public API routes (`/api/shared/[token]/...`) serve collection metadata, cover images, and book files. Every request validates that the token is active and the book belongs to that collection — a valid token cannot be used to access books outside its collection.
+- **Full reader, no account.** The public reader reuses the same `PdfReader` and `EpubReader` components as authenticated users. Reading progress for anonymous viewers is stored in the browser's `localStorage` rather than the server database.
+- **No user data exposed.** Public responses omit the collection owner's identity. No anonymous user records are created on the server.
 
 ## Tech Stack
 
