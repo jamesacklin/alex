@@ -19,9 +19,16 @@ export default async function UsersPage() {
     .orderBy(asc(users.createdAt));
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">User Management</h1>
-      <UsersTable users={allUsers} currentUserId={session?.user?.id ?? ""} />
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-lg font-semibold">User Management</h1>
+        <div id="users-table-actions" />
+      </div>
+      <UsersTable
+        users={allUsers}
+        currentUserId={session?.user?.id ?? ""}
+        actionsContainerId="users-table-actions"
+      />
     </div>
   );
 }

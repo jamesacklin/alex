@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { AppLogo } from "@/components/branding/AppLogo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +36,15 @@ const NAV_ITEMS: NavItem[] = [
     label: "Library",
     href: "/library",
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
       </svg>
@@ -45,7 +54,15 @@ const NAV_ITEMS: NavItem[] = [
     label: "Collections",
     href: "/collections",
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <polygon points="12 2 2 7 12 12 22 7 12 2" />
         <polyline points="2 17 12 22 22 17" />
         <polyline points="2 12 12 17 22 12" />
@@ -58,7 +75,15 @@ const ADMIN_NAV_ITEM: NavItem = {
   label: "Admin",
   href: "/admin/users",
   icon: (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -76,8 +101,33 @@ export default function DashboardLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const paramsString = searchParams.toString();
+  const q = searchParams.get("q") || "";
+  const [searchInput, setSearchInput] = useState(q);
+  const showLibrarySearch =
+    pathname === "/library" || pathname.startsWith("/library/");
 
-  const navItems = user.role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+  const navItems =
+    user.role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+
+  useEffect(() => {
+    setSearchInput(q);
+  }, [q]);
+
+  useEffect(() => {
+    if (!showLibrarySearch) return;
+    if (searchInput === q) return;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(paramsString);
+      if (searchInput) params.set("q", searchInput);
+      else params.delete("q");
+      params.delete("page");
+      router.push(`/library${params.toString() ? `?${params}` : ""}`);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [paramsString, q, router, searchInput, showLibrarySearch]);
 
   const initials = user.displayName
     .split(" ")
@@ -87,7 +137,7 @@ export default function DashboardLayout({
     .toUpperCase();
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen flex-col bg-background">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -96,123 +146,235 @@ export default function DashboardLayout({
         />
       )}
 
-      {/* Sidebar */}
-      <aside
-        className={[
-          "fixed inset-y-0 left-0 z-50 w-60 bg-background border-r flex flex-col",
-          "transition-transform duration-300 ease-in-out",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "md:relative md:translate-x-0",
-        ].join(" ")}
-      >
-        {/* Sidebar brand */}
-        <div className="flex h-14 shrink-0 items-center px-4 border-b">
-          <AppLogo className="shrink-0" />
-          <span className="ml-2 text-lg font-semibold">Alex</span>
+      {/* Header */}
+      <header className="flex h-10 shrink-0 items-center border-b border-border bg-primary text-primary-foreground px-3">
+        <div className="flex items-center gap-2 min-w-[160px]">
           <button
-            className="ml-auto md:hidden text-muted-foreground hover:text-foreground"
-            aria-label="Close sidebar"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Nav links */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-
-            if (item.comingSoon) {
-              return (
-                <div
-                  key={item.href}
-                  className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed"
-                >
-                  {item.icon}
-                  <span className="flex-1">{item.label}</span>
-                  <span className="px-1.5 py-0.5 text-xs font-semibold bg-muted text-muted-foreground rounded">
-                    SOON
-                  </span>
-                </div>
-              );
-            }
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={[
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                ].join(" ")}
-              >
-                {item.icon}
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </aside>
-
-      {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <header className="flex h-14 shrink-0 items-center justify-between px-4 border-b bg-background">
-          {/* Left: hamburger (mobile) */}
-          <button
-            className="md:hidden text-muted-foreground hover:text-foreground"
+            className="md:hidden text-primary-foreground"
             aria-label="Open sidebar"
             onClick={() => setSidebarOpen(true)}
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
+          <AppLogo className="shrink-0 text-primary-foreground" />
+          <span className="text-sm font-semibold">Alex</span>
+        </div>
 
-          {/* Right: user dropdown */}
-          <div className="ml-auto">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="gap-2 px-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs bg-muted">{initials}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm hidden sm:inline">{user.displayName}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="font-medium text-sm">{user.displayName}</div>
-                  <div className="text-xs text-muted-foreground">{user.email}</div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => signOut({ redirectTo: "/login" })}
-                  className="text-destructive focus:text-destructive"
+        <div className="flex-1 flex justify-center">
+          {showLibrarySearch && (
+            <div className="relative w-full max-w-md">
+              <button
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                onClick={() => {
+                  const params = new URLSearchParams(paramsString);
+                  if (searchInput) params.set("q", searchInput);
+                  else params.delete("q");
+                  params.delete("page");
+                  router.push(
+                    `/library${params.toString() ? `?${params}` : ""}`,
+                  );
+                }}
+                aria-label="Search"
+              >
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                    <polyline points="16 17 21 12 16 7" />
-                    <line x1="21" y1="12" x2="9" y2="12" />
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+              </button>
+              <Input
+                type="text"
+                placeholder="Search by title or author…"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    const params = new URLSearchParams(paramsString);
+                    if (searchInput) params.set("q", searchInput);
+                    else params.delete("q");
+                    params.delete("page");
+                    router.push(
+                      `/library${params.toString() ? `?${params}` : ""}`,
+                    );
+                  }
+                }}
+                className="h-8 bg-background text-foreground pl-8 pr-8"
+              />
+              {searchInput && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  onClick={() => setSearchInput("")}
+                  aria-label="Clear search"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <div className="flex items-center justify-end min-w-[160px]">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="link"
+                className="gap-2 px-2 text-primary-foreground"
+              >
+                <Avatar className="h-7 w-7">
+                  <AvatarFallback className="text-sm bg-primary-foreground text-primary">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm hidden sm:inline">
+                  {user.displayName}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="font-medium text-sm">{user.displayName}</div>
+                <div className="text-sm text-muted-foreground">
+                  {user.email}
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => signOut({ redirectTo: "/login" })}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
+                <svg
+                  className="h-4 w-4 mr-2"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar */}
+        <aside
+          className={[
+            "fixed top-10 bottom-0 left-0 z-50 w-52 bg-sidebar border-r border-sidebar-border flex flex-col",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full",
+            "md:relative md:translate-x-0 md:inset-y-0",
+          ].join(" ")}
+        >
+          <div className="md:hidden flex h-10 shrink-0 items-center justify-end px-3 border-b border-sidebar-border">
+            <button
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Close sidebar"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Nav links */}
+          <nav className="flex-1 overflow-y-auto">
+            <div>
+              {navItems.map((item) => {
+                const itemBase = `/${item.href.split("/").filter(Boolean)[0] ?? ""}`;
+                const isActive =
+                  pathname === item.href ||
+                  (itemBase !== "/" &&
+                    (pathname === itemBase ||
+                      pathname.startsWith(`${itemBase}/`)));
+
+                if (item.comingSoon) {
+                  return (
+                    <div
+                      key={item.href}
+                      className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed border-b border-border border-l-2 border-transparent"
+                    >
+                      {item.icon}
+                      <span className="flex-1">{item.label}</span>
+                      <span className="px-1.5 py-0.5 text-sm font-semibold bg-muted text-muted-foreground border border-border">
+                        SOON
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={[
+                      "flex items-center gap-3 px-3 py-2 text-sm font-medium border-b border-border border-l-2",
+                      isActive
+                        ? "border-primary bg-muted font-semibold text-foreground"
+                        : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+                    ].join(" ")}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        </aside>
+
+        {/* Main area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Page content */}
+          <main className="flex-1 overflow-auto p-4">{children}</main>
+        </div>
       </div>
     </div>
   );

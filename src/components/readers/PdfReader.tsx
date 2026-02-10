@@ -329,7 +329,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
             placeholder="Search in document…"
             className="flex-1 bg-gray-700 text-white rounded px-2 py-1 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
           />
-          <span className="text-gray-400 text-xs whitespace-nowrap select-none">
+          <span className="text-gray-400 text-sm whitespace-nowrap select-none">
             {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : "No matches"}
           </span>
           <button
@@ -373,7 +373,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
           <div className="flex flex-col items-center justify-center h-full text-red-400 gap-3">
             <p className="text-sm">{error}</p>
             <button
-              className="text-xs px-3 py-1 rounded bg-gray-800 text-white hover:bg-gray-700"
+              className="text-sm px-3 py-1 rounded bg-gray-800 text-white hover:bg-gray-700"
               onClick={() => {
                 setError(null);
                 setRetryToken((prev) => prev + 1);

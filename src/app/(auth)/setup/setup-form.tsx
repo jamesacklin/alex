@@ -67,7 +67,7 @@ export default function SetupForm() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome</CardTitle>
+          <CardTitle className="text-lg">Welcome</CardTitle>
           <CardDescription>
             Create your admin account to get started
           </CardDescription>

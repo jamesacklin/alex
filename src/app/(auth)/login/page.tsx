@@ -60,7 +60,7 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-1">
             <AppLogo className="h-7 w-7" />
-            <CardTitle className="text-2xl">Alex</CardTitle>
+            <CardTitle className="text-lg">Alex</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
