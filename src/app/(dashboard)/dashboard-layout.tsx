@@ -159,10 +159,10 @@ export default function DashboardLayout({
       )}
 
       {/* Header */}
-      <header className="flex h-10 shrink-0 items-center border-b border-border bg-primary text-primary-foreground px-3">
+      <header className="flex h-10 shrink-0 items-center border-b border-border bg-sidebar text-sidebar-foreground px-3">
         <div className="flex items-center gap-2 min-w-[160px]">
           <button
-            className="md:hidden text-primary-foreground"
+            className="md:hidden text-sidebar-foreground"
             aria-label="Open sidebar"
             onClick={() => setSidebarOpen(true)}
           >
@@ -180,7 +180,7 @@ export default function DashboardLayout({
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <AppLogo className="shrink-0 text-primary-foreground" />
+          <AppLogo className="shrink-0 text-sidebar-foreground" />
           <span className="text-sm font-semibold">Alex</span>
         </div>
 
@@ -261,10 +261,10 @@ export default function DashboardLayout({
             <DropdownMenuTrigger asChild>
               <Button
                 variant="link"
-                className="gap-2 px-2 text-primary-foreground"
+                className="gap-2 px-2 text-sidebar-foreground"
               >
                 <Avatar className="h-7 w-7">
-                  <AvatarFallback className="text-sm bg-primary-foreground text-primary">
+                  <AvatarFallback className="text-sm bg-sidebar-foreground text-sidebar">
                     {initials}
                   </AvatarFallback>
                 </Avatar>

@@ -9,7 +9,13 @@ import {
   ChevronRight,
   Settings,
 } from "lucide-react";
-import { ReactReader } from "react-reader";
+import {
+  ReactReader,
+  ReactReaderStyle,
+  EpubViewStyle,
+  type IReactReaderStyle,
+  type IEpubViewStyle,
+} from "react-reader";
 import type { Rendition } from "epubjs";
 
 type TocItem = { label: string; href: string };
@@ -47,6 +53,63 @@ export function EpubReader({
   const [reloadToken, setReloadToken] = useState(0);
 
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
+  const readerStyles: IReactReaderStyle = {
+    ...ReactReaderStyle,
+    container: {
+      ...ReactReaderStyle.container,
+      backgroundColor: "var(--background)",
+      color: "var(--foreground)",
+    },
+    readerArea: {
+      ...ReactReaderStyle.readerArea,
+      backgroundColor: "var(--background)",
+    },
+    titleArea: {
+      ...ReactReaderStyle.titleArea,
+      color: "var(--muted-foreground)",
+    },
+    arrow: {
+      ...ReactReaderStyle.arrow,
+      color: "var(--muted-foreground)",
+    },
+    arrowHover: {
+      ...ReactReaderStyle.arrowHover,
+      color: "var(--foreground)",
+    },
+    tocArea: {
+      ...ReactReaderStyle.tocArea,
+      background: "var(--background)",
+      borderRight: "1px solid var(--border)",
+    },
+    tocAreaButton: {
+      ...ReactReaderStyle.tocAreaButton,
+      color: "var(--muted-foreground)",
+      borderBottom: "1px solid var(--border)",
+    },
+    tocButtonExpanded: {
+      ...ReactReaderStyle.tocButtonExpanded,
+      background: "var(--muted)",
+    },
+    tocButtonBar: {
+      ...ReactReaderStyle.tocButtonBar,
+      background: "var(--border)",
+    },
+    loadingView: {
+      ...ReactReaderStyle.loadingView,
+      color: "var(--muted-foreground)",
+    },
+    errorView: {
+      ...ReactReaderStyle.errorView,
+      color: "var(--destructive)",
+    },
+  };
+  const epubViewStyles: IEpubViewStyle = {
+    ...EpubViewStyle,
+    viewHolder: {
+      ...EpubViewStyle.viewHolder,
+      backgroundColor: "var(--background)",
+    },
+  };
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -204,10 +267,10 @@ export function EpubReader({
   if (error) {
     return (
       <div className="flex flex-col h-full bg-background">
-        <header className="flex items-center gap-3 px-4 h-12 bg-gray-900 text-white shrink-0">
+        <header className="flex items-center gap-3 px-4 h-12 bg-sidebar text-sidebar-foreground border-b border-border shrink-0">
           <Link
             href={backUrl ?? "/library"}
-            className="p-1 rounded hover:bg-gray-800 transition-colors"
+            className="p-1 rounded hover:bg-muted transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
@@ -240,10 +303,10 @@ export function EpubReader({
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Toolbar */}
-      <header className="flex items-center gap-3 px-4 h-12 bg-gray-900 text-white shrink-0">
+      <header className="flex items-center gap-3 px-4 h-12 bg-sidebar text-sidebar-foreground border-b border-border shrink-0">
         <Link
           href={backUrl ?? "/library"}
-          className="p-1 rounded hover:bg-gray-800 transition-colors"
+          className="p-1 rounded hover:bg-muted transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
@@ -253,7 +316,7 @@ export function EpubReader({
         <button
           onClick={handlePrevChapter}
           disabled={currentChapterIndex <= 0}
-          className="p-1 rounded hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           aria-label="Previous chapter"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -261,7 +324,7 @@ export function EpubReader({
         <button
           onClick={handleNextChapter}
           disabled={currentChapterIndex >= toc.length - 1 || toc.length === 0}
-          className="p-1 rounded hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           aria-label="Next chapter"
         >
           <ChevronRight className="h-5 w-5" />
@@ -270,7 +333,7 @@ export function EpubReader({
         {/* TOC toggle */}
         <button
           onClick={() => setTocOpen(!tocOpen)}
-          className="p-1 rounded hover:bg-gray-800 transition-colors"
+          className="p-1 rounded hover:bg-muted transition-colors"
           aria-label="Table of contents"
         >
           <Menu className="h-5 w-5" />
@@ -279,7 +342,7 @@ export function EpubReader({
         {/* Reading settings */}
         <button
           onClick={() => setSettingsOpen(!settingsOpen)}
-          className="p-1 rounded hover:bg-gray-800 transition-colors"
+          className="p-1 rounded hover:bg-muted transition-colors"
           aria-label="Reading settings"
         >
           <Settings className="h-5 w-5" />
@@ -385,6 +448,8 @@ export function EpubReader({
           locationChanged={handleLocationChanged}
           getRendition={handleGetRendition}
           showToc={false}
+          readerStyles={readerStyles}
+          epubViewStyles={epubViewStyles}
           epubOptions={{
             allowScriptedContent: true,
           }}

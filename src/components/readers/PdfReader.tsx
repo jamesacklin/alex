@@ -9,7 +9,7 @@ import { PdfToolbar } from "./PdfToolbar";
 function Spinner() {
   return (
     <div className="flex items-center justify-center h-64">
-      <svg className="h-8 w-8 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none">
+      <svg className="h-8 w-8 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
       </svg>
@@ -291,7 +291,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
 
   // --- Render ---
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-full bg-background text-foreground">
       {/* Toolbar */}
       <PdfToolbar
         title={title}
@@ -311,7 +311,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
 
       {/* Search panel */}
       {searchOpen && (
-        <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-800 border-b border-gray-700">
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-muted border-b border-border">
           <input
             ref={searchInputRef}
             type="text"
@@ -327,13 +327,13 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
               }
             }}
             placeholder="Search in document…"
-            className="flex-1 bg-gray-700 text-white rounded px-2 py-1 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
+            className="flex-1 bg-background text-foreground rounded px-2 py-1 text-sm placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          <span className="text-gray-400 text-sm whitespace-nowrap select-none">
+          <span className="text-muted-foreground text-sm whitespace-nowrap select-none">
             {matchCount > 0 ? `${(currentMatchIndex % matchCount) + 1} of ${matchCount}` : "No matches"}
           </span>
           <button
-            className="text-gray-300 hover:text-white disabled:opacity-30"
+            className="text-muted-foreground hover:text-foreground disabled:opacity-30"
             disabled={matchCount === 0}
             onClick={() => setCurrentMatchIndex((prev) => (prev - 1 + matchCount) % matchCount)}
             aria-label="Previous match"
@@ -343,7 +343,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
             </svg>
           </button>
           <button
-            className="text-gray-300 hover:text-white disabled:opacity-30"
+            className="text-muted-foreground hover:text-foreground disabled:opacity-30"
             disabled={matchCount === 0}
             onClick={() => setCurrentMatchIndex((prev) => (prev + 1) % matchCount)}
             aria-label="Next match"
@@ -353,7 +353,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
             </svg>
           </button>
           <button
-            className="text-gray-400 hover:text-white"
+            className="text-muted-foreground hover:text-foreground"
             onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
             aria-label="Close search"
           >
@@ -367,13 +367,13 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
       {/* Page viewer */}
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 overflow-auto flex items-start justify-center p-4"
+        className="flex-1 min-h-0 overflow-auto flex items-start justify-center p-4 bg-muted/30"
       >
         {error ? (
-          <div className="flex flex-col items-center justify-center h-full text-red-400 gap-3">
+          <div className="flex flex-col items-center justify-center h-full text-destructive gap-3">
             <p className="text-sm">{error}</p>
             <button
-              className="text-sm px-3 py-1 rounded bg-gray-800 text-white hover:bg-gray-700"
+              className="text-sm px-3 py-1 rounded bg-muted text-foreground hover:bg-accent"
               onClick={() => {
                 setError(null);
                 setRetryToken((prev) => prev + 1);

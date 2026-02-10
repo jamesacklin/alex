@@ -35,23 +35,23 @@ export function PdfToolbar({
 }: PdfToolbarProps) {
   const hasPages = typeof numPages === "number" && numPages > 0;
   return (
-    <header className="shrink-0 flex items-center px-3 h-11 bg-gray-800 border-b border-gray-700 gap-3">
+    <header className="shrink-0 flex items-center px-3 h-11 bg-sidebar text-sidebar-foreground border-b border-border gap-3">
       {/* Left: back + title */}
       <Link
         href={backUrl ?? "/library"}
-        className="text-gray-400 hover:text-white transition-colors shrink-0"
+        className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
         aria-label="Back"
       >
         <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
         </svg>
       </Link>
-      <h1 className="text-sm text-gray-200 font-medium truncate max-w-[160px] sm:max-w-[280px]">{title}</h1>
+      <h1 className="text-sm text-foreground font-medium truncate max-w-[160px] sm:max-w-[280px]">{title}</h1>
 
       {/* Center: page navigation */}
       <div className="flex items-center gap-2 mx-auto">
         <button
-          className="text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
           disabled={!hasPages || currentPage <= 1}
           onClick={onPrevPage}
           aria-label="Previous page"
@@ -61,7 +61,7 @@ export function PdfToolbar({
           </svg>
         </button>
 
-        <span className="text-gray-300 text-sm select-none flex items-center gap-1">
+        <span className="text-muted-foreground text-sm select-none flex items-center gap-1">
           <input
             ref={pageInputRef}
             type="number"
@@ -73,14 +73,14 @@ export function PdfToolbar({
               const v = Number(e.target.value);
               if (!isNaN(v)) onGoToPage(v);
             }}
-            className="w-10 text-center bg-gray-700 text-white rounded px-1 py-0.5 text-sm"
+            className="w-10 text-center bg-background text-foreground border border-input rounded px-1 py-0.5 text-sm"
           />
-          <span className="text-gray-500">/</span>
+          <span className="text-muted-foreground">/</span>
           <span>{hasPages ? numPages : "—"}</span>
         </span>
 
         <button
-          className="text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
           disabled={!hasPages || currentPage >= numPages}
           onClick={onNextPage}
           aria-label="Next page"
@@ -93,10 +93,10 @@ export function PdfToolbar({
 
       {/* Right: zoom + search — hidden on very small screens */}
       <div className="hidden sm:flex items-center gap-2 shrink-0">
-        <span className="w-px h-5 bg-gray-600" />
+        <span className="w-px h-5 bg-border" />
 
         <button
-          className="text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
           disabled={zoomPercent <= 50}
           onClick={onZoomOut}
           aria-label="Zoom out"
@@ -106,10 +106,10 @@ export function PdfToolbar({
           </svg>
         </button>
 
-        <span className="text-gray-300 text-sm w-12 text-center select-none">{zoomPercent}%</span>
+        <span className="text-muted-foreground text-sm w-12 text-center select-none">{zoomPercent}%</span>
 
         <button
-          className="text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
           disabled={zoomPercent >= 200}
           onClick={onZoomIn}
           aria-label="Zoom in"
@@ -120,17 +120,17 @@ export function PdfToolbar({
         </button>
 
         <button
-          className="text-gray-400 hover:text-white text-sm px-1.5 py-0.5 rounded hover:bg-gray-700"
+          className="text-muted-foreground hover:text-foreground text-sm px-1.5 py-0.5 rounded hover:bg-muted"
           onClick={onFit}
           aria-label="Fit page"
         >
           Fit
         </button>
 
-        <span className="w-px h-5 bg-gray-600" />
+        <span className="w-px h-5 bg-border" />
 
         <button
-          className="text-gray-300 hover:text-white"
+          className="text-muted-foreground hover:text-foreground"
           onClick={onSearchToggle}
           aria-label="Search"
         >
