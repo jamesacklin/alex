@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -54,6 +53,14 @@ export function BookCard({
   const [collectionsLoaded, setCollectionsLoaded] = useState(false);
 
   const savingSet = useMemo(() => new Set(savingIds), [savingIds]);
+  const hasCollection = collections.some((option) => option.containsBook);
+  const metadataParts = [
+    book.fileType === "pdf" ? "PDF" : "EPUB",
+    book.pageCount
+      ? `${book.pageCount} ${book.pageCount === 1 ? "page" : "pages"}`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  const metadata = metadataParts.join(" · ");
 
   useEffect(() => {
     if (collectionsLoaded && !collectionsOpen) return;
@@ -123,7 +130,7 @@ export function BookCard({
   return (
     <Link
       href={`/read/${book.id}`}
-      className="group block rounded-lg border bg-card overflow-hidden"
+      className="group block border bg-card overflow-hidden"
       onClick={(event) => {
         if (collectionsOpen) {
           event.preventDefault();
@@ -132,37 +139,27 @@ export function BookCard({
       }}
     >
       {/* Cover */}
-      <div className="relative aspect-[2/3] overflow-hidden bg-muted">
+      <div className="relative aspect-[2/3] overflow-hidden bg-muted border-b border-border">
         <img
           src={`/api/books/${book.id}/cover?t=${book.updatedAt}`}
           alt={book.title}
           className="w-full h-full object-cover"
         />
-        <div className="absolute top-2 left-2 flex items-center gap-1">
-          {actionLabel && onAction && (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-7 px-2 text-xs bg-white/90 text-gray-800 hover:bg-white"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onAction();
-              }}
-            >
-              {actionLabel}
-            </Button>
-          )}
+      </div>
+
+      {/* Info */}
+      <div className="p-2 space-y-1">
+        <div className="flex items-start gap-2">
+          <h3 className="flex-1 font-medium text-sm leading-tight line-clamp-2">
+            {book.title}
+          </h3>
           <Button
             type="button"
-            size="icon"
-            variant="secondary"
+            size="icon-xs"
+            variant="ghost"
             className={[
-              "h-7 w-7 bg-white/90 hover:bg-white",
-              collections.some((option) => option.containsBook)
-                ? "text-gray-900"
-                : "text-gray-500",
+              "text-muted-foreground hover:text-foreground",
+              hasCollection ? "text-foreground" : "",
             ].join(" ")}
             onClick={(event) => {
               event.preventDefault();
@@ -172,7 +169,7 @@ export function BookCard({
           >
             <span className="sr-only">Add to Collection</span>
             <svg
-              className="h-4 w-4"
+              className="h-3.5 w-3.5"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -186,44 +183,46 @@ export function BookCard({
             </svg>
           </Button>
         </div>
-        {/* File-type badge */}
-        <div className="absolute top-2 right-2">
-          <Badge
-            variant="secondary"
-            className="text-xs font-semibold bg-white/90 text-gray-800"
-          >
-            {book.fileType === "pdf" ? "PDF" : "EPUB"}
-          </Badge>
-        </div>
-        {/* Completed overlay */}
-        {book.readingProgress?.status === "completed" && (
-          <div className="absolute bottom-2 left-2">
-            <Badge className="text-xs bg-green-600 text-white">Completed</Badge>
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="p-3 space-y-1">
-        <h3 className="font-medium text-sm leading-snug line-clamp-2">
-          {book.title}
-        </h3>
         {book.author && (
-          <p className="text-xs text-muted-foreground truncate">
+          <p className="text-sm text-muted-foreground truncate">
             {book.author}
           </p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {metadata}
+        </p>
+        {book.readingProgress?.status === "completed" && (
+          <p className="text-sm text-muted-foreground font-medium">
+            Completed
+          </p>
+        )}
+
+        {(actionLabel && onAction) && (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            className="h-6 px-2 text-sm"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onAction();
+            }}
+          >
+            {actionLabel}
+          </Button>
         )}
 
         {/* Progress bar — reading only */}
         {book.readingProgress?.status === "reading" && (
           <div className="pt-2">
-            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+            <div className="flex justify-between text-sm text-muted-foreground mb-1">
               <span>Reading</span>
               <span>{book.readingProgress.percentComplete.toFixed(0)}%</span>
             </div>
-            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+            <div className="h-1.5 w-full bg-muted overflow-hidden">
               <div
-                className="h-full bg-primary rounded-full"
+                className="h-full bg-primary"
                 style={{ width: `${book.readingProgress.percentComplete}%` }}
               />
             </div>
@@ -277,7 +276,7 @@ export function BookCard({
                           {option.name}
                         </span>
                         {option.description && (
-                          <span className="block text-xs text-muted-foreground line-clamp-1">
+                          <span className="block text-sm text-muted-foreground line-clamp-1">
                             {option.description}
                           </span>
                         )}

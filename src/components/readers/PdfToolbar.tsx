@@ -120,7 +120,7 @@ export function PdfToolbar({
         </button>
 
         <button
-          className="text-gray-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-gray-700"
+          className="text-gray-400 hover:text-white text-sm px-1.5 py-0.5 rounded hover:bg-gray-700"
           onClick={onFit}
           aria-label="Fit page"
         >

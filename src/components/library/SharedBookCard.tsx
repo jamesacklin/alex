@@ -56,7 +56,7 @@ export function SharedBookCard({ book, shareToken }: SharedBookCardProps) {
         <div className="absolute top-2 right-2">
           <Badge
             variant="secondary"
-            className="text-xs font-semibold bg-white/90 text-gray-800"
+            className="text-sm font-semibold bg-white/90 text-gray-800"
           >
             {book.fileType === "pdf" ? "PDF" : "EPUB"}
           </Badge>
@@ -69,12 +69,12 @@ export function SharedBookCard({ book, shareToken }: SharedBookCardProps) {
           {book.title}
         </h3>
         {book.author && (
-          <p className="text-xs text-muted-foreground truncate">
+          <p className="text-sm text-muted-foreground truncate">
             {book.author}
           </p>
         )}
         {book.pageCount !== null && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {book.pageCount} {book.pageCount === 1 ? "page" : "pages"}
           </p>
         )}

@@ -113,8 +113,14 @@ export default function CollectionsClient() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">Collections</h1>
-        <Button type="button" onClick={() => setCreateOpen(true)}>
+        <h1 className="text-lg font-semibold">Collections</h1>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="px-0 text-sm"
+          onClick={() => setCreateOpen(true)}
+        >
           New Collection
         </Button>
       </div>
@@ -183,10 +189,10 @@ export default function CollectionsClient() {
       </Dialog>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="gap-4">
-              <CardHeader className="pb-2">
+            <Card key={i} className="gap-3">
+              <CardHeader className="pb-1">
                 <Skeleton className="h-5 w-2/3" />
                 <Skeleton className="h-4 w-1/3" />
               </CardHeader>
@@ -198,13 +204,13 @@ export default function CollectionsClient() {
           ))}
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+        <div className="border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
       ) : collections.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <svg
-            className="h-12 w-12 text-muted-foreground mb-4"
+            className="h-10 w-10 text-muted-foreground mb-4"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -222,13 +228,13 @@ export default function CollectionsClient() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {collections.map((collection) => (
             <Link key={collection.id} href={`/collections/${collection.id}`} className="group">
-              <Card className="h-full transition-shadow group-hover:shadow-md">
-                <CardHeader className="pb-2">
+              <Card className="h-full">
+                <CardHeader className="pb-1">
                   <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-lg flex-1">{collection.name}</CardTitle>
+                    <CardTitle className="text-sm font-semibold flex-1">{collection.name}</CardTitle>
                     {collection.shareToken && (
                       <div className="shrink-0" title="This collection is publicly shared">
                         <Link2 className="h-4 w-4 text-muted-foreground" />
@@ -238,12 +244,12 @@ export default function CollectionsClient() {
                   <CardAction className="text-sm text-muted-foreground">
                     {collection.bookCount} {collection.bookCount === 1 ? "book" : "books"}
                   </CardAction>
-                  <CardDescription className="line-clamp-2">
+                  <CardDescription className="text-sm line-clamp-2">
                     {collection.description || "No description"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     View collection
                   </div>
                 </CardContent>

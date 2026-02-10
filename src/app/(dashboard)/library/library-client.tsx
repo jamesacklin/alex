@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookCard, type Book } from "@/components/library/BookCard";
@@ -20,12 +19,6 @@ export default function LibraryClient() {
   const status = searchParams.get("status") || "all";
   const sort = searchParams.get("sort") || "added";
   const initialPage = Number(searchParams.get("page")) || 1;
-
-  // Local search state — debounced before pushing to URL
-  const [searchInput, setSearchInput] = useState(q);
-  useEffect(() => {
-    setSearchInput(q);
-  }, [q]);
 
   // Fetched data
   const [books, setBooks] = useState<Book[]>([]);
@@ -139,20 +132,6 @@ export default function LibraryClient() {
     router.push(`/library${params.toString() ? `?${params}` : ""}`);
   };
 
-  // Debounced search → URL (300 ms)
-  useEffect(() => {
-    if (searchInput === q) return;
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams(paramsString);
-      if (searchInput) params.set("q", searchInput);
-      else params.delete("q");
-      params.delete("page");
-      router.push(`/library?${params}`);
-    }, 300);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput, q]);
-
   // Update URL page param as user loads more (debounced 500ms)
   useEffect(() => {
     if (currentPage === 1) return;
@@ -202,7 +181,6 @@ export default function LibraryClient() {
   const hasFilters = q !== "" || type !== "all" || status !== "all";
 
   const clearFilters = () => {
-    setSearchInput("");
     const params = new URLSearchParams();
     if (sort !== "added") params.set("sort", sort);
     router.push(`/library${params.toString() ? `?${params}` : ""}`);
@@ -210,13 +188,13 @@ export default function LibraryClient() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Library</h1>
+      <h1 className="text-lg font-semibold">Library</h1>
 
       {/* Library update banner */}
       {libraryUpdateDetected && (
-        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div className="flex items-center gap-3 border-t-2 border-primary bg-muted p-2">
           <svg
-            className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0"
+            className="h-4 w-4 text-primary flex-shrink-0"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -226,79 +204,22 @@ export default function LibraryClient() {
           >
             <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
           </svg>
-          <p className="text-sm text-blue-900 dark:text-blue-100 flex-1">
+          <p className="text-sm text-foreground flex-1">
             Library updated. Refresh to see changes.
           </p>
           <Button
             size="sm"
             variant="outline"
             onClick={handleRefreshLibrary}
-            className="border-blue-300 dark:border-blue-700"
+            className="h-7 px-2 text-sm"
           >
             Refresh
           </Button>
         </div>
       )}
 
-      {/* Search + filter row */}
-      <div className="flex flex-wrap gap-3 items-end">
-        {/* Search input */}
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <button
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            onClick={() => navigate({ q: searchInput })}
-            aria-label="Search"
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-          </button>
-
-          <Input
-            type="text"
-            placeholder="Search by title or author…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                navigate({ q: searchInput });
-              }
-            }}
-            className="pl-9 pr-8"
-          />
-
-          {searchInput && (
-            <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              onClick={() => setSearchInput("")}
-              aria-label="Clear search"
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          )}
-        </div>
-
+      {/* Filter row */}
+      <div className="flex flex-wrap gap-2 items-end">
         <BookFilters
           type={type}
           status={status}
@@ -329,11 +250,11 @@ export default function LibraryClient() {
 
       {/* Grid / Skeleton / Empty */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-lg border overflow-hidden">
+            <div key={i} className="border overflow-hidden">
               <Skeleton className="aspect-[2/3]" />
-              <div className="p-3 space-y-2">
+              <div className="p-2 space-y-2">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
               </div>
@@ -373,7 +294,7 @@ export default function LibraryClient() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {books.map((book) => (
               <BookCard key={book.id} book={book} />
             ))}
@@ -384,11 +305,11 @@ export default function LibraryClient() {
 
           {/* Loading more skeletons */}
           {isLoadingMore && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="rounded-lg border overflow-hidden">
+                <div key={i} className="border overflow-hidden">
                   <Skeleton className="aspect-[2/3]" />
-                  <div className="p-3 space-y-2">
+                  <div className="p-2 space-y-2">
                     <Skeleton className="h-4 w-3/4" />
                     <Skeleton className="h-3 w-1/2" />
                   </div>
