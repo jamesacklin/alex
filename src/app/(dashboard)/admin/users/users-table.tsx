@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -78,14 +79,22 @@ type CreateUserValues = z.infer<typeof createUserSchema>;
 export default function UsersTable({
   users,
   currentUserId,
+  actionsContainerId,
 }: {
   users: UserRow[];
   currentUserId: string;
+  actionsContainerId?: string;
 }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteEmail, setDeleteEmail] = useState("");
+  const [actionsContainer, setActionsContainer] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!actionsContainerId) return;
+    setActionsContainer(document.getElementById(actionsContainerId));
+  }, [actionsContainerId]);
 
   const form = useForm<CreateUserValues>({
     resolver: zodResolver(createUserSchema),
@@ -116,11 +125,28 @@ export default function UsersTable({
     setDeleteId(null);
   }
 
+  const addUserButton = (
+    <Button
+      variant="link"
+      size="sm"
+      className="px-0 text-sm"
+      onClick={() => setAddOpen(true)}
+    >
+      Add User
+    </Button>
+  );
+
   return (
     <TooltipProvider>
-      <div className="flex justify-end mb-4">
-        <Button onClick={() => setAddOpen(true)}>Add User</Button>
-      </div>
+      {actionsContainerId
+        ? actionsContainer
+          ? createPortal(addUserButton, actionsContainer)
+          : null
+        : (
+            <div className="flex justify-end mb-4">
+              {addUserButton}
+            </div>
+          )}
 
       <Table>
         <TableHeader>

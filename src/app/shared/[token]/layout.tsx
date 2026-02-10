@@ -26,7 +26,7 @@ export default function SharedLayout({
           <div className="flex items-center justify-between">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 text-xl font-bold hover:text-muted-foreground transition-colors"
+              className="inline-flex items-center gap-2 text-sm font-semibold hover:text-muted-foreground transition-colors"
             >
               <AppLogo className="h-6 w-6" />
               <span>Alex</span>

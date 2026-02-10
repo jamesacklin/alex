@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -31,48 +30,61 @@ export function BookFilters({
   return (
     <>
       {/* Type */}
-      <Select value={type} onValueChange={onTypeChange}>
-        <SelectTrigger className="w-36">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Types</SelectItem>
-          <SelectItem value="pdf">PDF</SelectItem>
-          <SelectItem value="epub">ePub</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-foreground">Type:</span>
+        <Select value={type} onValueChange={onTypeChange}>
+          <SelectTrigger size="sm" className="w-36 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="pdf">PDF</SelectItem>
+            <SelectItem value="epub">ePub</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Status */}
-      <Select value={status} onValueChange={onStatusChange}>
-        <SelectTrigger className="w-40">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Statuses</SelectItem>
-          <SelectItem value="not_started">Not Started</SelectItem>
-          <SelectItem value="reading">Reading</SelectItem>
-          <SelectItem value="completed">Completed</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-foreground">Status:</span>
+        <Select value={status} onValueChange={onStatusChange}>
+          <SelectTrigger size="sm" className="w-40 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="not_started">Not Started</SelectItem>
+            <SelectItem value="reading">Reading</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Sort */}
-      <Select value={sort} onValueChange={onSortChange}>
-        <SelectTrigger className="w-44">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="added">Recently Added</SelectItem>
-          <SelectItem value="read">Recently Read</SelectItem>
-          <SelectItem value="title">Title A–Z</SelectItem>
-          <SelectItem value="author">Author A–Z</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-foreground">Sort by:</span>
+        <Select value={sort} onValueChange={onSortChange}>
+          <SelectTrigger size="sm" className="w-44 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="added">Recently Added</SelectItem>
+            <SelectItem value="read">Recently Read</SelectItem>
+            <SelectItem value="title">Title A–Z</SelectItem>
+            <SelectItem value="author">Author A–Z</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Clear filters */}
       {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={onClearFilters} className="text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Clear filters
-        </Button>
+        </button>
       )}
     </>
   );

@@ -222,7 +222,7 @@ export function EpubReader({
               setRenditionReady(false);
               setReloadToken((prev) => prev + 1);
             }}
-            className="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
+            className="text-sm px-3 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
           >
             Retry
           </button>

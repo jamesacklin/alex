@@ -15,7 +15,7 @@ export default function NotFound() {
         <line x1="8" y1="8" x2="16" y2="16" />
         <line x1="16" y1="8" x2="8" y2="16" />
       </svg>
-      <h1 className="text-2xl font-bold mb-2">Collection Not Found</h1>
+      <h1 className="text-lg font-semibold mb-2">Collection Not Found</h1>
       <p className="text-muted-foreground max-w-md">
         This collection doesn&apos;t exist or is no longer shared. Please check
         the link and try again.

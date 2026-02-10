@@ -87,13 +87,13 @@ export default function SharedCollectionClient({
       {/* Collection metadata */}
       <div className="space-y-3">
         <div className="flex items-start gap-3">
-          <h1 className="text-3xl font-bold flex-1">{collection.name}</h1>
-          <Badge variant="secondary" className="text-xs">
+          <h1 className="text-lg font-semibold flex-1">{collection.name}</h1>
+          <Badge variant="secondary" className="text-sm">
             Shared Collection
           </Badge>
         </div>
         {collection.description && (
-          <p className="text-muted-foreground text-lg leading-relaxed">
+          <p className="text-muted-foreground text-sm leading-relaxed">
             {collection.description}
           </p>
         )}
