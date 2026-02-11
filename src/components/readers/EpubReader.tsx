@@ -22,6 +22,8 @@ type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
 type EpubContent = { document?: Document };
 type RenditionLocation = { start?: { cfi?: string; href?: string } };
+type RenditionSection = { index?: number };
+type RenderedSectionIdentity = { index: number; href?: string };
 
 function getLocationStart(
   location: RenditionLocation | RenditionLocation[] | null | undefined,
@@ -67,8 +69,23 @@ export function EpubReader({
   const autoAdvanceAttached = useRef(new WeakSet<Document>());
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
   const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
+  const autoAdvanceWheelTargets = useRef(new WeakSet<EventTarget>());
   const lastScrollPositions = useRef(new WeakMap<object, number>());
-  const pendingPrevTimer = useRef<number | null>(null);
+  const renderedSectionByDoc = useRef(
+    new WeakMap<Document, RenderedSectionIdentity>(),
+  );
+  const renderedSectionByFrame = useRef(
+    new WeakMap<HTMLElement, RenderedSectionIdentity>(),
+  );
+  const pendingSectionTransition = useRef<{
+    direction: "prev";
+    targetIndex: number;
+    requestedAt: number;
+  } | null>(null);
+  const lastWheelIntent = useRef<{
+    direction: "up" | "down";
+    at: number;
+  } | null>(null);
   const lastLocalPersistAt = useRef(0);
   const lastLocalPersistedCfi = useRef<string | null>(null);
 
@@ -350,6 +367,127 @@ export function EpubReader({
     return true;
   }, []);
 
+  const resolveCurrentSectionIndex = useCallback((rendition: Rendition) => {
+    const currentLocation = rendition.currentLocation() as
+      | RenditionLocation
+      | RenditionLocation[]
+      | null;
+    const start = getLocationStart(currentLocation);
+    const href = start?.href;
+    if (!href) return null;
+
+    const normalizeHref = (value: string) =>
+      decodeURIComponent(value)
+        .split("#")[0]
+        .split("?")[0]
+        .replace(/^https?:\/\/[^/]+/i, "")
+        .replace(/^file:\/\//i, "")
+        .replace(/^\/+/, "")
+        .replace(/^\.\//, "");
+
+    const normalizedHref = normalizeHref(href);
+    const section =
+      rendition.book.spine.get(href) ||
+      rendition.book.spine.get(normalizedHref) ||
+      rendition.book.spine.get(`/${normalizedHref}`);
+
+    if (section && typeof section.index === "number") {
+      return section.index;
+    }
+
+    const spineItems = (
+      rendition.book.spine as unknown as {
+        spineItems?: Array<{ href?: string; url?: string; index?: number }>;
+      }
+    ).spineItems;
+    if (!Array.isArray(spineItems)) return null;
+
+    const matched = spineItems.find((item) => {
+      if (typeof item.index !== "number") return false;
+      const candidates = [item.href, item.url].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      return candidates.some((candidate) => {
+        const normalizedCandidate = normalizeHref(candidate);
+        return (
+          normalizedCandidate === normalizedHref ||
+          normalizedCandidate.endsWith(normalizedHref) ||
+          normalizedHref.endsWith(normalizedCandidate)
+        );
+      });
+    });
+
+    return matched && typeof matched.index === "number" ? matched.index : null;
+  }, []);
+
+  const recordWheelIntent = useCallback((deltaY: number) => {
+    if (deltaY === 0) return;
+    lastWheelIntent.current = {
+      direction: deltaY < 0 ? "up" : "down",
+      at: Date.now(),
+    };
+  }, []);
+
+  const getWheelDeltaY = useCallback((event: Event) => {
+    const delta = (event as { deltaY?: unknown }).deltaY;
+    return typeof delta === "number" && Number.isFinite(delta) ? delta : null;
+  }, []);
+
+  const resolveRenderedSectionIndex = useCallback(
+    (sourceContext?: EventTarget | null) => {
+      if (!sourceContext) return null;
+
+      if (
+        sourceContext instanceof HTMLElement &&
+        renderedSectionByFrame.current.has(sourceContext)
+      ) {
+        return renderedSectionByFrame.current.get(sourceContext)!.index;
+      }
+
+      const doc =
+        sourceContext instanceof Document
+          ? sourceContext
+          : sourceContext instanceof Element
+            ? sourceContext.ownerDocument
+            : sourceContext instanceof Window
+              ? sourceContext.document
+              : null;
+
+      if (!doc) return null;
+      const section = renderedSectionByDoc.current.get(doc);
+      return section?.index ?? null;
+    },
+    [],
+  );
+
+  const triggerPrevBoundaryTransition = useCallback((sourceContext?: EventTarget | null) => {
+    const pending = pendingSectionTransition.current;
+    if (pending && Date.now() - pending.requestedAt <= 2000) return;
+    if (pending && Date.now() - pending.requestedAt > 2000) {
+      pendingSectionTransition.current = null;
+    }
+    if (!shouldTriggerEdgeAction("prev")) return;
+
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    const renderedIndex = resolveRenderedSectionIndex(sourceContext);
+    const currentIndex =
+      renderedIndex ?? resolveCurrentSectionIndex(rendition);
+
+    if (currentIndex !== null && currentIndex > 0) {
+      pendingSectionTransition.current = {
+        direction: "prev",
+        targetIndex: currentIndex - 1,
+        requestedAt: Date.now(),
+      };
+      rendition.display(currentIndex - 1);
+      return;
+    }
+
+    rendition.prev();
+  }, [resolveCurrentSectionIndex, resolveRenderedSectionIndex, shouldTriggerEdgeAction]);
+
   const handleBoundaryScroll = useCallback(
     (
       scrollingElement: Element,
@@ -359,58 +497,41 @@ export function EpubReader({
       const { scrollTop, clientHeight, scrollHeight } = target;
       const previousTop = lastScrollPositions.current.get(lockKey);
       lastScrollPositions.current.set(lockKey, scrollTop);
+      const wheelIntent = lastWheelIntent.current;
+      const wheelIntentIsFresh =
+        wheelIntent && Date.now() - wheelIntent.at <= 300;
+      const intentUp = wheelIntentIsFresh && wheelIntent.direction === "up";
+      const intentDown = wheelIntentIsFresh && wheelIntent.direction === "down";
 
       persistCurrentLocationToLocal();
-      if (previousTop === undefined) return;
       if (scrollHeight <= clientHeight + 8) return;
       if (!renditionReady) return;
 
-      const delta = scrollTop - previousTop;
+      const delta =
+        previousTop === undefined ? 0 : scrollTop - previousTop;
+      const shouldTriggerNext =
+        scrollTop + clientHeight >= scrollHeight - 24 &&
+        (delta > 0 || (delta === 0 && !!intentDown));
+      const shouldTriggerPrev =
+        scrollTop <= 24 &&
+        (delta < 0 || (delta === 0 && !!intentUp));
 
-      if (delta > 0 && scrollTop + clientHeight >= scrollHeight - 24) {
+      if (shouldTriggerNext) {
         if (!shouldTriggerEdgeAction("next")) return;
         renditionRef.current?.next();
         return;
       }
 
-      if (delta < 0 && scrollTop <= 24) {
-        if (!shouldTriggerEdgeAction("prev")) return;
-        if (pendingPrevTimer.current !== null) return;
-
-        pendingPrevTimer.current = window.setTimeout(() => {
-          pendingPrevTimer.current = null;
-          const rendition = renditionRef.current;
-          if (!rendition) return;
-
-          const book = rendition.book;
-          if (book?.locations && book.locations.length() > 0) {
-            const currentLocation = rendition.currentLocation() as
-              | RenditionLocation
-              | RenditionLocation[]
-              | null;
-            const start = getLocationStart(currentLocation);
-            const cfi = start?.cfi;
-            if (cfi?.startsWith("epubcfi(")) {
-              const currentPercent = book.locations.percentageFromCfi(cfi) * 100;
-              const targetPercent = Math.max(currentPercent - 0.35, 0);
-              const targetCfi = book.locations.cfiFromPercentage(
-                targetPercent / 100,
-              );
-              if (
-                typeof targetCfi === "string" &&
-                targetCfi.startsWith("epubcfi(") &&
-                targetCfi !== cfi
-              ) {
-                rendition.display(targetCfi);
-                return;
-              }
-            }
-          }
-          rendition.prev();
-        }, 300);
+      if (shouldTriggerPrev) {
+        triggerPrevBoundaryTransition(scrollingElement);
       }
     },
-    [persistCurrentLocationToLocal, renditionReady, shouldTriggerEdgeAction],
+    [
+      persistCurrentLocationToLocal,
+      renditionReady,
+      triggerPrevBoundaryTransition,
+      shouldTriggerEdgeAction,
+    ],
   );
 
   const attachAutoAdvance = useCallback(
@@ -445,9 +566,41 @@ export function EpubReader({
         target.addEventListener("scroll", handler as EventListener, {
           passive: true,
         });
+        if (!autoAdvanceWheelTargets.current.has(target)) {
+          autoAdvanceWheelTargets.current.add(target);
+          target.addEventListener(
+            "wheel",
+            ((event: Event) => {
+              const deltaY = getWheelDeltaY(event);
+              if (deltaY === null) return;
+
+              recordWheelIntent(deltaY);
+              const scrollingElement =
+                doc.scrollingElement || doc.documentElement || doc.body;
+              const currentTop =
+                scrollingElement &&
+                scrollingElement instanceof HTMLElement
+                  ? scrollingElement.scrollTop
+                  : 0;
+              if (
+                deltaY < 0 &&
+                scrollingElement &&
+                (currentTop <= 24 || currentTop + deltaY <= 24)
+              ) {
+                triggerPrevBoundaryTransition(scrollingElement);
+              }
+            }) as EventListener,
+            { passive: true },
+          );
+        }
       });
     },
-    [handleBoundaryScroll],
+    [
+      getWheelDeltaY,
+      handleBoundaryScroll,
+      recordWheelIntent,
+      triggerPrevBoundaryTransition,
+    ],
   );
 
   const attachAutoAdvanceContainer = useCallback(
@@ -458,10 +611,23 @@ export function EpubReader({
       const handler = () => {
         handleBoundaryScroll(container, container);
       };
+      const wheelHandler = (event: WheelEvent) => {
+        recordWheelIntent(event.deltaY);
+        if (
+          event.deltaY < 0 &&
+          (container.scrollTop <= 24 || container.scrollTop + event.deltaY <= 24)
+        ) {
+          triggerPrevBoundaryTransition(container);
+        }
+      };
 
       container.addEventListener("scroll", handler, { passive: true });
+      if (!autoAdvanceWheelTargets.current.has(container)) {
+        autoAdvanceWheelTargets.current.add(container);
+        container.addEventListener("wheel", wheelHandler, { passive: true });
+      }
     },
-    [handleBoundaryScroll],
+    [handleBoundaryScroll, recordWheelIntent, triggerPrevBoundaryTransition],
   );
 
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
@@ -574,10 +740,7 @@ export function EpubReader({
 
   useEffect(() => {
     return () => {
-      if (pendingPrevTimer.current !== null) {
-        window.clearTimeout(pendingPrevTimer.current);
-        pendingPrevTimer.current = null;
-      }
+      pendingSectionTransition.current = null;
       persistCurrentLocationToLocal(true);
     };
   }, [persistCurrentLocationToLocal]);
@@ -637,16 +800,23 @@ export function EpubReader({
       rendition.flow("scrolled-continuous");
       rendition.spread("none");
 
-      const handleRenderedContent = (
-        contents: EpubContent | null | undefined,
+      const getDocumentFromContents = (
+        contents: EpubContent | HTMLIFrameElement | unknown,
       ) => {
-        const doc =
-          contents?.document ||
+        return (
+          (contents as EpubContent | null | undefined)?.document ||
           (contents &&
           typeof HTMLIFrameElement !== "undefined" &&
           contents instanceof HTMLIFrameElement
             ? contents.contentDocument
-            : null);
+            : null)
+        );
+      };
+
+      const handleRenderedContent = (
+        contents: EpubContent | null | undefined,
+      ) => {
+        const doc = getDocumentFromContents(contents);
         if (!doc) return;
         applyThemeToDocument(doc);
         attachAutoAdvance(doc);
@@ -670,6 +840,73 @@ export function EpubReader({
           handleRenderedContent(contents as EpubContent);
         });
       }
+
+      rendition.on(
+        "rendered",
+        (section: RenditionSection | undefined, contents: unknown) => {
+          const doc = getDocumentFromContents(contents);
+          const sectionIdentity =
+            typeof section?.index === "number"
+              ? ({
+                  index: section.index,
+                  href: (section as RenditionSection & { href?: string }).href,
+                } satisfies RenderedSectionIdentity)
+              : null;
+          if (doc && sectionIdentity) {
+            renderedSectionByDoc.current.set(doc, sectionIdentity);
+            const frame = doc.defaultView?.frameElement as
+              | HTMLElement
+              | null
+              | undefined;
+            if (frame) {
+              renderedSectionByFrame.current.set(frame, sectionIdentity);
+            }
+          }
+
+          const pending = pendingSectionTransition.current;
+          if (!pending) return;
+
+          const age = Date.now() - pending.requestedAt;
+          if (age > 2000) {
+            pendingSectionTransition.current = null;
+            return;
+          }
+
+          if (pending.direction === "prev" && section?.index !== pending.targetIndex) {
+            return;
+          }
+
+          if (!doc) return;
+          const frame = doc.defaultView?.frameElement as
+            | HTMLElement
+            | null
+            | undefined;
+          const container = frame?.closest(".epub-container") as
+            | HTMLElement
+            | null
+            | undefined;
+          if (!frame || !container) return;
+
+          const applyBottomAnchor = () => {
+            const containerRect = container.getBoundingClientRect();
+            const frameRect = frame.getBoundingClientRect();
+            const frameTopInContainer =
+              container.scrollTop + (frameRect.top - containerRect.top);
+            const targetTop = Math.max(
+              frameTopInContainer + frameRect.height - container.clientHeight - 24,
+              0,
+            );
+            container.scrollTop = targetTop;
+            lastScrollPositions.current.set(container, targetTop);
+          };
+
+          // Run on the next paint so frame height is stable.
+          requestAnimationFrame(() => {
+            applyBottomAnchor();
+            pendingSectionTransition.current = null;
+          });
+        },
+      );
 
       // Hook error listener for book load failures
       rendition.book.on("openFailed", (err: unknown) => {
