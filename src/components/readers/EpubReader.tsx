@@ -39,9 +39,6 @@ export function EpubReader({
   backUrl,
   onLocationChange,
 }: EpubReaderProps) {
-  const [location, setLocation] = useState<string | number>(
-    initialLocation ?? 0,
-  );
   const renditionRef = useRef<Rendition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +46,6 @@ export function EpubReader({
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [fontSize, setFontSize] = useState<FontSize>("medium");
   const [renditionReady, setRenditionReady] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -58,6 +54,51 @@ export function EpubReader({
   const autoAdvanceAttached = useRef(new WeakSet<Document>());
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
   const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
+
+  const getInitialFontSize = useCallback((): FontSize => {
+    if (typeof window === "undefined") return "medium";
+    try {
+      const saved = localStorage.getItem("epub-reader-settings");
+      if (saved) {
+        const { fontSize: savedFontSize } = JSON.parse(saved);
+        if (
+          savedFontSize === "small" ||
+          savedFontSize === "medium" ||
+          savedFontSize === "large" ||
+          savedFontSize === "xl"
+        ) {
+          return savedFontSize;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load reader settings:", err);
+    }
+    return "medium";
+  }, []);
+
+  const getInitialLocation = useCallback((): string | number => {
+    if (initialLocation) return initialLocation;
+    if (typeof window === "undefined") return 0;
+    try {
+      const saved = localStorage.getItem(progressKey);
+      if (saved) {
+        const { epubLocation } = JSON.parse(saved) as {
+          epubLocation?: string;
+        };
+        if (epubLocation) return epubLocation;
+      }
+    } catch (err) {
+      console.error("Failed to load epub progress:", err);
+    }
+    return 0;
+  }, [initialLocation, progressKey]);
+
+  const [location, setLocation] = useState<string | number>(() =>
+    getInitialLocation(),
+  );
+  const [fontSize, setFontSize] = useState<FontSize>(() =>
+    getInitialFontSize(),
+  );
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -287,34 +328,6 @@ export function EpubReader({
       height: "100%",
     },
   };
-
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem("epub-reader-settings");
-    if (saved) {
-      try {
-        const { fontSize: savedFontSize } = JSON.parse(saved);
-        if (savedFontSize) setFontSize(savedFontSize);
-      } catch (err) {
-        console.error("Failed to load reader settings:", err);
-      }
-    }
-  }, []);
-
-  // Restore reader location from localStorage when no server position is provided
-  useEffect(() => {
-    if (initialLocation) return;
-    const saved = localStorage.getItem(progressKey);
-    if (!saved) return;
-    try {
-      const { epubLocation } = JSON.parse(saved) as { epubLocation?: string };
-      if (epubLocation) {
-        setLocation(epubLocation);
-      }
-    } catch (err) {
-      console.error("Failed to load epub progress:", err);
-    }
-  }, [initialLocation, progressKey]);
 
   // Save settings to localStorage whenever they change
   useEffect(() => {
