@@ -53,6 +53,8 @@ export function EpubReader({
   const [renditionReady, setRenditionReady] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
+  const progressKey = `epub-progress:${bookId}`;
+
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
     const read = (name: string, fallback: string) =>
@@ -208,6 +210,21 @@ export function EpubReader({
     }
   }, []);
 
+  // Restore reader location from localStorage when no server position is provided
+  useEffect(() => {
+    if (initialLocation) return;
+    const saved = localStorage.getItem(progressKey);
+    if (!saved) return;
+    try {
+      const { epubLocation } = JSON.parse(saved) as { epubLocation?: string };
+      if (epubLocation) {
+        setLocation(epubLocation);
+      }
+    } catch (err) {
+      console.error("Failed to load epub progress:", err);
+    }
+  }, [initialLocation, progressKey]);
+
   // Save settings to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem("epub-reader-settings", JSON.stringify({ fontSize }));
@@ -266,6 +283,10 @@ export function EpubReader({
         try {
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
           onLocationChange(epubcfi, percent);
+          localStorage.setItem(
+            progressKey,
+            JSON.stringify({ epubLocation: epubcfi, percentComplete: percent }),
+          );
         } catch (err) {
           console.error(
             "Failed to calculate percentage from CFI:",
@@ -275,7 +296,7 @@ export function EpubReader({
         }
       }
     },
-    [onLocationChange],
+    [onLocationChange, progressKey],
   );
 
   const handleGetRendition = useCallback((rendition: Rendition) => {
@@ -284,6 +305,10 @@ export function EpubReader({
     // Set font to Times New Roman
     rendition.themes.font("Times New Roman");
     applyThemeToRendition(rendition);
+
+    // Single-column, continuous vertical scroll
+    rendition.flow("scrolled-doc");
+    rendition.spread("none");
 
     rendition.hooks.content.register((contents: EpubContent) => {
       if (contents?.document) {
