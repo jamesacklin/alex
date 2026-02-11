@@ -41,14 +41,12 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
 
   // --- Container dimensions ---
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
-  const [containerHeight, setContainerHeight] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     const update = () => {
       setContainerWidth(node.clientWidth);
-      setContainerHeight(node.clientHeight);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -56,64 +54,77 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
     return () => observer.disconnect();
   }, []);
 
-  // --- PDF document proxy + natural page dimensions ---
+  // --- PDF document proxy ---
   const docProxyRef = useRef<{ getPage: (pageNum: number) => Promise<unknown>; numPages: number } | null>(null);
   const [docReady, setDocReady] = useState(0); // bumped in onLoadSuccess so effects that need the proxy re-run
-  const [pageNaturalWidth, setPageNaturalWidth] = useState<number | null>(null);
-  const [pageNaturalHeight, setPageNaturalHeight] = useState<number | null>(null);
+  const [pageAspectRatio, setPageAspectRatio] = useState<number | null>(null);
+
+  const pageContainerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const visibleRatiosRef = useRef<Map<number, number>>(new Map());
+  const initialScrollDone = useRef(false);
+  const restoreTargetRef = useRef<number | null>(null);
+  const restoringRef = useRef(false);
+  const restoreAttemptsRef = useRef(0);
 
   useEffect(() => {
     setCurrentPage(initialPage);
+    initialScrollDone.current = false;
+    restoreTargetRef.current = initialPage;
   }, [initialPage]);
 
   useEffect(() => {
-    if (!docProxyRef.current) return;
-    docProxyRef.current.getPage(currentPage).then((page) => {
-      const typedPage = page as { getViewport: (opts: { scale: number }) => { width: number; height: number } };
-      const vp = typedPage.getViewport({ scale: 1 });
-      setPageNaturalWidth(vp.width);
-      setPageNaturalHeight(vp.height);
-    });
-  }, [currentPage, docReady]);
+    const container = containerRef.current;
+    if (!container) return;
+    const cancelRestore = () => {
+      if (restoreTargetRef.current) {
+        restoreTargetRef.current = null;
+        restoringRef.current = false;
+      }
+    };
+    container.addEventListener("wheel", cancelRestore, { passive: true });
+    container.addEventListener("touchstart", cancelRestore, { passive: true });
+    container.addEventListener("pointerdown", cancelRestore);
+    return () => {
+      container.removeEventListener("wheel", cancelRestore);
+      container.removeEventListener("touchstart", cancelRestore);
+      container.removeEventListener("pointerdown", cancelRestore);
+    };
+  }, []);
 
   // --- Zoom ---
   const [zoomPercent, setZoomPercent] = useState(100);
   const [fitReady, setFitReady] = useState(false);
   const userZoomed = useRef(false); // set true on first manual zoom; stops auto-fit
 
-  // In auto-fit mode compute width directly from dimensions (single render, no flicker).
-  // Once the user zooms manually, fall back to zoomPercent-based width.
   const effectiveWidth = useMemo(() => {
     if (!containerWidth) return undefined;
-    if (!userZoomed.current && containerHeight && pageNaturalWidth && pageNaturalHeight) {
-      const availW = containerWidth - 32;
-      const availH = containerHeight - 32;
-      return Math.min(availW, availH * pageNaturalWidth / pageNaturalHeight);
-    }
     return containerWidth * (zoomPercent / 100);
-  }, [containerWidth, containerHeight, pageNaturalWidth, pageNaturalHeight, zoomPercent]);
+  }, [containerWidth, zoomPercent]);
 
   const zoomIn = () => { userZoomed.current = true; setZoomPercent((z) => Math.min(200, z + 25)); };
   const zoomOut = () => { userZoomed.current = true; setZoomPercent((z) => Math.max(50, z - 25)); };
   const fit = () => {
-    if (!containerWidth || !containerHeight || !pageNaturalWidth || !pageNaturalHeight) return;
+    if (!containerWidth) return;
     const availW = containerWidth - 32; // p-4 padding each side
-    const availH = containerHeight - 32;
     const fitW = (availW / containerWidth) * 100;
-    const fitH = (availH * pageNaturalWidth) / (pageNaturalHeight * containerWidth) * 100;
-    setZoomPercent(Math.min(200, Math.max(50, Math.floor(Math.min(fitW, fitH)))));
+    setZoomPercent(Math.min(200, Math.max(50, Math.floor(fitW))));
   };
 
-  // Auto-fit: keeps page fitted as dimensions settle (toolbar appearing, etc.)
+  // Auto-fit: keeps pages fitted to width as dimensions settle (toolbar appearing, etc.)
   // until the user manually zooms. fitReady gates the <Page> render so it never
   // paints before the first fit calculation.
   useEffect(() => {
-    if (userZoomed.current) return;
-    if (!containerWidth || !containerHeight || !pageNaturalWidth || !pageNaturalHeight) return;
-    fit();
+    if (!containerWidth) return;
+    if (userZoomed.current) {
+      if (!fitReady) setFitReady(true);
+      return;
+    }
+    const availW = containerWidth - 32;
+    const fitW = (availW / containerWidth) * 100;
+    setZoomPercent(Math.min(200, Math.max(50, Math.floor(fitW))));
     if (!fitReady) setFitReady(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerWidth, containerHeight, pageNaturalWidth, pageNaturalHeight]);
+  }, [containerWidth, fitReady]);
 
   // --- Progress ---
   useEffect(() => {
@@ -122,14 +133,134 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
     }
   }, [currentPage, numPages, onPageChange]);
 
+  const scrollToPage = useCallback((page: number, opts?: { behavior?: ScrollBehavior }) => {
+    if (!numPages) return;
+    const target = Math.min(Math.max(page, 1), numPages);
+    setError(null);
+    setCurrentPage(target);
+    const attempt = (tries: number) => {
+      const node = pageContainerRefs.current[target - 1];
+      const container = containerRef.current;
+      if (node && container) {
+        const containerRect = container.getBoundingClientRect();
+        const nodeRect = node.getBoundingClientRect();
+        const top = nodeRect.top - containerRect.top + container.scrollTop;
+        container.scrollTo({ top, behavior: opts?.behavior ?? "auto" });
+        return;
+      }
+      if (tries < 60) {
+        requestAnimationFrame(() => attempt(tries + 1));
+      }
+    };
+    attempt(0);
+  }, [numPages]);
+
+  useEffect(() => {
+    if (!numPages) return;
+    const container = containerRef.current;
+    if (!container) return;
+    observerRef.current?.disconnect();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const ratios = visibleRatiosRef.current;
+        entries.forEach((entry) => {
+          const pageNumber = Number((entry.target as HTMLElement).dataset.pageNumber);
+          if (!pageNumber) return;
+          ratios.set(pageNumber, entry.isIntersecting ? entry.intersectionRatio : 0);
+        });
+        if (restoreTargetRef.current) {
+          return;
+        }
+        let bestPage = 0;
+        let bestRatio = 0;
+        ratios.forEach((ratio, pageNumber) => {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            bestPage = pageNumber;
+          }
+        });
+        if (bestPage > 0) {
+          setCurrentPage((prev) => (prev === bestPage ? prev : bestPage));
+        }
+      },
+      {
+        root: container,
+        threshold: [0, 0.25, 0.5, 0.75, 1],
+      },
+    );
+    observerRef.current = observer;
+    pageContainerRefs.current.forEach((node) => {
+      if (node) observer.observe(node);
+    });
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
+  }, [numPages]);
+
+  useEffect(() => {
+    if (!numPages || !fitReady) return;
+    if (initialScrollDone.current) return;
+    initialScrollDone.current = true;
+    const target = restoreTargetRef.current ?? initialPage;
+    if (!target) return;
+    scrollToPage(target, { behavior: "auto" });
+  }, [numPages, fitReady, initialPage, scrollToPage]);
+
+  useEffect(() => {
+    if (!numPages || !fitReady) return;
+    const target = restoreTargetRef.current;
+    if (!target) return;
+    restoringRef.current = true;
+    restoreAttemptsRef.current = 0;
+    const tick = () => {
+      const activeTarget = restoreTargetRef.current;
+      const container = containerRef.current;
+      if (!activeTarget || !container) {
+        restoringRef.current = false;
+        return;
+      }
+      const node = pageContainerRefs.current[activeTarget - 1];
+      if (node) {
+        const containerRect = container.getBoundingClientRect();
+        const nodeRect = node.getBoundingClientRect();
+        const desiredTop = nodeRect.top - containerRect.top + container.scrollTop;
+        const delta = Math.abs(desiredTop - container.scrollTop);
+        if (delta <= 2) {
+          restoreTargetRef.current = null;
+          restoringRef.current = false;
+          return;
+        }
+        container.scrollTo({ top: desiredTop, behavior: "auto" });
+      }
+      restoreAttemptsRef.current += 1;
+      if (restoreAttemptsRef.current < 240) {
+        requestAnimationFrame(tick);
+      } else {
+        restoreTargetRef.current = null;
+        restoringRef.current = false;
+      }
+    };
+    requestAnimationFrame(tick);
+  }, [numPages, fitReady, effectiveWidth, initialPage, docReady]);
+
+  const setPageRef = useCallback((pageIndex: number) => (node: HTMLDivElement | null) => {
+    const prev = pageContainerRefs.current[pageIndex];
+    if (prev && observerRef.current) {
+      observerRef.current.unobserve(prev);
+    }
+    pageContainerRefs.current[pageIndex] = node;
+    if (node && observerRef.current) {
+      observerRef.current.observe(node);
+    }
+  }, []);
+
   // --- Page navigation ---
   const pageInputRef = useRef<HTMLInputElement>(null);
   const goTo = useCallback((page: number) => {
-    if (numPages && page >= 1 && page <= numPages) {
-      setError(null);
-      setCurrentPage(page);
-    }
-  }, [numPages]);
+    restoreTargetRef.current = null;
+    scrollToPage(page);
+  }, [scrollToPage]);
 
   // --- Search ---
   const [searchOpen, setSearchOpen] = useState(false);
@@ -198,24 +329,36 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
     if (globalMatches.length === 0) return;
     const match = globalMatches[currentMatchIndex % globalMatches.length];
     if (match.page !== currentPage) {
-      setCurrentPage(match.page);
+      restoreTargetRef.current = null;
+      scrollToPage(match.page);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMatchIndex, globalMatches]);
 
-  // Highlight map for the page currently being rendered
-  const highlightMap = useMemo(() => {
-    if (!allPagesText || globalMatches.length === 0) return new Map<number, Array<[number, number, boolean]>>();
-    const pageItems = allPagesText[currentPage - 1];
-    if (!pageItems) return new Map();
-
+  // Highlight map for each page
+  const highlightMapsByPage = useMemo(() => {
+    if (!allPagesText || globalMatches.length === 0) {
+      return new Map<number, Map<number, Array<[number, number, boolean]>>>();
+    }
     const activeIdx = currentMatchIndex % globalMatches.length;
-    const boundaries = [0];
-    pageItems.forEach((str) => boundaries.push(boundaries[boundaries.length - 1] + str.length));
+    const pageBoundaries = new Map<number, number[]>();
+    const mapByPage = new Map<number, Map<number, Array<[number, number, boolean]>>>();
 
-    const map = new Map<number, Array<[number, number, boolean]>>();
+    const getBoundaries = (pageNumber: number, pageItems: string[]) => {
+      const cached = pageBoundaries.get(pageNumber);
+      if (cached) return cached;
+      const boundaries = [0];
+      pageItems.forEach((str) => boundaries.push(boundaries[boundaries.length - 1] + str.length));
+      pageBoundaries.set(pageNumber, boundaries);
+      return boundaries;
+    };
+
     globalMatches.forEach((match, globalIdx) => {
-      if (match.page !== currentPage) return;
+      const pageItems = allPagesText[match.page - 1];
+      if (!pageItems) return;
+      const boundaries = getBoundaries(match.page, pageItems);
+      const pageMap = mapByPage.get(match.page) ?? new Map<number, Array<[number, number, boolean]>>();
+      if (!mapByPage.has(match.page)) mapByPage.set(match.page, pageMap);
       const isActive = globalIdx === activeIdx;
       for (let i = 0; i < pageItems.length; i++) {
         const itemStart = boundaries[i];
@@ -224,17 +367,18 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
         if (match.start >= itemEnd) continue;
         const localStart = Math.max(0, match.start - itemStart);
         const localEnd = Math.min(pageItems[i].length, match.end - itemStart);
-        if (!map.has(i)) map.set(i, []);
-        map.get(i)!.push([localStart, localEnd, isActive]);
+        if (!pageMap.has(i)) pageMap.set(i, []);
+        pageMap.get(i)!.push([localStart, localEnd, isActive]);
       }
     });
 
-    return map;
-  }, [allPagesText, globalMatches, currentPage, currentMatchIndex]);
+    return mapByPage;
+  }, [allPagesText, globalMatches, currentMatchIndex]);
 
   // Custom text renderer — returns HTML string; matched regions wrapped in <mark>
-  const customTextRenderer = useCallback(({ str, itemIndex }: { str: string; itemIndex: number }) => {
-    const ranges = highlightMap.get(itemIndex);
+  const customTextRenderer = useCallback(({ str, itemIndex, pageNumber }: { str: string; itemIndex: number; pageNumber: number }) => {
+    const pageMap = highlightMapsByPage.get(pageNumber);
+    const ranges = pageMap?.get(itemIndex);
     if (!ranges || ranges.length === 0) return str;
 
     const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
@@ -248,7 +392,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
     });
     if (cursor < str.length) html += str.slice(cursor);
     return html;
-  }, [highlightMap]);
+  }, [highlightMapsByPage]);
 
   // --- Keyboard shortcuts ---
   useEffect(() => {
@@ -391,11 +535,14 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
               setCurrentPage((prev) => Math.min(prev, doc.numPages));
               docProxyRef.current = doc;
               setDocReady((n) => n + 1);
+              initialScrollDone.current = false;
+              pageContainerRefs.current = [];
+              visibleRatiosRef.current.clear();
+              restoreTargetRef.current = Math.min(initialPage, doc.numPages);
               doc.getPage(Math.min(initialPage, doc.numPages)).then((page) => {
                 const typedPage = page as { getViewport: (opts: { scale: number }) => { width: number; height: number } };
                 const vp = typedPage.getViewport({ scale: 1 });
-                setPageNaturalWidth(vp.width);
-                setPageNaturalHeight(vp.height);
+                setPageAspectRatio(vp.height / vp.width);
               });
             }}
             onLoadError={(err) => {
@@ -409,15 +556,33 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
             loading={<Spinner />}
           >
             {numPages && fitReady && (
-              <Page
-                pageNumber={currentPage}
-                width={effectiveWidth}
-                loading={<Spinner />}
-                onError={() => setError("Failed to load book. Please try again.")}
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
-                customTextRenderer={customTextRenderer as (props: { str: string; itemIndex: number }) => string}
-              />
+              <div className="flex w-full flex-col items-center gap-4">
+                {Array.from({ length: numPages }, (_, index) => {
+                  const pageNumber = index + 1;
+                  const placeholderHeight = pageAspectRatio && effectiveWidth
+                    ? Math.round(effectiveWidth * pageAspectRatio)
+                    : undefined;
+                  return (
+                    <div
+                      key={`page_${pageNumber}`}
+                      ref={setPageRef(index)}
+                      data-page-number={pageNumber}
+                      className="w-full flex justify-center"
+                      style={placeholderHeight ? { minHeight: `${placeholderHeight}px` } : undefined}
+                    >
+                      <Page
+                        pageNumber={pageNumber}
+                        width={effectiveWidth}
+                        loading={<Spinner />}
+                        onError={() => setError("Failed to load book. Please try again.")}
+                        renderTextLayer={true}
+                        renderAnnotationLayer={true}
+                        customTextRenderer={customTextRenderer as (props: { str: string; itemIndex: number; pageNumber: number }) => string}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </Document>
         )}
