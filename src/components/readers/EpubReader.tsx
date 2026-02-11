@@ -21,6 +21,18 @@ import type { Rendition } from "epubjs";
 type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
 type EpubContent = { document?: Document };
+type RenditionLocation = { start?: { cfi?: string; href?: string } };
+type RenditionSection = { index?: number };
+type RenderedSectionIdentity = { index: number; href?: string };
+
+function getLocationStart(
+  location: RenditionLocation | RenditionLocation[] | null | undefined,
+) {
+  if (!location) return null;
+  return Array.isArray(location)
+    ? (location[0]?.start ?? null)
+    : (location.start ?? null);
+}
 
 interface EpubReaderProps {
   bookId: string;
@@ -50,10 +62,32 @@ export function EpubReader({
   const [reloadToken, setReloadToken] = useState(0);
 
   const progressKey = `epub-progress:${bookId}`;
-  const autoAdvanceLocks = useRef(new WeakMap<object, number>());
+  const autoAdvanceLocks = useRef<{ next: number; prev: number }>({
+    next: 0,
+    prev: 0,
+  });
   const autoAdvanceAttached = useRef(new WeakSet<Document>());
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
   const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
+  const autoAdvanceWheelTargets = useRef(new WeakSet<EventTarget>());
+  const lastScrollPositions = useRef(new WeakMap<object, number>());
+  const renderedSectionByDoc = useRef(
+    new WeakMap<Document, RenderedSectionIdentity>(),
+  );
+  const renderedSectionByFrame = useRef(
+    new WeakMap<HTMLElement, RenderedSectionIdentity>(),
+  );
+  const pendingSectionTransition = useRef<{
+    direction: "prev";
+    targetIndex: number;
+    requestedAt: number;
+  } | null>(null);
+  const lastWheelIntent = useRef<{
+    direction: "up" | "down";
+    at: number;
+  } | null>(null);
+  const lastLocalPersistAt = useRef(0);
+  const lastLocalPersistedCfi = useRef<string | null>(null);
 
   const fontSizeMap = useMemo<Record<FontSize, string>>(
     () => ({
@@ -87,19 +121,25 @@ export function EpubReader({
   }, []);
 
   const getInitialLocation = useCallback((): string | number => {
-    if (initialLocation) return initialLocation;
-    if (typeof window === "undefined") return 0;
-    try {
-      const saved = localStorage.getItem(progressKey);
-      if (saved) {
-        const { epubLocation } = JSON.parse(saved) as {
-          epubLocation?: string;
-        };
-        if (epubLocation) return epubLocation;
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(progressKey);
+        if (saved) {
+          const { epubLocation } = JSON.parse(saved) as {
+            epubLocation?: string;
+          };
+          if (
+            typeof epubLocation === "string" &&
+            epubLocation.startsWith("epubcfi(")
+          ) {
+            return epubLocation;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load epub progress:", err);
       }
-    } catch (err) {
-      console.error("Failed to load epub progress:", err);
     }
+    if (initialLocation) return initialLocation;
     return 0;
   }, [initialLocation, progressKey]);
 
@@ -109,6 +149,10 @@ export function EpubReader({
   const [fontSize, setFontSize] = useState<FontSize>(() =>
     getInitialFontSize(),
   );
+  const epubFontFamily = "\"IBM Plex Serif\", serif";
+  const epubFontWeight = 300;
+  const epubLineHeight = 1.6;
+  const epubColumnWidth = "80ch";
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -123,18 +167,13 @@ export function EpubReader({
 
   const applyThemeToDocument = useCallback(
     (doc: Document) => {
-      const { background, text, primary, primaryForeground } =
-        getThemeVars();
+      const { background, text, primary, primaryForeground } = getThemeVars();
       doc.documentElement.style.setProperty(
         "background",
         background,
         "important",
       );
-      doc.documentElement.style.setProperty(
-        "color",
-        text,
-        "important",
-      );
+      doc.documentElement.style.setProperty("color", text, "important");
       if (doc.body) {
         doc.body.style.setProperty("background", background, "important");
         doc.body.style.setProperty("color", text, "important");
@@ -147,30 +186,92 @@ export function EpubReader({
       const style = doc.createElement("style");
       style.id = "alex-epub-theme";
       style.textContent = `
-        html, body { background: ${background} !important; color: ${text} !important; }
-        body, body * { color: ${text} !important; }
+        @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@300;400;700&display=swap");
+        html, body {
+          background: ${background} !important;
+          color: ${text} !important;
+          font-family: ${epubFontFamily} !important;
+          font-weight: ${epubFontWeight} !important;
+          line-height: ${epubLineHeight} !important;
+          font-size: ${fontSizeMap[fontSize]} !important;
+        }
+        html { margin: 0 !important; padding: 0 !important; }
+        body {
+          margin: 0 !important;
+          padding: 1.25rem 1rem 2rem !important;
+          box-sizing: border-box !important;
+        }
+        body > *,
+        body :where(div, section, article, main, p, li, ul, ol, blockquote, pre, table, figure, h1, h2, h3, h4, h5, h6) {
+          width: 100% !important;
+          max-width: ${epubColumnWidth} !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          box-sizing: border-box !important;
+        }
+        body * {
+          color: ${text} !important;
+          font-family: inherit !important;
+          font-size: inherit !important;
+          line-height: inherit !important;
+        }
+        img, svg, video, canvas, table, pre {
+          max-width: 100% !important;
+          height: auto !important;
+        }
         a { color: ${primary} !important; }
         ::selection { background: ${primary} !important; color: ${primaryForeground} !important; }
       `;
       doc.head.appendChild(style);
     },
-    [getThemeVars],
+    [
+      epubFontFamily,
+      epubFontWeight,
+      epubLineHeight,
+      epubColumnWidth,
+      fontSize,
+      fontSizeMap,
+      getThemeVars,
+    ],
   );
 
   const applyThemeToRendition = useCallback(
     (rendition: Rendition) => {
-      const { background, text, primary, primaryForeground } =
-        getThemeVars();
+      const { background, text, primary, primaryForeground } = getThemeVars();
       rendition.themes.default({
         html: {
           background: `${background} !important`,
           color: `${text} !important`,
+          fontSize: `${fontSizeMap[fontSize]} !important`,
         },
         body: {
           background: `${background} !important`,
           color: `${text} !important`,
+          fontFamily: `${epubFontFamily} !important`,
+          fontWeight: `${epubFontWeight} !important`,
+          lineHeight: `${epubLineHeight} !important`,
+          fontSize: `${fontSizeMap[fontSize]} !important`,
+          margin: "0 !important",
+          padding: "1.25rem 1rem 2rem !important",
+          boxSizing: "border-box !important",
         },
-        "body *": { color: `${text} !important` },
+        "body > *, body :where(div, section, article, main, p, li, ul, ol, blockquote, pre, table, figure, h1, h2, h3, h4, h5, h6)": {
+          width: "100% !important",
+          maxWidth: `${epubColumnWidth} !important`,
+          marginLeft: "auto !important",
+          marginRight: "auto !important",
+          boxSizing: "border-box !important",
+        },
+        "body *": {
+          color: `${text} !important`,
+          fontFamily: "inherit !important",
+          fontSize: "inherit !important",
+          lineHeight: "inherit !important",
+        },
+        "img, svg, video, canvas, table, pre": {
+          maxWidth: "100% !important",
+          height: "auto !important",
+        },
         a: { color: `${primary} !important` },
         "::selection": {
           background: `${primary} !important`,
@@ -179,82 +280,355 @@ export function EpubReader({
       });
 
       const rawContents = rendition.getContents?.() as unknown;
-      const contents = (Array.isArray(rawContents)
-        ? rawContents
-        : rawContents
-          ? [rawContents]
-          : []) as EpubContent[];
+      const contents = (
+        Array.isArray(rawContents)
+          ? rawContents
+          : rawContents
+            ? [rawContents]
+            : []
+      ) as EpubContent[];
       contents.forEach((content) => {
         if (content?.document) {
           applyThemeToDocument(content.document);
         }
       });
     },
-    [applyThemeToDocument, getThemeVars],
+    [
+      applyThemeToDocument,
+      epubFontFamily,
+      epubFontWeight,
+      epubLineHeight,
+      epubColumnWidth,
+      fontSize,
+      fontSizeMap,
+      getThemeVars,
+    ],
   );
 
-  const attachAutoAdvance = useCallback((doc: Document) => {
-    if (autoAdvanceAttached.current.has(doc)) return;
-    autoAdvanceAttached.current.add(doc);
 
-    const handler = (event?: Event) => {
-      const eventTarget =
-        event?.target && event.target instanceof Element
-          ? event.target
-          : null;
-      const scrollingElement =
-        eventTarget ||
-        doc.scrollingElement ||
-        doc.documentElement ||
-        doc.body;
-      if (!scrollingElement) return;
-      const { scrollTop, clientHeight, scrollHeight } = scrollingElement;
+  const applyFontSettingsToRendition = useCallback(
+    (rendition: Rendition) => {
+      rendition.themes.font(epubFontFamily);
+      rendition.themes.fontSize(fontSizeMap[fontSize]);
+    },
+    [epubFontFamily, fontSize, fontSizeMap],
+  );
 
-      if (scrollHeight <= clientHeight + 8) return;
 
-      if (scrollTop + clientHeight >= scrollHeight - 24) {
-        const now = Date.now();
-        const last = autoAdvanceLocks.current.get(doc) ?? 0;
-        if (now - last < 750) return;
-        autoAdvanceLocks.current.set(doc, now);
-        renditionRef.current?.next();
+  const persistLocalProgress = useCallback(
+    (epubLocation: string, percentComplete: number) => {
+      localStorage.setItem(
+        progressKey,
+        JSON.stringify({
+          epubLocation,
+          percentComplete,
+          updatedAt: Date.now(),
+        }),
+      );
+    },
+    [progressKey],
+  );
+
+  const persistCurrentLocationToLocal = useCallback(
+    (force = false) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      const book = rendition.book;
+      if (!book?.locations || book.locations.length() === 0) return;
+
+      const now = Date.now();
+      if (!force && now - lastLocalPersistAt.current < 350) return;
+
+      const currentLocation = rendition.currentLocation() as
+        | RenditionLocation
+        | RenditionLocation[]
+        | null;
+      const start = getLocationStart(currentLocation);
+      const epubcfi = start?.cfi;
+      if (!epubcfi || !epubcfi.startsWith("epubcfi(")) return;
+      if (!force && epubcfi === lastLocalPersistedCfi.current) return;
+
+      try {
+        const percent = book.locations.percentageFromCfi(epubcfi) * 100;
+        persistLocalProgress(epubcfi, percent);
+        lastLocalPersistAt.current = now;
+        lastLocalPersistedCfi.current = epubcfi;
+      } catch (err) {
+        console.error("Failed to persist current location:", err);
       }
-    };
+    },
+    [persistLocalProgress],
+  );
 
-    const targets: Array<EventTarget | null | undefined> = [
-      doc.defaultView,
-      doc.scrollingElement,
-      doc.documentElement,
-      doc.body,
-    ];
+  const shouldTriggerEdgeAction = useCallback((direction: "next" | "prev") => {
+    const now = Date.now();
+    if (now - autoAdvanceLocks.current[direction] < 750) return false;
+    autoAdvanceLocks.current[direction] = now;
+    return true;
+  }, []);
 
-    targets.forEach((target) => {
-      if (!target || autoAdvanceTargets.current.has(target)) return;
-      autoAdvanceTargets.current.add(target);
-      target.addEventListener("scroll", handler as EventListener, {
-        passive: true,
+  const resolveCurrentSectionIndex = useCallback((rendition: Rendition) => {
+    const currentLocation = rendition.currentLocation() as
+      | RenditionLocation
+      | RenditionLocation[]
+      | null;
+    const start = getLocationStart(currentLocation);
+    const href = start?.href;
+    if (!href) return null;
+
+    const normalizeHref = (value: string) =>
+      decodeURIComponent(value)
+        .split("#")[0]
+        .split("?")[0]
+        .replace(/^https?:\/\/[^/]+/i, "")
+        .replace(/^file:\/\//i, "")
+        .replace(/^\/+/, "")
+        .replace(/^\.\//, "");
+
+    const normalizedHref = normalizeHref(href);
+    const section =
+      rendition.book.spine.get(href) ||
+      rendition.book.spine.get(normalizedHref) ||
+      rendition.book.spine.get(`/${normalizedHref}`);
+
+    if (section && typeof section.index === "number") {
+      return section.index;
+    }
+
+    const spineItems = (
+      rendition.book.spine as unknown as {
+        spineItems?: Array<{ href?: string; url?: string; index?: number }>;
+      }
+    ).spineItems;
+    if (!Array.isArray(spineItems)) return null;
+
+    const matched = spineItems.find((item) => {
+      if (typeof item.index !== "number") return false;
+      const candidates = [item.href, item.url].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      return candidates.some((candidate) => {
+        const normalizedCandidate = normalizeHref(candidate);
+        return (
+          normalizedCandidate === normalizedHref ||
+          normalizedCandidate.endsWith(normalizedHref) ||
+          normalizedHref.endsWith(normalizedCandidate)
+        );
       });
     });
+
+    return matched && typeof matched.index === "number" ? matched.index : null;
   }, []);
 
-  const attachAutoAdvanceContainer = useCallback((container?: HTMLElement | null) => {
-    if (!container || autoAdvanceContainers.current.has(container)) return;
-    autoAdvanceContainers.current.add(container);
-
-    const handler = () => {
-      const { scrollTop, clientHeight, scrollHeight } = container;
-      if (scrollHeight <= clientHeight + 8) return;
-      if (scrollTop + clientHeight >= scrollHeight - 24) {
-        const now = Date.now();
-        const last = autoAdvanceLocks.current.get(container) ?? 0;
-        if (now - last < 750) return;
-        autoAdvanceLocks.current.set(container, now);
-        renditionRef.current?.next();
-      }
+  const recordWheelIntent = useCallback((deltaY: number) => {
+    if (deltaY === 0) return;
+    lastWheelIntent.current = {
+      direction: deltaY < 0 ? "up" : "down",
+      at: Date.now(),
     };
-
-    container.addEventListener("scroll", handler, { passive: true });
   }, []);
+
+  const getWheelDeltaY = useCallback((event: Event) => {
+    const delta = (event as { deltaY?: unknown }).deltaY;
+    return typeof delta === "number" && Number.isFinite(delta) ? delta : null;
+  }, []);
+
+  const resolveRenderedSectionIndex = useCallback(
+    (sourceContext?: EventTarget | null) => {
+      if (!sourceContext) return null;
+
+      if (
+        sourceContext instanceof HTMLElement &&
+        renderedSectionByFrame.current.has(sourceContext)
+      ) {
+        return renderedSectionByFrame.current.get(sourceContext)!.index;
+      }
+
+      const doc =
+        sourceContext instanceof Document
+          ? sourceContext
+          : sourceContext instanceof Element
+            ? sourceContext.ownerDocument
+            : sourceContext instanceof Window
+              ? sourceContext.document
+              : null;
+
+      if (!doc) return null;
+      const section = renderedSectionByDoc.current.get(doc);
+      return section?.index ?? null;
+    },
+    [],
+  );
+
+  const triggerPrevBoundaryTransition = useCallback((sourceContext?: EventTarget | null) => {
+    const pending = pendingSectionTransition.current;
+    if (pending && Date.now() - pending.requestedAt <= 2000) return;
+    if (pending && Date.now() - pending.requestedAt > 2000) {
+      pendingSectionTransition.current = null;
+    }
+    if (!shouldTriggerEdgeAction("prev")) return;
+
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    const renderedIndex = resolveRenderedSectionIndex(sourceContext);
+    const currentIndex =
+      renderedIndex ?? resolveCurrentSectionIndex(rendition);
+
+    if (currentIndex !== null && currentIndex > 0) {
+      pendingSectionTransition.current = {
+        direction: "prev",
+        targetIndex: currentIndex - 1,
+        requestedAt: Date.now(),
+      };
+      rendition.display(currentIndex - 1);
+      return;
+    }
+
+    rendition.prev();
+  }, [resolveCurrentSectionIndex, resolveRenderedSectionIndex, shouldTriggerEdgeAction]);
+
+  const handleBoundaryScroll = useCallback(
+    (
+      scrollingElement: Element,
+      lockKey: object,
+    ) => {
+      const target = scrollingElement as HTMLElement;
+      const { scrollTop, clientHeight, scrollHeight } = target;
+      const previousTop = lastScrollPositions.current.get(lockKey);
+      lastScrollPositions.current.set(lockKey, scrollTop);
+      const wheelIntent = lastWheelIntent.current;
+      const wheelIntentIsFresh =
+        wheelIntent && Date.now() - wheelIntent.at <= 300;
+      const intentUp = wheelIntentIsFresh && wheelIntent.direction === "up";
+      const intentDown = wheelIntentIsFresh && wheelIntent.direction === "down";
+
+      persistCurrentLocationToLocal();
+      if (scrollHeight <= clientHeight + 8) return;
+      if (!renditionReady) return;
+
+      const delta =
+        previousTop === undefined ? 0 : scrollTop - previousTop;
+      const shouldTriggerNext =
+        scrollTop + clientHeight >= scrollHeight - 24 &&
+        (delta > 0 || (delta === 0 && !!intentDown));
+      const shouldTriggerPrev =
+        scrollTop <= 24 &&
+        (delta < 0 || (delta === 0 && !!intentUp));
+
+      if (shouldTriggerNext) {
+        if (!shouldTriggerEdgeAction("next")) return;
+        renditionRef.current?.next();
+        return;
+      }
+
+      if (shouldTriggerPrev) {
+        triggerPrevBoundaryTransition(scrollingElement);
+      }
+    },
+    [
+      persistCurrentLocationToLocal,
+      renditionReady,
+      triggerPrevBoundaryTransition,
+      shouldTriggerEdgeAction,
+    ],
+  );
+
+  const attachAutoAdvance = useCallback(
+    (doc: Document) => {
+      if (autoAdvanceAttached.current.has(doc)) return;
+      autoAdvanceAttached.current.add(doc);
+
+      const handler = (event?: Event) => {
+        const eventTarget =
+          event?.target && event.target instanceof Element
+            ? event.target
+            : null;
+        const scrollingElement =
+          eventTarget ||
+          doc.scrollingElement ||
+          doc.documentElement ||
+          doc.body;
+        if (!scrollingElement) return;
+        handleBoundaryScroll(scrollingElement, doc);
+      };
+
+      const targets: Array<EventTarget | null | undefined> = [
+        doc.defaultView,
+        doc.scrollingElement,
+        doc.documentElement,
+        doc.body,
+      ];
+
+      targets.forEach((target) => {
+        if (!target || autoAdvanceTargets.current.has(target)) return;
+        autoAdvanceTargets.current.add(target);
+        target.addEventListener("scroll", handler as EventListener, {
+          passive: true,
+        });
+        if (!autoAdvanceWheelTargets.current.has(target)) {
+          autoAdvanceWheelTargets.current.add(target);
+          target.addEventListener(
+            "wheel",
+            ((event: Event) => {
+              const deltaY = getWheelDeltaY(event);
+              if (deltaY === null) return;
+
+              recordWheelIntent(deltaY);
+              const scrollingElement =
+                doc.scrollingElement || doc.documentElement || doc.body;
+              const currentTop =
+                scrollingElement &&
+                scrollingElement instanceof HTMLElement
+                  ? scrollingElement.scrollTop
+                  : 0;
+              if (
+                deltaY < 0 &&
+                scrollingElement &&
+                (currentTop <= 24 || currentTop + deltaY <= 24)
+              ) {
+                triggerPrevBoundaryTransition(scrollingElement);
+              }
+            }) as EventListener,
+            { passive: true },
+          );
+        }
+      });
+    },
+    [
+      getWheelDeltaY,
+      handleBoundaryScroll,
+      recordWheelIntent,
+      triggerPrevBoundaryTransition,
+    ],
+  );
+
+  const attachAutoAdvanceContainer = useCallback(
+    (container?: HTMLElement | null) => {
+      if (!container || autoAdvanceContainers.current.has(container)) return;
+      autoAdvanceContainers.current.add(container);
+
+      const handler = () => {
+        handleBoundaryScroll(container, container);
+      };
+      const wheelHandler = (event: WheelEvent) => {
+        recordWheelIntent(event.deltaY);
+        if (
+          event.deltaY < 0 &&
+          (container.scrollTop <= 24 || container.scrollTop + event.deltaY <= 24)
+        ) {
+          triggerPrevBoundaryTransition(container);
+        }
+      };
+
+      container.addEventListener("scroll", handler, { passive: true });
+      if (!autoAdvanceWheelTargets.current.has(container)) {
+        autoAdvanceWheelTargets.current.add(container);
+        container.addEventListener("wheel", wheelHandler, { passive: true });
+      }
+    },
+    [handleBoundaryScroll, recordWheelIntent, triggerPrevBoundaryTransition],
+  );
 
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
@@ -347,9 +721,8 @@ export function EpubReader({
   // Apply settings to rendition whenever they change
   useEffect(() => {
     if (!renditionRef.current) return;
-    renditionRef.current.themes.font("Times New Roman");
-    renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
-  }, [fontSize, fontSizeMap]);
+    applyFontSettingsToRendition(renditionRef.current);
+  }, [applyFontSettingsToRendition]);
 
   useEffect(() => {
     if (!renditionRef.current || !renditionReady) return;
@@ -365,6 +738,13 @@ export function EpubReader({
     return () => observer.disconnect();
   }, [applyThemeToRendition, renditionReady]);
 
+  useEffect(() => {
+    return () => {
+      pendingSectionTransition.current = null;
+      persistCurrentLocationToLocal(true);
+    };
+  }, [persistCurrentLocationToLocal]);
+
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
       setLocation(epubcfi);
@@ -375,9 +755,13 @@ export function EpubReader({
       const book = renditionRef.current.book;
 
       // Track current chapter for TOC highlighting
-      const currentLocation = renditionRef.current.currentLocation() as { start?: { href?: string } } | null;
-      if (currentLocation?.start?.href) {
-        setCurrentHref(currentLocation.start.href);
+      const currentLocation = renditionRef.current.currentLocation() as
+        | RenditionLocation
+        | RenditionLocation[]
+        | null;
+      const start = getLocationStart(currentLocation);
+      if (start?.href) {
+        setCurrentHref(start.href);
       }
 
       // Only save progress if locations are ready and CFI is valid
@@ -389,10 +773,9 @@ export function EpubReader({
         try {
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
           onLocationChange(epubcfi, percent);
-          localStorage.setItem(
-            progressKey,
-            JSON.stringify({ epubLocation: epubcfi, percentComplete: percent }),
-          );
+          persistLocalProgress(epubcfi, percent);
+          lastLocalPersistAt.current = Date.now();
+          lastLocalPersistedCfi.current = epubcfi;
         } catch (err) {
           console.error(
             "Failed to calculate percentage from CFI:",
@@ -402,101 +785,178 @@ export function EpubReader({
         }
       }
     },
-    [onLocationChange, progressKey],
+    [onLocationChange, persistLocalProgress],
   );
 
-  const handleGetRendition = useCallback((rendition: Rendition) => {
-    renditionRef.current = rendition;
+  const handleGetRendition = useCallback(
+    (rendition: Rendition) => {
+      renditionRef.current = rendition;
 
-    // Set font to Times New Roman
-    rendition.themes.font("Times New Roman");
-    rendition.themes.fontSize(fontSizeMap[fontSize]);
-    applyThemeToRendition(rendition);
+      // Set font family, size, and cross-book scaling behavior
+      applyFontSettingsToRendition(rendition);
+      applyThemeToRendition(rendition);
 
-    // Single-column, continuous vertical scroll
-    rendition.flow("scrolled-continuous");
-    rendition.spread("none");
+      // Single-column, continuous vertical scroll
+      rendition.flow("scrolled-continuous");
+      rendition.spread("none");
 
-    const handleRenderedContent = (contents: EpubContent | null | undefined) => {
-      const doc =
-        contents?.document ||
-        (contents &&
-        typeof HTMLIFrameElement !== "undefined" &&
-        contents instanceof HTMLIFrameElement
-          ? contents.contentDocument
-          : null);
-      if (!doc) return;
-      applyThemeToDocument(doc);
-      attachAutoAdvance(doc);
-      const frame = doc.defaultView?.frameElement as
-        | HTMLElement
-        | null
-        | undefined;
-      const container = frame?.closest(".epub-container") as
-        | HTMLElement
-        | null
-        | undefined;
-      attachAutoAdvanceContainer(container);
-    };
+      const getDocumentFromContents = (
+        contents: EpubContent | HTMLIFrameElement | unknown,
+      ) => {
+        return (
+          (contents as EpubContent | null | undefined)?.document ||
+          (contents &&
+          typeof HTMLIFrameElement !== "undefined" &&
+          contents instanceof HTMLIFrameElement
+            ? contents.contentDocument
+            : null)
+        );
+      };
 
-    if (rendition.hooks?.content?.register) {
-      rendition.hooks.content.register((contents: EpubContent) => {
-        handleRenderedContent(contents);
-      });
-    } else {
-      rendition.on("rendered", (_section: unknown, contents: unknown) => {
-        handleRenderedContent(contents as EpubContent);
-      });
-    }
+      const handleRenderedContent = (
+        contents: EpubContent | null | undefined,
+      ) => {
+        const doc = getDocumentFromContents(contents);
+        if (!doc) return;
+        applyThemeToDocument(doc);
+        attachAutoAdvance(doc);
+        const frame = doc.defaultView?.frameElement as
+          | HTMLElement
+          | null
+          | undefined;
+        const container = frame?.closest(".epub-container") as
+          | HTMLElement
+          | null
+          | undefined;
+        attachAutoAdvanceContainer(container);
+      };
 
-    // Hook error listener for book load failures
-    rendition.book.on("openFailed", (err: unknown) => {
-      console.error("ePub load error:", err);
-      setError("Failed to load book. Please try again.");
-      setLoading(false);
-    });
+      if (rendition.hooks?.content?.register) {
+        rendition.hooks.content.register((contents: EpubContent) => {
+          handleRenderedContent(contents);
+        });
+      } else {
+        rendition.on("rendered", (_section: unknown, contents: unknown) => {
+          handleRenderedContent(contents as EpubContent);
+        });
+      }
 
-    // Hide loading spinner once book is ready
-    rendition.book.ready
-      .then(() => {
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        console.error("Failed to load book:", err);
+      rendition.on(
+        "rendered",
+        (section: RenditionSection | undefined, contents: unknown) => {
+          const doc = getDocumentFromContents(contents);
+          const sectionIdentity =
+            typeof section?.index === "number"
+              ? ({
+                  index: section.index,
+                  href: (section as RenditionSection & { href?: string }).href,
+                } satisfies RenderedSectionIdentity)
+              : null;
+          if (doc && sectionIdentity) {
+            renderedSectionByDoc.current.set(doc, sectionIdentity);
+            const frame = doc.defaultView?.frameElement as
+              | HTMLElement
+              | null
+              | undefined;
+            if (frame) {
+              renderedSectionByFrame.current.set(frame, sectionIdentity);
+            }
+          }
+
+          const pending = pendingSectionTransition.current;
+          if (!pending) return;
+
+          const age = Date.now() - pending.requestedAt;
+          if (age > 2000) {
+            pendingSectionTransition.current = null;
+            return;
+          }
+
+          if (pending.direction === "prev" && section?.index !== pending.targetIndex) {
+            return;
+          }
+
+          if (!doc) return;
+          const frame = doc.defaultView?.frameElement as
+            | HTMLElement
+            | null
+            | undefined;
+          const container = frame?.closest(".epub-container") as
+            | HTMLElement
+            | null
+            | undefined;
+          if (!frame || !container) return;
+
+          const applyBottomAnchor = () => {
+            const containerRect = container.getBoundingClientRect();
+            const frameRect = frame.getBoundingClientRect();
+            const frameTopInContainer =
+              container.scrollTop + (frameRect.top - containerRect.top);
+            const targetTop = Math.max(
+              frameTopInContainer + frameRect.height - container.clientHeight - 24,
+              0,
+            );
+            container.scrollTop = targetTop;
+            lastScrollPositions.current.set(container, targetTop);
+          };
+
+          // Run on the next paint so frame height is stable.
+          requestAnimationFrame(() => {
+            applyBottomAnchor();
+            pendingSectionTransition.current = null;
+          });
+        },
+      );
+
+      // Hook error listener for book load failures
+      rendition.book.on("openFailed", (err: unknown) => {
+        console.error("ePub load error:", err);
         setError("Failed to load book. Please try again.");
         setLoading(false);
       });
 
-    // Extract table of contents
-    rendition.book.loaded.navigation
-      .then((nav: { toc?: TocItem[] }) => {
-        setToc(nav.toc || []);
-      })
-      .catch((err: unknown) => {
-        console.error("Failed to load table of contents:", err);
-      });
+      // Hide loading spinner once book is ready
+      rendition.book.ready
+        .then(() => {
+          setLoading(false);
+        })
+        .catch((err: unknown) => {
+          console.error("Failed to load book:", err);
+          setError("Failed to load book. Please try again.");
+          setLoading(false);
+        });
 
-    // Generate location spine for percentage tracking
-    rendition.book.ready
-      .then(() => {
-        return rendition.book.locations.generate(1024);
-      })
-      .then(() => {
-        // Signal that rendition is ready for theme application
-        setRenditionReady(true);
-      })
-      .catch((err: unknown) => {
-        console.error("Failed to generate locations:", err);
-        // Don't block the reader — percentage tracking just won't work
-      });
-  }, [
-    applyThemeToDocument,
-    applyThemeToRendition,
-    attachAutoAdvance,
-    attachAutoAdvanceContainer,
-    fontSize,
-    fontSizeMap,
-  ]);
+      // Extract table of contents
+      rendition.book.loaded.navigation
+        .then((nav: { toc?: TocItem[] }) => {
+          setToc(nav.toc || []);
+        })
+        .catch((err: unknown) => {
+          console.error("Failed to load table of contents:", err);
+        });
+
+      // Generate location spine for percentage tracking
+      rendition.book.ready
+        .then(() => {
+          return rendition.book.locations.generate(1024);
+        })
+        .then(() => {
+          // Signal that rendition is ready for theme application
+          setRenditionReady(true);
+        })
+        .catch((err: unknown) => {
+          console.error("Failed to generate locations:", err);
+          // Don't block the reader — percentage tracking just won't work
+        });
+    },
+    [
+      applyThemeToDocument,
+      applyThemeToRendition,
+      applyFontSettingsToRendition,
+      attachAutoAdvance,
+      attachAutoAdvanceContainer,
+    ],
+  );
 
   // Chapter navigation
   const handleChapterClick = (href: string) => {
