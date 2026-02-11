@@ -54,9 +54,10 @@ export function EpubReader({
   const [reloadToken, setReloadToken] = useState(0);
 
   const progressKey = `epub-progress:${bookId}`;
-  const autoAdvanceLocks = useRef(new WeakMap<Document, number>());
+  const autoAdvanceLocks = useRef(new WeakMap<object, number>());
   const autoAdvanceAttached = useRef(new WeakSet<Document>());
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
+  const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -185,6 +186,25 @@ export function EpubReader({
     });
   }, []);
 
+  const attachAutoAdvanceContainer = useCallback((container?: HTMLElement | null) => {
+    if (!container || autoAdvanceContainers.current.has(container)) return;
+    autoAdvanceContainers.current.add(container);
+
+    const handler = () => {
+      const { scrollTop, clientHeight, scrollHeight } = container;
+      if (scrollHeight <= clientHeight + 8) return;
+      if (scrollTop + clientHeight >= scrollHeight - 24) {
+        const now = Date.now();
+        const last = autoAdvanceLocks.current.get(container) ?? 0;
+        if (now - last < 750) return;
+        autoAdvanceLocks.current.set(container, now);
+        renditionRef.current?.next();
+      }
+    };
+
+    container.addEventListener("scroll", handler, { passive: true });
+  }, []);
+
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
     ...ReactReaderStyle,
@@ -211,6 +231,16 @@ export function EpubReader({
     arrow: {
       ...ReactReaderStyle.arrow,
       color: "var(--muted-foreground)",
+      display: "none",
+      pointerEvents: "none",
+    },
+    prev: {
+      ...ReactReaderStyle.prev,
+      display: "none",
+      pointerEvents: "none",
+    },
+    next: {
+      ...ReactReaderStyle.next,
       display: "none",
       pointerEvents: "none",
     },
@@ -375,6 +405,15 @@ export function EpubReader({
       if (contents?.document) {
         applyThemeToDocument(contents.document);
         attachAutoAdvance(contents.document);
+        const frame = contents.document.defaultView?.frameElement as
+          | HTMLElement
+          | null
+          | undefined;
+        const container = frame?.closest(".epub-container") as
+          | HTMLElement
+          | null
+          | undefined;
+        attachAutoAdvanceContainer(container);
       }
     });
 
