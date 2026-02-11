@@ -56,6 +56,7 @@ export function EpubReader({
   const progressKey = `epub-progress:${bookId}`;
   const autoAdvanceLocks = useRef(new WeakMap<Document, number>());
   const autoAdvanceAttached = useRef(new WeakSet<Document>());
+  const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -144,8 +145,16 @@ export function EpubReader({
     if (autoAdvanceAttached.current.has(doc)) return;
     autoAdvanceAttached.current.add(doc);
 
-    const handler = () => {
-      const scrollingElement = doc.scrollingElement || doc.documentElement;
+    const handler = (event?: Event) => {
+      const eventTarget =
+        event?.target && event.target instanceof Element
+          ? event.target
+          : null;
+      const scrollingElement =
+        eventTarget ||
+        doc.scrollingElement ||
+        doc.documentElement ||
+        doc.body;
       if (!scrollingElement) return;
       const { scrollTop, clientHeight, scrollHeight } = scrollingElement;
 
@@ -160,8 +169,20 @@ export function EpubReader({
       }
     };
 
-    doc.defaultView?.addEventListener("scroll", handler, { passive: true });
-    doc.addEventListener("scroll", handler, { passive: true });
+    const targets: Array<EventTarget | null | undefined> = [
+      doc.defaultView,
+      doc.scrollingElement,
+      doc.documentElement,
+      doc.body,
+    ];
+
+    targets.forEach((target) => {
+      if (!target || autoAdvanceTargets.current.has(target)) return;
+      autoAdvanceTargets.current.add(target);
+      target.addEventListener("scroll", handler as EventListener, {
+        passive: true,
+      });
+    });
   }, []);
 
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
@@ -176,6 +197,13 @@ export function EpubReader({
       ...ReactReaderStyle.readerArea,
       backgroundColor: "var(--background)",
     },
+    reader: {
+      ...ReactReaderStyle.reader,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
     titleArea: {
       ...ReactReaderStyle.titleArea,
       color: "var(--muted-foreground)",
@@ -183,6 +211,8 @@ export function EpubReader({
     arrow: {
       ...ReactReaderStyle.arrow,
       color: "var(--muted-foreground)",
+      display: "none",
+      pointerEvents: "none",
     },
     arrowHover: {
       ...ReactReaderStyle.arrowHover,
@@ -220,6 +250,11 @@ export function EpubReader({
     viewHolder: {
       ...EpubViewStyle.viewHolder,
       backgroundColor: "var(--background)",
+    },
+    view: {
+      ...EpubViewStyle.view,
+      width: "100%",
+      height: "100%",
     },
   };
 
