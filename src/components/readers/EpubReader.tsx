@@ -84,15 +84,6 @@ export function EpubReader({
     }),
     [],
   );
-  const fontScaleMap = useMemo<Record<FontSize, number>>(
-    () => ({
-      small: 1,
-      medium: 1.5,
-      large: 1.75,
-      xl: 2,
-    }),
-    [],
-  );
 
   const getInitialFontSize = useCallback((): FontSize => {
     if (typeof window === "undefined") return "medium";
@@ -188,6 +179,7 @@ export function EpubReader({
           font-family: ${epubFontFamily} !important;
           font-weight: ${epubFontWeight} !important;
           line-height: ${epubLineHeight} !important;
+          font-size: ${fontSizeMap[fontSize]} !important;
         }
         html { margin: 0 !important; padding: 0 !important; }
         body {
@@ -203,9 +195,10 @@ export function EpubReader({
           margin-right: auto !important;
           box-sizing: border-box !important;
         }
-        body, body * {
+        body * {
           color: ${text} !important;
           font-family: inherit !important;
+          font-size: inherit !important;
           line-height: inherit !important;
         }
         img, svg, video, canvas, table, pre {
@@ -222,6 +215,8 @@ export function EpubReader({
       epubFontWeight,
       epubLineHeight,
       epubColumnWidth,
+      fontSize,
+      fontSizeMap,
       getThemeVars,
     ],
   );
@@ -233,6 +228,7 @@ export function EpubReader({
         html: {
           background: `${background} !important`,
           color: `${text} !important`,
+          fontSize: `${fontSizeMap[fontSize]} !important`,
         },
         body: {
           background: `${background} !important`,
@@ -240,6 +236,7 @@ export function EpubReader({
           fontFamily: `${epubFontFamily} !important`,
           fontWeight: `${epubFontWeight} !important`,
           lineHeight: `${epubLineHeight} !important`,
+          fontSize: `${fontSizeMap[fontSize]} !important`,
           margin: "0 !important",
           padding: "1.25rem 1rem 2rem !important",
           boxSizing: "border-box !important",
@@ -254,6 +251,7 @@ export function EpubReader({
         "body *": {
           color: `${text} !important`,
           fontFamily: "inherit !important",
+          fontSize: "inherit !important",
           lineHeight: "inherit !important",
         },
         "img, svg, video, canvas, table, pre": {
@@ -287,77 +285,21 @@ export function EpubReader({
       epubFontWeight,
       epubLineHeight,
       epubColumnWidth,
+      fontSize,
+      fontSizeMap,
       getThemeVars,
     ],
   );
 
-  const applyFontScaleToDocument = useCallback(
-    (doc: Document) => {
-      if (!doc.body || !doc.defaultView) return;
-      const scale = fontScaleMap[fontSize];
-      const view = doc.defaultView;
-      const elements = doc.querySelectorAll<HTMLElement>("body, body *");
-      const sizedElements: Array<{ element: HTMLElement; baseSize: number }> =
-        [];
-
-      // First pass: capture base sizes before mutating any font-size values.
-      elements.forEach((element) => {
-        const tag = element.tagName.toLowerCase();
-        if (tag === "script" || tag === "style") return;
-
-        const cached = element.getAttribute("data-alex-base-font-size");
-        let baseSize = cached ? Number(cached) : Number.NaN;
-        if (!Number.isFinite(baseSize) || baseSize <= 0) {
-          const computed = view.getComputedStyle(element).fontSize;
-          const parsed = Number.parseFloat(computed);
-          if (!Number.isFinite(parsed) || parsed <= 0) return;
-          // Normalize to an unscaled baseline so switching sizes does not compound.
-          baseSize = parsed / scale;
-          element.setAttribute("data-alex-base-font-size", String(baseSize));
-        }
-
-        sizedElements.push({ element, baseSize });
-      });
-
-      // Second pass: apply scaled sizes using the captured base values.
-      sizedElements.forEach(({ element, baseSize }) => {
-        element.style.setProperty("font-size", `${baseSize * scale}px`, "important");
-      });
-    },
-    [fontScaleMap, fontSize],
-  );
 
   const applyFontSettingsToRendition = useCallback(
     (rendition: Rendition) => {
       rendition.themes.font(epubFontFamily);
       rendition.themes.fontSize(fontSizeMap[fontSize]);
-
-      const rawContents = rendition.getContents?.() as unknown;
-      const contents = (
-        Array.isArray(rawContents)
-          ? rawContents
-          : rawContents
-            ? [rawContents]
-            : []
-      ) as EpubContent[];
-      contents.forEach((content) => {
-        if (content?.document) {
-          applyFontScaleToDocument(content.document);
-        }
-      });
     },
-    [applyFontScaleToDocument, epubFontFamily, fontSize, fontSizeMap],
+    [epubFontFamily, fontSize, fontSizeMap],
   );
 
-  const applyFontScaleToMountedFrames = useCallback(() => {
-    if (typeof document === "undefined") return;
-    const frames = document.querySelectorAll(".epub-container iframe");
-    frames.forEach((frame) => {
-      if (frame instanceof HTMLIFrameElement && frame.contentDocument) {
-        applyFontScaleToDocument(frame.contentDocument);
-      }
-    });
-  }, [applyFontScaleToDocument]);
 
   const persistLocalProgress = useCallback(
     (epubLocation: string, percentComplete: number) => {
@@ -610,8 +552,7 @@ export function EpubReader({
   useEffect(() => {
     if (!renditionRef.current) return;
     applyFontSettingsToRendition(renditionRef.current);
-    applyFontScaleToMountedFrames();
-  }, [applyFontScaleToMountedFrames, applyFontSettingsToRendition]);
+  }, [applyFontSettingsToRendition]);
 
   useEffect(() => {
     if (!renditionRef.current || !renditionReady) return;
@@ -700,7 +641,6 @@ export function EpubReader({
             : null);
         if (!doc) return;
         applyThemeToDocument(doc);
-        applyFontScaleToDocument(doc);
         attachAutoAdvance(doc);
         const frame = doc.defaultView?.frameElement as
           | HTMLElement
@@ -784,7 +724,6 @@ export function EpubReader({
     [
       applyThemeToDocument,
       applyThemeToRendition,
-      applyFontScaleToDocument,
       applyFontSettingsToRendition,
       attachAutoAdvance,
       attachAutoAdvanceContainer,
