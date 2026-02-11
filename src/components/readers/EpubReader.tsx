@@ -21,6 +21,14 @@ import type { Rendition } from "epubjs";
 type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
 type EpubContent = { document?: Document };
+type RenditionLocation = { start?: { cfi?: string; href?: string } };
+
+function getLocationStart(
+  location: RenditionLocation | RenditionLocation[] | null | undefined,
+) {
+  if (!location) return null;
+  return Array.isArray(location) ? location[0]?.start ?? null : location.start ?? null;
+}
 
 interface EpubReaderProps {
   bookId: string;
@@ -50,10 +58,20 @@ export function EpubReader({
   const [reloadToken, setReloadToken] = useState(0);
 
   const progressKey = `epub-progress:${bookId}`;
-  const autoAdvanceLocks = useRef(new WeakMap<object, number>());
+  const autoAdvanceLocks = useRef(
+    new WeakMap<object, { next: number; prev: number }>(),
+  );
   const autoAdvanceAttached = useRef(new WeakSet<Document>());
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
   const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
+  const lastScrollPositions = useRef(new WeakMap<object, number>());
+  const pendingPrevAdjustment = useRef<{
+    beforeScrollHeight: number;
+    viewportHeight: number;
+    requestedAt: number;
+  } | null>(null);
+  const lastLocalPersistAt = useRef(0);
+  const lastLocalPersistedCfi = useRef<string | null>(null);
 
   const fontSizeMap = useMemo<Record<FontSize, string>>(
     () => ({
@@ -87,19 +105,22 @@ export function EpubReader({
   }, []);
 
   const getInitialLocation = useCallback((): string | number => {
-    if (initialLocation) return initialLocation;
-    if (typeof window === "undefined") return 0;
-    try {
-      const saved = localStorage.getItem(progressKey);
-      if (saved) {
-        const { epubLocation } = JSON.parse(saved) as {
-          epubLocation?: string;
-        };
-        if (epubLocation) return epubLocation;
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(progressKey);
+        if (saved) {
+          const { epubLocation } = JSON.parse(saved) as {
+            epubLocation?: string;
+          };
+          if (typeof epubLocation === "string" && epubLocation.startsWith("epubcfi(")) {
+            return epubLocation;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load epub progress:", err);
       }
-    } catch (err) {
-      console.error("Failed to load epub progress:", err);
     }
+    if (initialLocation) return initialLocation;
     return 0;
   }, [initialLocation, progressKey]);
 
@@ -193,6 +214,103 @@ export function EpubReader({
     [applyThemeToDocument, getThemeVars],
   );
 
+  const persistLocalProgress = useCallback(
+    (epubLocation: string, percentComplete: number) => {
+      localStorage.setItem(
+        progressKey,
+        JSON.stringify({
+          epubLocation,
+          percentComplete,
+          updatedAt: Date.now(),
+        }),
+      );
+    },
+    [progressKey],
+  );
+
+  const persistCurrentLocationToLocal = useCallback(
+    (force = false) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      const book = rendition.book;
+      if (!book?.locations || book.locations.length() === 0) return;
+
+      const now = Date.now();
+      if (!force && now - lastLocalPersistAt.current < 350) return;
+
+      const currentLocation = rendition.currentLocation() as
+        | RenditionLocation
+        | RenditionLocation[]
+        | null;
+      const start = getLocationStart(currentLocation);
+      const epubcfi = start?.cfi;
+      if (!epubcfi || !epubcfi.startsWith("epubcfi(")) return;
+      if (!force && epubcfi === lastLocalPersistedCfi.current) return;
+
+      try {
+        const percent = book.locations.percentageFromCfi(epubcfi) * 100;
+        persistLocalProgress(epubcfi, percent);
+        lastLocalPersistAt.current = now;
+        lastLocalPersistedCfi.current = epubcfi;
+      } catch (err) {
+        console.error("Failed to persist current location:", err);
+      }
+    },
+    [persistLocalProgress],
+  );
+
+  const shouldTriggerEdgeAction = useCallback(
+    (key: object, direction: "next" | "prev") => {
+      const now = Date.now();
+      const previous = autoAdvanceLocks.current.get(key) ?? { next: 0, prev: 0 };
+      if (now - previous[direction] < 750) return false;
+      autoAdvanceLocks.current.set(key, {
+        ...previous,
+        [direction]: now,
+      });
+      return true;
+    },
+    [],
+  );
+
+  const handleBoundaryScroll = useCallback(
+    (
+      scrollingElement: Element,
+      lockKey: object,
+      container?: HTMLElement | null,
+    ) => {
+      const target = scrollingElement as HTMLElement;
+      const { scrollTop, clientHeight, scrollHeight } = target;
+      const previousTop = lastScrollPositions.current.get(lockKey);
+      lastScrollPositions.current.set(lockKey, scrollTop);
+
+      persistCurrentLocationToLocal();
+      if (previousTop === undefined) return;
+      if (scrollHeight <= clientHeight + 8) return;
+
+      const delta = scrollTop - previousTop;
+
+      if (delta > 0 && scrollTop + clientHeight >= scrollHeight - 24) {
+        if (!shouldTriggerEdgeAction(lockKey, "next")) return;
+        renditionRef.current?.next();
+        return;
+      }
+
+      if (delta < 0 && scrollTop <= 24) {
+        if (!shouldTriggerEdgeAction(lockKey, "prev")) return;
+
+        const hostContainer = container ?? (scrollingElement as HTMLElement);
+        pendingPrevAdjustment.current = {
+          beforeScrollHeight: hostContainer.scrollHeight,
+          viewportHeight: hostContainer.clientHeight,
+          requestedAt: Date.now(),
+        };
+        renditionRef.current?.prev();
+      }
+    },
+    [persistCurrentLocationToLocal, shouldTriggerEdgeAction],
+  );
+
   const attachAutoAdvance = useCallback((doc: Document) => {
     if (autoAdvanceAttached.current.has(doc)) return;
     autoAdvanceAttached.current.add(doc);
@@ -208,17 +326,15 @@ export function EpubReader({
         doc.documentElement ||
         doc.body;
       if (!scrollingElement) return;
-      const { scrollTop, clientHeight, scrollHeight } = scrollingElement;
-
-      if (scrollHeight <= clientHeight + 8) return;
-
-      if (scrollTop + clientHeight >= scrollHeight - 24) {
-        const now = Date.now();
-        const last = autoAdvanceLocks.current.get(doc) ?? 0;
-        if (now - last < 750) return;
-        autoAdvanceLocks.current.set(doc, now);
-        renditionRef.current?.next();
-      }
+      const frame = doc.defaultView?.frameElement as
+        | HTMLElement
+        | null
+        | undefined;
+      const container = frame?.closest(".epub-container") as
+        | HTMLElement
+        | null
+        | undefined;
+      handleBoundaryScroll(scrollingElement, doc, container);
     };
 
     const targets: Array<EventTarget | null | undefined> = [
@@ -235,26 +351,18 @@ export function EpubReader({
         passive: true,
       });
     });
-  }, []);
+  }, [handleBoundaryScroll]);
 
   const attachAutoAdvanceContainer = useCallback((container?: HTMLElement | null) => {
     if (!container || autoAdvanceContainers.current.has(container)) return;
     autoAdvanceContainers.current.add(container);
 
     const handler = () => {
-      const { scrollTop, clientHeight, scrollHeight } = container;
-      if (scrollHeight <= clientHeight + 8) return;
-      if (scrollTop + clientHeight >= scrollHeight - 24) {
-        const now = Date.now();
-        const last = autoAdvanceLocks.current.get(container) ?? 0;
-        if (now - last < 750) return;
-        autoAdvanceLocks.current.set(container, now);
-        renditionRef.current?.next();
-      }
+      handleBoundaryScroll(container, container, container);
     };
 
     container.addEventListener("scroll", handler, { passive: true });
-  }, []);
+  }, [handleBoundaryScroll]);
 
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
@@ -365,6 +473,12 @@ export function EpubReader({
     return () => observer.disconnect();
   }, [applyThemeToRendition, renditionReady]);
 
+  useEffect(() => {
+    return () => {
+      persistCurrentLocationToLocal(true);
+    };
+  }, [persistCurrentLocationToLocal]);
+
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
       setLocation(epubcfi);
@@ -375,9 +489,13 @@ export function EpubReader({
       const book = renditionRef.current.book;
 
       // Track current chapter for TOC highlighting
-      const currentLocation = renditionRef.current.currentLocation() as { start?: { href?: string } } | null;
-      if (currentLocation?.start?.href) {
-        setCurrentHref(currentLocation.start.href);
+      const currentLocation = renditionRef.current.currentLocation() as
+        | RenditionLocation
+        | RenditionLocation[]
+        | null;
+      const start = getLocationStart(currentLocation);
+      if (start?.href) {
+        setCurrentHref(start.href);
       }
 
       // Only save progress if locations are ready and CFI is valid
@@ -389,10 +507,9 @@ export function EpubReader({
         try {
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
           onLocationChange(epubcfi, percent);
-          localStorage.setItem(
-            progressKey,
-            JSON.stringify({ epubLocation: epubcfi, percentComplete: percent }),
-          );
+          persistLocalProgress(epubcfi, percent);
+          lastLocalPersistAt.current = Date.now();
+          lastLocalPersistedCfi.current = epubcfi;
         } catch (err) {
           console.error(
             "Failed to calculate percentage from CFI:",
@@ -402,7 +519,7 @@ export function EpubReader({
         }
       }
     },
-    [onLocationChange, progressKey],
+    [onLocationChange, persistLocalProgress],
   );
 
   const handleGetRendition = useCallback((rendition: Rendition) => {
@@ -437,6 +554,22 @@ export function EpubReader({
         | null
         | undefined;
       attachAutoAdvanceContainer(container);
+
+      const pending = pendingPrevAdjustment.current;
+      if (container && pending) {
+        const elapsed = Date.now() - pending.requestedAt;
+        const addedHeight = container.scrollHeight - pending.beforeScrollHeight;
+        if (addedHeight > 0) {
+          const targetTop = Math.max(
+            addedHeight - pending.viewportHeight + 24,
+            0,
+          );
+          container.scrollTop = targetTop;
+          pendingPrevAdjustment.current = null;
+        } else if (elapsed > 1500) {
+          pendingPrevAdjustment.current = null;
+        }
+      }
     };
 
     if (rendition.hooks?.content?.register) {
