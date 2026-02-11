@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -55,12 +55,15 @@ export function EpubReader({
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
   const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
 
-  const fontSizeMap: Record<FontSize, string> = {
-    small: "18px",
-    medium: "24px",
-    large: "32px",
-    xl: "40px",
-  };
+  const fontSizeMap = useMemo<Record<FontSize, string>>(
+    () => ({
+      small: "18px",
+      medium: "24px",
+      large: "32px",
+      xl: "40px",
+    }),
+    [],
+  );
 
   const getInitialFontSize = useCallback((): FontSize => {
     if (typeof window === "undefined") return "medium";
@@ -346,7 +349,7 @@ export function EpubReader({
     if (!renditionRef.current) return;
     renditionRef.current.themes.font("Times New Roman");
     renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
-  }, [fontSize]);
+  }, [fontSize, fontSizeMap]);
 
   useEffect(() => {
     if (!renditionRef.current || !renditionReady) return;
@@ -486,7 +489,14 @@ export function EpubReader({
         console.error("Failed to generate locations:", err);
         // Don't block the reader — percentage tracking just won't work
       });
-  }, [applyThemeToDocument, applyThemeToRendition]);
+  }, [
+    applyThemeToDocument,
+    applyThemeToRendition,
+    attachAutoAdvance,
+    attachAutoAdvanceContainer,
+    fontSize,
+    fontSizeMap,
+  ]);
 
   // Chapter navigation
   const handleChapterClick = (href: string) => {
