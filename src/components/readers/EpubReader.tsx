@@ -55,6 +55,13 @@ export function EpubReader({
   const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
   const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
 
+  const fontSizeMap: Record<FontSize, string> = {
+    small: "18px",
+    medium: "24px",
+    large: "32px",
+    xl: "40px",
+  };
+
   const getInitialFontSize = useCallback((): FontSize => {
     if (typeof window === "undefined") return "medium";
     try {
@@ -336,18 +343,10 @@ export function EpubReader({
 
   // Apply settings to rendition whenever they change
   useEffect(() => {
-    if (!renditionRef.current || !renditionReady) return;
-
-    const fontSizeMap = {
-      small: "18px",
-      medium: "24px",
-      large: "32px",
-      xl: "40px",
-    };
-
+    if (!renditionRef.current) return;
     renditionRef.current.themes.font("Times New Roman");
     renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
-  }, [fontSize, renditionReady]);
+  }, [fontSize]);
 
   useEffect(() => {
     if (!renditionRef.current || !renditionReady) return;
@@ -408,6 +407,7 @@ export function EpubReader({
 
     // Set font to Times New Roman
     rendition.themes.font("Times New Roman");
+    rendition.themes.fontSize(fontSizeMap[fontSize]);
     applyThemeToRendition(rendition);
 
     // Single-column, continuous vertical scroll
