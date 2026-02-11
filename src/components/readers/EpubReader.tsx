@@ -20,6 +20,7 @@ import type { Rendition } from "epubjs";
 
 type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
+type EpubContent = { document?: Document };
 
 interface EpubReaderProps {
   bookId: string;
@@ -120,7 +121,12 @@ export function EpubReader({
         },
       });
 
-      const contents = rendition.getContents?.() ?? [];
+      const rawContents = rendition.getContents?.() as unknown;
+      const contents = (Array.isArray(rawContents)
+        ? rawContents
+        : rawContents
+          ? [rawContents]
+          : []) as EpubContent[];
       contents.forEach((content) => {
         if (content?.document) {
           applyThemeToDocument(content.document);
@@ -279,7 +285,7 @@ export function EpubReader({
     rendition.themes.font("Times New Roman");
     applyThemeToRendition(rendition);
 
-    rendition.hooks.content.register((contents) => {
+    rendition.hooks.content.register((contents: EpubContent) => {
       if (contents?.document) {
         applyThemeToDocument(contents.document);
       }
