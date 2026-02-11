@@ -54,6 +54,8 @@ export function EpubReader({
   const [reloadToken, setReloadToken] = useState(0);
 
   const progressKey = `epub-progress:${bookId}`;
+  const autoAdvanceLocks = useRef(new WeakMap<Document, number>());
+  const autoAdvanceAttached = useRef(new WeakSet<Document>());
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -137,6 +139,30 @@ export function EpubReader({
     },
     [applyThemeToDocument, getThemeVars],
   );
+
+  const attachAutoAdvance = useCallback((doc: Document) => {
+    if (autoAdvanceAttached.current.has(doc)) return;
+    autoAdvanceAttached.current.add(doc);
+
+    const handler = () => {
+      const scrollingElement = doc.scrollingElement || doc.documentElement;
+      if (!scrollingElement) return;
+      const { scrollTop, clientHeight, scrollHeight } = scrollingElement;
+
+      if (scrollHeight <= clientHeight + 8) return;
+
+      if (scrollTop + clientHeight >= scrollHeight - 24) {
+        const now = Date.now();
+        const last = autoAdvanceLocks.current.get(doc) ?? 0;
+        if (now - last < 750) return;
+        autoAdvanceLocks.current.set(doc, now);
+        renditionRef.current?.next();
+      }
+    };
+
+    doc.defaultView?.addEventListener("scroll", handler, { passive: true });
+    doc.addEventListener("scroll", handler, { passive: true });
+  }, []);
 
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
@@ -313,6 +339,7 @@ export function EpubReader({
     rendition.hooks.content.register((contents: EpubContent) => {
       if (contents?.document) {
         applyThemeToDocument(contents.document);
+        attachAutoAdvance(contents.document);
       }
     });
 
