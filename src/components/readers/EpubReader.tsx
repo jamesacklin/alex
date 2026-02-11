@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -39,9 +39,6 @@ export function EpubReader({
   backUrl,
   onLocationChange,
 }: EpubReaderProps) {
-  const [location, setLocation] = useState<string | number>(
-    initialLocation ?? 0,
-  );
   const renditionRef = useRef<Rendition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,9 +46,69 @@ export function EpubReader({
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [fontSize, setFontSize] = useState<FontSize>("medium");
   const [renditionReady, setRenditionReady] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+
+  const progressKey = `epub-progress:${bookId}`;
+  const autoAdvanceLocks = useRef(new WeakMap<object, number>());
+  const autoAdvanceAttached = useRef(new WeakSet<Document>());
+  const autoAdvanceTargets = useRef(new WeakSet<EventTarget>());
+  const autoAdvanceContainers = useRef(new WeakSet<HTMLElement>());
+
+  const fontSizeMap = useMemo<Record<FontSize, string>>(
+    () => ({
+      small: "18px",
+      medium: "24px",
+      large: "32px",
+      xl: "40px",
+    }),
+    [],
+  );
+
+  const getInitialFontSize = useCallback((): FontSize => {
+    if (typeof window === "undefined") return "medium";
+    try {
+      const saved = localStorage.getItem("epub-reader-settings");
+      if (saved) {
+        const { fontSize: savedFontSize } = JSON.parse(saved);
+        if (
+          savedFontSize === "small" ||
+          savedFontSize === "medium" ||
+          savedFontSize === "large" ||
+          savedFontSize === "xl"
+        ) {
+          return savedFontSize;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load reader settings:", err);
+    }
+    return "medium";
+  }, []);
+
+  const getInitialLocation = useCallback((): string | number => {
+    if (initialLocation) return initialLocation;
+    if (typeof window === "undefined") return 0;
+    try {
+      const saved = localStorage.getItem(progressKey);
+      if (saved) {
+        const { epubLocation } = JSON.parse(saved) as {
+          epubLocation?: string;
+        };
+        if (epubLocation) return epubLocation;
+      }
+    } catch (err) {
+      console.error("Failed to load epub progress:", err);
+    }
+    return 0;
+  }, [initialLocation, progressKey]);
+
+  const [location, setLocation] = useState<string | number>(() =>
+    getInitialLocation(),
+  );
+  const [fontSize, setFontSize] = useState<FontSize>(() =>
+    getInitialFontSize(),
+  );
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -136,6 +193,69 @@ export function EpubReader({
     [applyThemeToDocument, getThemeVars],
   );
 
+  const attachAutoAdvance = useCallback((doc: Document) => {
+    if (autoAdvanceAttached.current.has(doc)) return;
+    autoAdvanceAttached.current.add(doc);
+
+    const handler = (event?: Event) => {
+      const eventTarget =
+        event?.target && event.target instanceof Element
+          ? event.target
+          : null;
+      const scrollingElement =
+        eventTarget ||
+        doc.scrollingElement ||
+        doc.documentElement ||
+        doc.body;
+      if (!scrollingElement) return;
+      const { scrollTop, clientHeight, scrollHeight } = scrollingElement;
+
+      if (scrollHeight <= clientHeight + 8) return;
+
+      if (scrollTop + clientHeight >= scrollHeight - 24) {
+        const now = Date.now();
+        const last = autoAdvanceLocks.current.get(doc) ?? 0;
+        if (now - last < 750) return;
+        autoAdvanceLocks.current.set(doc, now);
+        renditionRef.current?.next();
+      }
+    };
+
+    const targets: Array<EventTarget | null | undefined> = [
+      doc.defaultView,
+      doc.scrollingElement,
+      doc.documentElement,
+      doc.body,
+    ];
+
+    targets.forEach((target) => {
+      if (!target || autoAdvanceTargets.current.has(target)) return;
+      autoAdvanceTargets.current.add(target);
+      target.addEventListener("scroll", handler as EventListener, {
+        passive: true,
+      });
+    });
+  }, []);
+
+  const attachAutoAdvanceContainer = useCallback((container?: HTMLElement | null) => {
+    if (!container || autoAdvanceContainers.current.has(container)) return;
+    autoAdvanceContainers.current.add(container);
+
+    const handler = () => {
+      const { scrollTop, clientHeight, scrollHeight } = container;
+      if (scrollHeight <= clientHeight + 8) return;
+      if (scrollTop + clientHeight >= scrollHeight - 24) {
+        const now = Date.now();
+        const last = autoAdvanceLocks.current.get(container) ?? 0;
+        if (now - last < 750) return;
+        autoAdvanceLocks.current.set(container, now);
+        renditionRef.current?.next();
+      }
+    };
+
+    container.addEventListener("scroll", handler, { passive: true });
+  }, []);
+
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
     ...ReactReaderStyle,
@@ -148,6 +268,13 @@ export function EpubReader({
       ...ReactReaderStyle.readerArea,
       backgroundColor: "var(--background)",
     },
+    reader: {
+      ...ReactReaderStyle.reader,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
     titleArea: {
       ...ReactReaderStyle.titleArea,
       color: "var(--muted-foreground)",
@@ -155,6 +282,18 @@ export function EpubReader({
     arrow: {
       ...ReactReaderStyle.arrow,
       color: "var(--muted-foreground)",
+      display: "none",
+      pointerEvents: "none",
+    },
+    prev: {
+      ...ReactReaderStyle.prev,
+      display: "none",
+      pointerEvents: "none",
+    },
+    next: {
+      ...ReactReaderStyle.next,
+      display: "none",
+      pointerEvents: "none",
     },
     arrowHover: {
       ...ReactReaderStyle.arrowHover,
@@ -193,20 +332,12 @@ export function EpubReader({
       ...EpubViewStyle.viewHolder,
       backgroundColor: "var(--background)",
     },
+    view: {
+      ...EpubViewStyle.view,
+      width: "100%",
+      height: "100%",
+    },
   };
-
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem("epub-reader-settings");
-    if (saved) {
-      try {
-        const { fontSize: savedFontSize } = JSON.parse(saved);
-        if (savedFontSize) setFontSize(savedFontSize);
-      } catch (err) {
-        console.error("Failed to load reader settings:", err);
-      }
-    }
-  }, []);
 
   // Save settings to localStorage whenever they change
   useEffect(() => {
@@ -215,18 +346,10 @@ export function EpubReader({
 
   // Apply settings to rendition whenever they change
   useEffect(() => {
-    if (!renditionRef.current || !renditionReady) return;
-
-    const fontSizeMap = {
-      small: "18px",
-      medium: "24px",
-      large: "32px",
-      xl: "40px",
-    };
-
+    if (!renditionRef.current) return;
     renditionRef.current.themes.font("Times New Roman");
     renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
-  }, [fontSize, renditionReady]);
+  }, [fontSize, fontSizeMap]);
 
   useEffect(() => {
     if (!renditionRef.current || !renditionReady) return;
@@ -266,6 +389,10 @@ export function EpubReader({
         try {
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
           onLocationChange(epubcfi, percent);
+          localStorage.setItem(
+            progressKey,
+            JSON.stringify({ epubLocation: epubcfi, percentComplete: percent }),
+          );
         } catch (err) {
           console.error(
             "Failed to calculate percentage from CFI:",
@@ -275,7 +402,7 @@ export function EpubReader({
         }
       }
     },
-    [onLocationChange],
+    [onLocationChange, progressKey],
   );
 
   const handleGetRendition = useCallback((rendition: Rendition) => {
@@ -283,13 +410,44 @@ export function EpubReader({
 
     // Set font to Times New Roman
     rendition.themes.font("Times New Roman");
+    rendition.themes.fontSize(fontSizeMap[fontSize]);
     applyThemeToRendition(rendition);
 
-    rendition.hooks.content.register((contents: EpubContent) => {
-      if (contents?.document) {
-        applyThemeToDocument(contents.document);
-      }
-    });
+    // Single-column, continuous vertical scroll
+    rendition.flow("scrolled-continuous");
+    rendition.spread("none");
+
+    const handleRenderedContent = (contents: EpubContent | null | undefined) => {
+      const doc =
+        contents?.document ||
+        (contents &&
+        typeof HTMLIFrameElement !== "undefined" &&
+        contents instanceof HTMLIFrameElement
+          ? contents.contentDocument
+          : null);
+      if (!doc) return;
+      applyThemeToDocument(doc);
+      attachAutoAdvance(doc);
+      const frame = doc.defaultView?.frameElement as
+        | HTMLElement
+        | null
+        | undefined;
+      const container = frame?.closest(".epub-container") as
+        | HTMLElement
+        | null
+        | undefined;
+      attachAutoAdvanceContainer(container);
+    };
+
+    if (rendition.hooks?.content?.register) {
+      rendition.hooks.content.register((contents: EpubContent) => {
+        handleRenderedContent(contents);
+      });
+    } else {
+      rendition.on("rendered", (_section: unknown, contents: unknown) => {
+        handleRenderedContent(contents as EpubContent);
+      });
+    }
 
     // Hook error listener for book load failures
     rendition.book.on("openFailed", (err: unknown) => {
@@ -331,7 +489,14 @@ export function EpubReader({
         console.error("Failed to generate locations:", err);
         // Don't block the reader — percentage tracking just won't work
       });
-  }, [applyThemeToDocument, applyThemeToRendition]);
+  }, [
+    applyThemeToDocument,
+    applyThemeToRendition,
+    attachAutoAdvance,
+    attachAutoAdvanceContainer,
+    fontSize,
+    fontSizeMap,
+  ]);
 
   // Chapter navigation
   const handleChapterClick = (href: string) => {
@@ -557,6 +722,9 @@ export function EpubReader({
           epubViewStyles={epubViewStyles}
           epubOptions={{
             allowScriptedContent: true,
+            flow: "scrolled-continuous",
+            manager: "continuous",
+            spread: "none",
           }}
         />
       </div>
