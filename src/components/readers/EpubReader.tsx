@@ -52,6 +52,84 @@ export function EpubReader({
   const [renditionReady, setRenditionReady] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
+  const getThemeVars = useCallback(() => {
+    const styles = getComputedStyle(document.documentElement);
+    const read = (name: string, fallback: string) =>
+      styles.getPropertyValue(name).trim() || fallback;
+    const background = read("--background", "#ffffff");
+    const text = read("--primary", read("--foreground", "#000000"));
+    const primary = read("--primary", text);
+    const primaryForeground = read("--primary-foreground", background);
+    return { background, text, primary, primaryForeground };
+  }, []);
+
+  const applyThemeToDocument = useCallback(
+    (doc: Document) => {
+      const { background, text, primary, primaryForeground } =
+        getThemeVars();
+      doc.documentElement.style.setProperty(
+        "background",
+        background,
+        "important",
+      );
+      doc.documentElement.style.setProperty(
+        "color",
+        text,
+        "important",
+      );
+      if (doc.body) {
+        doc.body.style.setProperty("background", background, "important");
+        doc.body.style.setProperty("color", text, "important");
+      }
+
+      const existing = doc.getElementById("alex-epub-theme");
+      if (existing) {
+        existing.remove();
+      }
+      const style = doc.createElement("style");
+      style.id = "alex-epub-theme";
+      style.textContent = `
+        html, body { background: ${background} !important; color: ${text} !important; }
+        body, body * { color: ${text} !important; }
+        a { color: ${primary} !important; }
+        ::selection { background: ${primary} !important; color: ${primaryForeground} !important; }
+      `;
+      doc.head.appendChild(style);
+    },
+    [getThemeVars],
+  );
+
+  const applyThemeToRendition = useCallback(
+    (rendition: Rendition) => {
+      const { background, text, primary, primaryForeground } =
+        getThemeVars();
+      rendition.themes.default({
+        html: {
+          background: `${background} !important`,
+          color: `${text} !important`,
+        },
+        body: {
+          background: `${background} !important`,
+          color: `${text} !important`,
+        },
+        "body *": { color: `${text} !important` },
+        a: { color: `${primary} !important` },
+        "::selection": {
+          background: `${primary} !important`,
+          color: `${primaryForeground} !important`,
+        },
+      });
+
+      const contents = rendition.getContents?.() ?? [];
+      contents.forEach((content) => {
+        if (content?.document) {
+          applyThemeToDocument(content.document);
+        }
+      });
+    },
+    [applyThemeToDocument, getThemeVars],
+  );
+
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
     ...ReactReaderStyle,
@@ -144,6 +222,20 @@ export function EpubReader({
     renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
   }, [fontSize, renditionReady]);
 
+  useEffect(() => {
+    if (!renditionRef.current || !renditionReady) return;
+    const apply = () => applyThemeToRendition(renditionRef.current!);
+    apply();
+
+    const observer = new MutationObserver(() => apply());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
+
+    return () => observer.disconnect();
+  }, [applyThemeToRendition, renditionReady]);
+
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
       setLocation(epubcfi);
@@ -185,6 +277,13 @@ export function EpubReader({
 
     // Set font to Times New Roman
     rendition.themes.font("Times New Roman");
+    applyThemeToRendition(rendition);
+
+    rendition.hooks.content.register((contents) => {
+      if (contents?.document) {
+        applyThemeToDocument(contents.document);
+      }
+    });
 
     // Hook error listener for book load failures
     rendition.book.on("openFailed", (err: unknown) => {
@@ -226,7 +325,7 @@ export function EpubReader({
         console.error("Failed to generate locations:", err);
         // Don't block the reader — percentage tracking just won't work
       });
-  }, []);
+  }, [applyThemeToDocument, applyThemeToRendition]);
 
   // Chapter navigation
   const handleChapterClick = (href: string) => {
