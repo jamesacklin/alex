@@ -147,6 +147,7 @@ export function EpubReader({
   const epubFontFamily = "\"IBM Plex Serif\", serif";
   const epubFontWeight = 300;
   const epubLineHeight = 1.6;
+  const epubColumnWidth = "80ch";
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -188,17 +189,41 @@ export function EpubReader({
           font-weight: ${epubFontWeight} !important;
           line-height: ${epubLineHeight} !important;
         }
+        html { margin: 0 !important; padding: 0 !important; }
+        body {
+          margin: 0 !important;
+          padding: 1.25rem 1rem 2rem !important;
+          box-sizing: border-box !important;
+        }
+        body > *,
+        body :where(div, section, article, main, p, li, ul, ol, blockquote, pre, table, figure, h1, h2, h3, h4, h5, h6) {
+          width: 100% !important;
+          max-width: ${epubColumnWidth} !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          box-sizing: border-box !important;
+        }
         body, body * {
           color: ${text} !important;
           font-family: inherit !important;
           line-height: inherit !important;
+        }
+        img, svg, video, canvas, table, pre {
+          max-width: 100% !important;
+          height: auto !important;
         }
         a { color: ${primary} !important; }
         ::selection { background: ${primary} !important; color: ${primaryForeground} !important; }
       `;
       doc.head.appendChild(style);
     },
-    [epubFontFamily, epubFontWeight, epubLineHeight, getThemeVars],
+    [
+      epubFontFamily,
+      epubFontWeight,
+      epubLineHeight,
+      epubColumnWidth,
+      getThemeVars,
+    ],
   );
 
   const applyThemeToRendition = useCallback(
@@ -215,11 +240,25 @@ export function EpubReader({
           fontFamily: `${epubFontFamily} !important`,
           fontWeight: `${epubFontWeight} !important`,
           lineHeight: `${epubLineHeight} !important`,
+          margin: "0 !important",
+          padding: "1.25rem 1rem 2rem !important",
+          boxSizing: "border-box !important",
+        },
+        "body > *, body :where(div, section, article, main, p, li, ul, ol, blockquote, pre, table, figure, h1, h2, h3, h4, h5, h6)": {
+          width: "100% !important",
+          maxWidth: `${epubColumnWidth} !important`,
+          marginLeft: "auto !important",
+          marginRight: "auto !important",
+          boxSizing: "border-box !important",
         },
         "body *": {
           color: `${text} !important`,
           fontFamily: "inherit !important",
           lineHeight: "inherit !important",
+        },
+        "img, svg, video, canvas, table, pre": {
+          maxWidth: "100% !important",
+          height: "auto !important",
         },
         a: { color: `${primary} !important` },
         "::selection": {
@@ -247,6 +286,7 @@ export function EpubReader({
       epubFontFamily,
       epubFontWeight,
       epubLineHeight,
+      epubColumnWidth,
       getThemeVars,
     ],
   );
@@ -271,8 +311,9 @@ export function EpubReader({
           const computed = view.getComputedStyle(element).fontSize;
           const parsed = Number.parseFloat(computed);
           if (!Number.isFinite(parsed) || parsed <= 0) return;
-          baseSize = parsed;
-          element.setAttribute("data-alex-base-font-size", String(parsed));
+          // Normalize to an unscaled baseline so switching sizes does not compound.
+          baseSize = parsed / scale;
+          element.setAttribute("data-alex-base-font-size", String(baseSize));
         }
 
         sizedElements.push({ element, baseSize });
