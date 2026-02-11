@@ -144,6 +144,9 @@ export function EpubReader({
   const [fontSize, setFontSize] = useState<FontSize>(() =>
     getInitialFontSize(),
   );
+  const epubFontFamily = "\"IBM Plex Serif\", serif";
+  const epubFontWeight = 300;
+  const epubLineHeight = 1.6;
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -177,14 +180,25 @@ export function EpubReader({
       const style = doc.createElement("style");
       style.id = "alex-epub-theme";
       style.textContent = `
-        html, body { background: ${background} !important; color: ${text} !important; }
-        body, body * { color: ${text} !important; }
+        @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@300;400;700&display=swap");
+        html, body {
+          background: ${background} !important;
+          color: ${text} !important;
+          font-family: ${epubFontFamily} !important;
+          font-weight: ${epubFontWeight} !important;
+          line-height: ${epubLineHeight} !important;
+        }
+        body, body * {
+          color: ${text} !important;
+          font-family: inherit !important;
+          line-height: inherit !important;
+        }
         a { color: ${primary} !important; }
         ::selection { background: ${primary} !important; color: ${primaryForeground} !important; }
       `;
       doc.head.appendChild(style);
     },
-    [getThemeVars],
+    [epubFontFamily, epubFontWeight, epubLineHeight, getThemeVars],
   );
 
   const applyThemeToRendition = useCallback(
@@ -198,8 +212,15 @@ export function EpubReader({
         body: {
           background: `${background} !important`,
           color: `${text} !important`,
+          fontFamily: `${epubFontFamily} !important`,
+          fontWeight: `${epubFontWeight} !important`,
+          lineHeight: `${epubLineHeight} !important`,
         },
-        "body *": { color: `${text} !important` },
+        "body *": {
+          color: `${text} !important`,
+          fontFamily: "inherit !important",
+          lineHeight: "inherit !important",
+        },
         a: { color: `${primary} !important` },
         "::selection": {
           background: `${primary} !important`,
@@ -221,7 +242,13 @@ export function EpubReader({
         }
       });
     },
-    [applyThemeToDocument, getThemeVars],
+    [
+      applyThemeToDocument,
+      epubFontFamily,
+      epubFontWeight,
+      epubLineHeight,
+      getThemeVars,
+    ],
   );
 
   const applyFontScaleToDocument = useCallback(
@@ -230,7 +257,10 @@ export function EpubReader({
       const scale = fontScaleMap[fontSize];
       const view = doc.defaultView;
       const elements = doc.querySelectorAll<HTMLElement>("body, body *");
+      const sizedElements: Array<{ element: HTMLElement; baseSize: number }> =
+        [];
 
+      // First pass: capture base sizes before mutating any font-size values.
       elements.forEach((element) => {
         const tag = element.tagName.toLowerCase();
         if (tag === "script" || tag === "style") return;
@@ -245,11 +275,12 @@ export function EpubReader({
           element.setAttribute("data-alex-base-font-size", String(parsed));
         }
 
-        element.style.setProperty(
-          "font-size",
-          `${baseSize * scale}px`,
-          "important",
-        );
+        sizedElements.push({ element, baseSize });
+      });
+
+      // Second pass: apply scaled sizes using the captured base values.
+      sizedElements.forEach(({ element, baseSize }) => {
+        element.style.setProperty("font-size", `${baseSize * scale}px`, "important");
       });
     },
     [fontScaleMap, fontSize],
@@ -257,7 +288,7 @@ export function EpubReader({
 
   const applyFontSettingsToRendition = useCallback(
     (rendition: Rendition) => {
-      rendition.themes.font("Times New Roman");
+      rendition.themes.font(epubFontFamily);
       rendition.themes.fontSize(fontSizeMap[fontSize]);
 
       const rawContents = rendition.getContents?.() as unknown;
@@ -274,7 +305,7 @@ export function EpubReader({
         }
       });
     },
-    [applyFontScaleToDocument, fontSize, fontSizeMap],
+    [applyFontScaleToDocument, epubFontFamily, fontSize, fontSizeMap],
   );
 
   const applyFontScaleToMountedFrames = useCallback(() => {
