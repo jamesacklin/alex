@@ -414,21 +414,37 @@ export function EpubReader({
     rendition.flow("scrolled-continuous");
     rendition.spread("none");
 
-    rendition.hooks.content.register((contents: EpubContent) => {
-      if (contents?.document) {
-        applyThemeToDocument(contents.document);
-        attachAutoAdvance(contents.document);
-        const frame = contents.document.defaultView?.frameElement as
-          | HTMLElement
-          | null
-          | undefined;
-        const container = frame?.closest(".epub-container") as
-          | HTMLElement
-          | null
-          | undefined;
-        attachAutoAdvanceContainer(container);
-      }
-    });
+    const handleRenderedContent = (contents: EpubContent | null | undefined) => {
+      const doc =
+        contents?.document ||
+        (contents &&
+        typeof HTMLIFrameElement !== "undefined" &&
+        contents instanceof HTMLIFrameElement
+          ? contents.contentDocument
+          : null);
+      if (!doc) return;
+      applyThemeToDocument(doc);
+      attachAutoAdvance(doc);
+      const frame = doc.defaultView?.frameElement as
+        | HTMLElement
+        | null
+        | undefined;
+      const container = frame?.closest(".epub-container") as
+        | HTMLElement
+        | null
+        | undefined;
+      attachAutoAdvanceContainer(container);
+    };
+
+    if (rendition.hooks?.content?.register) {
+      rendition.hooks.content.register((contents: EpubContent) => {
+        handleRenderedContent(contents);
+      });
+    } else {
+      rendition.on("rendered", (_section: unknown, contents: unknown) => {
+        handleRenderedContent(contents as EpubContent);
+      });
+    }
 
     // Hook error listener for book load failures
     rendition.book.on("openFailed", (err: unknown) => {
