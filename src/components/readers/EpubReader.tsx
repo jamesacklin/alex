@@ -106,7 +106,6 @@ export function EpubReader({
   const [fontSize, setFontSize] = useState<FontSize>(() =>
     getInitialFontSize(),
   );
-
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
     const read = (name: string, fallback: string) =>
@@ -252,7 +251,6 @@ export function EpubReader({
 
     container.addEventListener("scroll", handler, { passive: true });
   }, []);
-
   const epubUrl = fileUrl ?? `/api/books/${bookId}/book.epub`;
   const readerStyles: IReactReaderStyle = {
     ...ReactReaderStyle,
@@ -347,6 +345,20 @@ export function EpubReader({
     renditionRef.current.themes.font("Times New Roman");
     renditionRef.current.themes.fontSize(fontSizeMap[fontSize]);
   }, [fontSize]);
+
+  useEffect(() => {
+    if (!renditionRef.current || !renditionReady) return;
+    const apply = () => applyThemeToRendition(renditionRef.current!);
+    apply();
+
+    const observer = new MutationObserver(() => apply());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
+
+    return () => observer.disconnect();
+  }, [applyThemeToRendition, renditionReady]);
 
   useEffect(() => {
     if (!renditionRef.current || !renditionReady) return;
