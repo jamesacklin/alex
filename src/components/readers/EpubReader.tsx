@@ -398,7 +398,7 @@ export function EpubReader({
     applyThemeToRendition(rendition);
 
     // Single-column, continuous vertical scroll
-    rendition.flow("scrolled-doc");
+    rendition.flow("scrolled-continuous");
     rendition.spread("none");
 
     rendition.hooks.content.register((contents: EpubContent) => {
@@ -683,6 +683,9 @@ export function EpubReader({
           epubViewStyles={epubViewStyles}
           epubOptions={{
             allowScriptedContent: true,
+            flow: "scrolled-continuous",
+            manager: "continuous",
+            spread: "none",
           }}
         />
       </div>
