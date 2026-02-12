@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alex - Self-Hosted PDF & EPUB Reader</title>
+    <meta
+      name="description"
+      content="A self-hosted reader for PDFs and EPUBs. No tracking, no algorithms, no subscriptions. Just your books, on your terms."
+    />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="landing-container">
+      <!-- Hero Section -->
+      <section class="hero">
+        <div class="hero-background">
+          <img src="images/library.png" alt="" class="hero-bg-image" />
+          <div class="hero-overlay"></div>
+        </div>
+
+        <div class="hero-content">
+          <div class="hero-text fade-in-up">
+            <h1 class="hero-title">Your self-hosted library</h1>
+            <p class="hero-subtitle">
+              A self-hosted reader for PDFs and EPUBs. No tracking, no
+              algorithms, no subscriptions. Just your books, on your terms.
+            </p>
+            <div class="hero-cta">
+              <a href="#install" class="btn-primary">Get Started</a>
+              <a href="#features" class="btn-secondary">Learn More</a>
+            </div>
+          </div>
+
+          <div class="hero-app fade-in-up" style="transition-delay: 200ms">
+            <div class="app-frame">
+              <img
+                src="images/screenshot.png"
+                alt="Alex application interface showing a grid of book covers"
+                class="app-screenshot"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="scroll-indicator">
+          <div class="scroll-line"></div>
+        </div>
+      </section>
+
+      <!-- Ownership Section -->
+      <section class="section ownership-section" id="features">
+        <div class="section-grid">
+          <div class="section-number fade-in-up">01</div>
+          <div class="section-content">
+            <h2 class="section-title fade-in-up">
+              Own your reading experience
+            </h2>
+            <div class="feature-grid">
+              <div class="feature-card fade-in-up">
+                <h3>Self-hosted</h3>
+                <p>
+                  Run Alex on your own infrastructure. Your data never leaves
+                  your control. No third-party servers, no cloud dependencies.
+                </p>
+              </div>
+              <div
+                class="feature-card fade-in-up"
+                style="transition-delay: 100ms"
+              >
+                <h3>Privacy first</h3>
+                <p>
+                  No tracking, no analytics, no data collection. What you read,
+                  when you read it, and how far you get are yours alone.
+                </p>
+              </div>
+              <div
+                class="feature-card fade-in-up"
+                style="transition-delay: 200ms"
+              >
+                <h3>Open standards</h3>
+                <p>
+                  Built on EPUB and PDF standards. Your library works with any
+                  compatible reader, now and in the future.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Collections Section -->
+      <section class="section collections-section">
+        <div class="section-grid">
+          <div class="section-number fade-in-up">02</div>
+          <div class="section-content">
+            <h2 class="section-title fade-in-up">
+              Share knowledge, build communities
+            </h2>
+            <div class="collections-highlight fade-in-up">
+              <div class="collections-text">
+                <h3>Public collections</h3>
+                <p>
+                  Create shared collections for course materials, reading
+                  groups, or research projects. Distribute handouts to students,
+                  curate reading lists for book clubs, or maintain public
+                  archives—all while retaining full control over your content.
+                </p>
+                <ul class="collections-list">
+                  <li>Class syllabi and course readings</li>
+                  <li>Book club selections and discussion materials</li>
+                  <li>Research libraries and curated archives</li>
+                  <li>Community knowledge bases</li>
+                </ul>
+              </div>
+              <div class="collections-visual">
+                <div class="collection-card">
+                  <div class="collection-header">
+                    <span class="collection-type">Public Collection</span>
+                    <span class="collection-count">24 items</span>
+                  </div>
+                  <h4>American Modernism Seminar</h4>
+                  <p class="collection-meta">Updated 2 days ago · 47 readers</p>
+                </div>
+                <div class="collection-card">
+                  <div class="collection-header">
+                    <span class="collection-type">Public Collection</span>
+                    <span class="collection-count">12 items</span>
+                  </div>
+                  <h4>Science Fiction Reading Group</h4>
+                  <p class="collection-meta">Updated 1 week ago · 23 readers</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Future Section -->
+      <section class="section future-section">
+        <div class="section-grid">
+          <div class="section-number fade-in-up">03</div>
+          <div class="section-content">
+            <h2 class="section-title fade-in-up">What's next</h2>
+            <div class="future-grid">
+              <div class="future-item fade-in-up">
+                <span class="future-label">In Development</span>
+                <h3>Social reading</h3>
+                <p>
+                  See what your friends are reading. Discover new books through
+                  trusted recommendations, not algorithmic suggestions.
+                </p>
+              </div>
+              <div
+                class="future-item fade-in-up"
+                style="transition-delay: 100ms"
+              >
+                <span class="future-label">Planned</span>
+                <h3>OPDS support</h3>
+                <p>
+                  Use your favorite e-reader or reading app with your Alex library. OPDS feed support lets you access your collection from any compatible device.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Install Section -->
+      <section class="section install-section" id="install">
+        <div class="install-content fade-in-up">
+          <h2>Get started with Alex</h2>
+          <p>
+            Self-hosting puts you in control. Install on your own server or run
+            locally. Full documentation and Docker support included.
+          </p>
+          <div class="install-options">
+            <a href="https://github.com" class="btn-install">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"
+                />
+              </svg>
+              View on GitHub
+            </a>
+            <a href="#docs" class="btn-docs">Read Documentation</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <div class="footer-content">
+          <div class="footer-brand">
+            <h3>Alex</h3>
+            <p>Self-hosted reading for the long term.</p>
+          </div>
+          <div class="footer-links">
+            <div class="footer-column">
+              <h4>Product</h4>
+              <a href="#features">Features</a>
+              <a href="#install">Install</a>
+              <a href="#docs">Documentation</a>
+            </div>
+            <div class="footer-column">
+              <h4>Community</h4>
+              <a href="#github">GitHub</a>
+              <a href="#discord">Discord</a>
+              <a href="#forum">Forum</a>
+            </div>
+            <div class="footer-column">
+              <h4>Resources</h4>
+              <a href="#guides">Guides</a>
+              <a href="#api">API</a>
+              <a href="#support">Support</a>
+            </div>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>
+            Licensed under MIT. Built with care for readers who value ownership.
+          </p>
+        </div>
+      </footer>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
