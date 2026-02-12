@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, asc, count, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
-import { books, collectionBooks, collections } from "@/lib/db/schema";
+import { books, collectionBooks, collections, readingProgress } from "@/lib/db/schema";
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +44,13 @@ export async function GET(
     .from(collectionBooks)
     .where(eq(collectionBooks.collectionId, id));
 
-  // Get paginated books
+  // LEFT JOIN: only the current user's reading progress
+  const joinCond = and(
+    eq(readingProgress.bookId, books.id),
+    eq(readingProgress.userId, session.user.id),
+  );
+
+  // Get paginated books with progress
   const bookRows = await db
     .select({
       id: books.id,
@@ -55,17 +61,39 @@ export async function GET(
       pageCount: books.pageCount,
       addedAt: books.addedAt,
       updatedAt: books.updatedAt,
+      progressStatus: readingProgress.status,
+      progressPercent: readingProgress.percentComplete,
+      progressLastReadAt: readingProgress.lastReadAt,
     })
     .from(collectionBooks)
     .innerJoin(books, eq(collectionBooks.bookId, books.id))
+    .leftJoin(readingProgress, joinCond)
     .where(eq(collectionBooks.collectionId, id))
     .orderBy(asc(books.title))
     .limit(limit)
     .offset(offset);
 
+  const booksResponse = bookRows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    author: row.author,
+    coverPath: row.coverPath,
+    fileType: row.fileType,
+    pageCount: row.pageCount,
+    addedAt: row.addedAt,
+    updatedAt: row.updatedAt,
+    readingProgress: row.progressStatus !== null
+      ? {
+          status: row.progressStatus,
+          percentComplete: row.progressPercent,
+          lastReadAt: row.progressLastReadAt,
+        }
+      : null,
+  }));
+
   return NextResponse.json({
     collection,
-    books: bookRows,
+    books: booksResponse,
     total,
     page,
     totalPages: Math.ceil(total / limit),

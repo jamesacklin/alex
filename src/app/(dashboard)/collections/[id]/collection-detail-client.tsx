@@ -34,6 +34,11 @@ interface CollectionResponse {
     pageCount: number | null;
     addedAt: number;
     updatedAt: number;
+    readingProgress: {
+      status: string;
+      percentComplete: number;
+      lastReadAt: number | null;
+    } | null;
   }>;
   total: number;
   page: number;
@@ -106,7 +111,7 @@ export default function CollectionDetailClient() {
           fileType: book.fileType,
           pageCount: book.pageCount,
           updatedAt: book.updatedAt,
-          readingProgress: null,
+          readingProgress: book.readingProgress,
         }));
         setAllBooks(books);
         setLoading(false);
@@ -150,7 +155,7 @@ export default function CollectionDetailClient() {
         fileType: book.fileType,
         pageCount: book.pageCount,
         updatedAt: book.updatedAt,
-        readingProgress: null,
+        readingProgress: book.readingProgress,
       }));
 
       setAllBooks((prev) => [...prev, ...newBooks]);
@@ -406,6 +411,32 @@ export default function CollectionDetailClient() {
         </div>
       ) : (
         <>
+          {/* Now Reading section */}
+          {(() => {
+            const nowReading = allBooks.filter(
+              (book) => book.readingProgress?.status === "reading"
+            );
+            if (nowReading.length === 0) return null;
+            return (
+              <>
+                <div className="space-y-4">
+                  <h2 className="text-base font-semibold">Now Reading</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                    {nowReading.map((book) => (
+                      <BookCard
+                        key={book.id}
+                        book={book}
+                        actionLabel="Remove from collection"
+                        onAction={() => onRemoveBook(book.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <hr className="border-border" />
+              </>
+            );
+          })()}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
             {allBooks.map((book) => (
               <BookCard

@@ -294,6 +294,27 @@ export default function LibraryClient() {
         </div>
       ) : (
         <>
+          {/* Now Reading section */}
+          {(() => {
+            const nowReading = books.filter(
+              (book) => book.readingProgress?.status === "reading"
+            );
+            if (nowReading.length === 0) return null;
+            return (
+              <>
+                <div className="space-y-4">
+                  <h2 className="text-base font-semibold">Now Reading</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                    {nowReading.map((book) => (
+                      <BookCard key={book.id} book={book} />
+                    ))}
+                  </div>
+                </div>
+                <hr className="border-border" />
+              </>
+            );
+          })()}
+
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {books.map((book) => (
               <BookCard key={book.id} book={book} />
