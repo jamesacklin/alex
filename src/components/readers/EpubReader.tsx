@@ -17,6 +17,12 @@ import {
   type IEpubViewStyle,
 } from "react-reader";
 import type { Rendition } from "epubjs";
+import {
+  doesViewportMatchSaved,
+  getPendingScrollRestore,
+  type SavedEpubProgress,
+} from "./epub-progress";
+import { ReadingProgressMeter } from "@/components/library/ReadingProgressMeter";
 
 type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
@@ -63,8 +69,9 @@ export function EpubReader({
   const progressPersistContainers = useRef(new WeakSet<HTMLElement>());
   const lastLocalPersistAt = useRef(0);
   const lastLocalPersistedCfi = useRef<string | null>(null);
+  const initialPercentComplete = useRef<number | null>(null);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
-  const pendingScrollFraction = useRef<number | null>(null);
+  const pendingScrollRestore = useRef<ReturnType<typeof getPendingScrollRestore>>(null);
   const isRestoringScroll = useRef(false);
 
   const fontSizeMap = useMemo<Record<FontSize, string>>(
@@ -103,12 +110,16 @@ export function EpubReader({
       try {
         const saved = localStorage.getItem(progressKey);
         if (saved) {
-          const parsed = JSON.parse(saved) as {
-            epubLocation?: string;
-            scrollFraction?: number;
-          };
-          if (typeof parsed.scrollFraction === "number") {
-            pendingScrollFraction.current = parsed.scrollFraction;
+          const parsed = JSON.parse(saved) as SavedEpubProgress;
+          pendingScrollRestore.current = getPendingScrollRestore(parsed);
+          if (
+            typeof parsed.percentComplete === "number" &&
+            Number.isFinite(parsed.percentComplete)
+          ) {
+            initialPercentComplete.current = Math.min(
+              100,
+              Math.max(0, parsed.percentComplete),
+            );
           }
           if (
             typeof parsed.epubLocation === "string" &&
@@ -127,6 +138,9 @@ export function EpubReader({
 
   const [location] = useState<string | number>(() =>
     getInitialLocation(),
+  );
+  const [percentComplete, setPercentComplete] = useState<number | null>(
+    initialPercentComplete.current,
   );
   const [fontSize, setFontSize] = useState<FontSize>(() =>
     getInitialFontSize(),
@@ -307,12 +321,16 @@ export function EpubReader({
   const persistLocalProgress = useCallback(
     (epubLocation: string, percentComplete: number, scrollFraction?: number) => {
       if (isRestoringScroll.current) return;
+      const viewportWidth = typeof window !== "undefined" ? window.innerWidth : null;
+      const viewportHeight = typeof window !== "undefined" ? window.innerHeight : null;
       localStorage.setItem(
         progressKey,
         JSON.stringify({
           epubLocation,
           percentComplete,
           scrollFraction: scrollFraction ?? null,
+          viewportWidth,
+          viewportHeight,
           updatedAt: Date.now(),
         }),
       );
@@ -341,6 +359,7 @@ export function EpubReader({
       try {
         const percent = book.locations.percentageFromCfi(epubcfi) * 100;
         const sf = getScrollFraction();
+        setPercentComplete(percent);
         persistLocalProgress(epubcfi, percent, sf);
         lastLocalPersistAt.current = now;
         lastLocalPersistedCfi.current = epubcfi;
@@ -483,10 +502,18 @@ export function EpubReader({
 
   // Restore saved scroll position after content renders
   useEffect(() => {
-    if (!renditionReady || pendingScrollFraction.current === null) return;
+    if (!renditionReady || !pendingScrollRestore.current) return;
 
-    const fraction = pendingScrollFraction.current;
-    pendingScrollFraction.current = null;
+    const pending = pendingScrollRestore.current;
+    pendingScrollRestore.current = null;
+    if (
+      typeof window === "undefined" ||
+      !doesViewportMatchSaved(pending, window.innerWidth, window.innerHeight)
+    ) {
+      return;
+    }
+
+    const fraction = pending.fraction;
     isRestoringScroll.current = true;
 
     const restore = () => {
@@ -548,6 +575,7 @@ export function EpubReader({
         try {
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
           const sf = getScrollFraction();
+          setPercentComplete(percent);
           onLocationChange(epubcfi, percent);
           persistLocalProgress(epubcfi, percent, sf);
           lastLocalPersistAt.current = Date.now();
@@ -649,6 +677,20 @@ export function EpubReader({
           return rendition.book.locations.generate(1024);
         })
         .then(() => {
+          const currentLocation = rendition.currentLocation() as
+            | RenditionLocation
+            | RenditionLocation[]
+            | null;
+          const start = getLocationStart(currentLocation);
+          const epubcfi = start?.cfi;
+          if (epubcfi && epubcfi.startsWith("epubcfi(")) {
+            try {
+              const percent = rendition.book.locations.percentageFromCfi(epubcfi) * 100;
+              setPercentComplete(percent);
+            } catch (err) {
+              console.error("Failed to compute initial ePub percentage:", err);
+            }
+          }
           // Signal that rendition is ready for theme application
           setRenditionReady(true);
         })
@@ -741,50 +783,68 @@ export function EpubReader({
     <div className="flex flex-col h-full bg-background">
       <style>{`.epub-container { overflow-anchor: none; }`}</style>
       {/* Toolbar */}
-      <header className="flex items-center gap-3 px-4 h-12 bg-sidebar text-sidebar-foreground border-b border-border shrink-0">
-        <Link
-          href={backUrl ?? "/library"}
-          className="p-1 rounded hover:bg-muted transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-sm font-medium truncate flex-1">{title}</h1>
+      <header className="grid grid-cols-[minmax(0,1fr)_minmax(120px,160px)_auto] sm:grid-cols-[minmax(0,1fr)_minmax(160px,220px)_auto] items-center gap-3 px-4 h-12 bg-sidebar text-sidebar-foreground border-b border-border shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link
+            href={backUrl ?? "/library"}
+            className="p-1 rounded hover:bg-muted transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <h1 className="text-sm font-medium truncate">{title}</h1>
+        </div>
 
-        {/* Chapter navigation */}
-        <button
-          onClick={handlePrevChapter}
-          disabled={currentChapterIndex <= 0}
-          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          aria-label="Previous chapter"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <button
-          onClick={handleNextChapter}
-          disabled={currentChapterIndex >= toc.length - 1 || toc.length === 0}
-          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          aria-label="Next chapter"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
+        <div className="min-w-0">
+          {typeof percentComplete === "number" && (
+            <ReadingProgressMeter
+              percentComplete={percentComplete}
+              precision={2}
+              compact
+              className="max-w-full"
+              rowClassName="text-[11px] text-sidebar-foreground/80"
+              trackClassName="bg-sidebar-foreground/25"
+              fillClassName="bg-sidebar-foreground"
+            />
+          )}
+        </div>
 
-        {/* TOC toggle */}
-        <button
-          onClick={() => setTocOpen(!tocOpen)}
-          className="p-1 rounded hover:bg-muted transition-colors"
-          aria-label="Table of contents"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1 justify-self-end">
+          {/* Chapter navigation */}
+          <button
+            onClick={handlePrevChapter}
+            disabled={currentChapterIndex <= 0}
+            className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Previous chapter"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            onClick={handleNextChapter}
+            disabled={currentChapterIndex >= toc.length - 1 || toc.length === 0}
+            className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Next chapter"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
 
-        {/* Reading settings */}
-        <button
-          onClick={() => setSettingsOpen(!settingsOpen)}
-          className="p-1 rounded hover:bg-muted transition-colors"
-          aria-label="Reading settings"
-        >
-          <Settings className="h-5 w-5" />
-        </button>
+          {/* TOC toggle */}
+          <button
+            onClick={() => setTocOpen(!tocOpen)}
+            className="p-1 rounded hover:bg-muted transition-colors"
+            aria-label="Table of contents"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          {/* Reading settings */}
+          <button
+            onClick={() => setSettingsOpen(!settingsOpen)}
+            className="p-1 rounded hover:bg-muted transition-colors"
+            aria-label="Reading settings"
+          >
+            <Settings className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       {/* Reader */}
