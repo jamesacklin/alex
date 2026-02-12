@@ -312,22 +312,35 @@ export default function LibraryClient() {
             );
           })()}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2">
-            <h2 className="text-base font-semibold">All Books</h2>
-            {/* Book count */}
-            {!loading && (
-              <p className="text-sm text-muted-foreground text-end">
-                Showing {books.length} of {total}{" "}
-                {total === 1 ? "book" : "books"}
-              </p>
-            )}
-          </div>
+          {/* All Books section */}
+          {(() => {
+            const nowReadingIds = new Set(
+              books
+                .filter((book) => book.readingProgress?.status === "reading")
+                .map((book) => book.id)
+            );
+            const otherBooks = books.filter((book) => !nowReadingIds.has(book.id));
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {books.map((book) => (
-              <BookCard key={book.id} book={book} />
-            ))}
-          </div>
+            return (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2">
+                  <h2 className="text-base font-semibold">All Books</h2>
+                  {!loading && (
+                    <p className="text-sm text-muted-foreground text-end">
+                      Showing {books.length} of {total}{" "}
+                      {total === 1 ? "book" : "books"}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {otherBooks.map((book) => (
+                    <BookCard key={book.id} book={book} />
+                  ))}
+                </div>
+              </>
+            );
+          })()}
 
           {/* Infinite scroll sentinel */}
           <div ref={sentinelRef} className="h-20" />

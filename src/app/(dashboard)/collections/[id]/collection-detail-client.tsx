@@ -440,16 +440,28 @@ export default function CollectionDetailClient() {
             );
           })()}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
-            {allBooks.map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                actionLabel="Remove from collection"
-                onAction={() => onRemoveBook(book.id)}
-              />
-            ))}
-          </div>
+          {/* All Books section */}
+          {(() => {
+            const nowReadingIds = new Set(
+              allBooks
+                .filter((book) => book.readingProgress?.status === "reading")
+                .map((book) => book.id)
+            );
+            const otherBooks = allBooks.filter((book) => !nowReadingIds.has(book.id));
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
+                {otherBooks.map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    actionLabel="Remove from collection"
+                    onAction={() => onRemoveBook(book.id)}
+                  />
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Loading more skeletons */}
           {isLoadingMore && (
