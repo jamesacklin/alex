@@ -350,6 +350,7 @@ export default function CollectionDetailClient() {
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <Input
                   readOnly
+                  aria-label="Share URL"
                   value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${collection.collection.shareToken}`}
                   className="flex-1 min-w-0 font-mono text-sm"
                 />
@@ -396,6 +397,8 @@ export default function CollectionDetailClient() {
             strokeWidth={1.5}
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
+            focusable="false"
           >
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
