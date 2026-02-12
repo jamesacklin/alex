@@ -243,13 +243,6 @@ export default function LibraryClient() {
         />
       </div>
 
-      {/* Book count */}
-      {!loading && (
-        <p className="text-sm text-muted-foreground">
-          Showing {books.length} of {total} {total === 1 ? "book" : "books"}
-        </p>
-      )}
-
       {/* Grid / Skeleton / Empty */}
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
@@ -301,7 +294,7 @@ export default function LibraryClient() {
           {/* Now Reading section */}
           {(() => {
             const nowReading = books.filter(
-              (book) => book.readingProgress?.status === "reading"
+              (book) => book.readingProgress?.status === "reading",
             );
             if (nowReading.length === 0) return null;
             return (
@@ -318,6 +311,17 @@ export default function LibraryClient() {
               </>
             );
           })()}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2">
+            <h2 className="text-base font-semibold">All Books</h2>
+            {/* Book count */}
+            {!loading && (
+              <p className="text-sm text-muted-foreground text-end">
+                Showing {books.length} of {total}{" "}
+                {total === 1 ? "book" : "books"}
+              </p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {books.map((book) => (
