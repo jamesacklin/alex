@@ -156,7 +156,8 @@ export default function LibraryClient() {
       router.replace(`/library?${params}`, { scroll: false });
     }, 500);
     return () => clearTimeout(timer);
-  }, [currentPage, router, searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, router]);
 
   // Load more handler
   const handleLoadMore = async () => {
