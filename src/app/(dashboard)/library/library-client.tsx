@@ -145,7 +145,7 @@ export default function LibraryClient() {
 
   // Load more handler
   const handleLoadMore = async () => {
-    if (isLoadingMore || !hasMore) return;
+    if (isLoadingMore || !hasMore || loading) return;
 
     setIsLoadingMore(true);
     const nextPage = currentPage + 1;
@@ -155,14 +155,24 @@ export default function LibraryClient() {
       params.set("page", String(nextPage));
 
       const response = await fetch(`/api/books?${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
 
-      setBooks((prev) => [...prev, ...data.books]);
-      setCurrentPage(nextPage);
-      setHasMore(data.hasMore);
-      setTotal(data.total);
+      // Only update if we got new books
+      if (data.books && data.books.length > 0) {
+        setBooks((prev) => [...prev, ...data.books]);
+        setCurrentPage(nextPage);
+        setHasMore(data.hasMore);
+        setTotal(data.total);
+      } else {
+        // No more books to load
+        setHasMore(false);
+      }
     } catch (error) {
       console.error("Failed to load more books:", error);
+      setHasMore(false); // Stop trying on error
     } finally {
       setIsLoadingMore(false);
     }
@@ -321,6 +331,8 @@ export default function LibraryClient() {
             );
             const otherBooks = books.filter((book) => !nowReadingIds.has(book.id));
 
+            if (otherBooks.length === 0) return null;
+
             return (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2">
@@ -338,12 +350,12 @@ export default function LibraryClient() {
                     <BookCard key={book.id} book={book} />
                   ))}
                 </div>
+
+                {/* Infinite scroll sentinel */}
+                <div ref={sentinelRef} className="h-20" />
               </>
             );
           })()}
-
-          {/* Infinite scroll sentinel */}
-          <div ref={sentinelRef} className="h-20" />
 
           {/* Loading more skeletons */}
           {isLoadingMore && (
