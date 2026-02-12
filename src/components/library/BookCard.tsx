@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ReadingProgressMeter } from "@/components/library/ReadingProgressMeter";
 import {
   Dialog,
   DialogClose,
@@ -215,18 +216,9 @@ export function BookCard({
 
         {/* Progress bar — reading only */}
         {book.readingProgress?.status === "reading" && (
-          <div className="pt-2">
-            <div className="flex justify-between text-sm text-muted-foreground mb-1">
-              <span>Reading</span>
-              <span>{book.readingProgress.percentComplete.toFixed(0)}%</span>
-            </div>
-            <div className="h-1.5 w-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary"
-                style={{ width: `${book.readingProgress.percentComplete}%` }}
-              />
-            </div>
-          </div>
+          <ReadingProgressMeter
+            percentComplete={book.readingProgress.percentComplete}
+          />
         )}
       </div>
 
