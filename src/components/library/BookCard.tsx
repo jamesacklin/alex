@@ -260,6 +260,8 @@ export function BookCard({
                       type="button"
                       onClick={() => toggleCollection(option)}
                       disabled={isSaving}
+                      role="checkbox"
+                      aria-checked={isSelected}
                       className={[
                         "w-full flex items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors",
                         isSelected
@@ -268,7 +270,7 @@ export function BookCard({
                         isSaving ? "opacity-60 cursor-not-allowed" : "",
                       ].join(" ")}
                     >
-                      <span className="text-primary text-sm font-medium">
+                      <span className="text-primary text-sm font-medium" aria-hidden="true">
                         {isSelected ? "☑" : "☐"}
                       </span>
                       <span className="flex-1">

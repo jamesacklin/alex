@@ -46,6 +46,8 @@ export function SharedBookCard({ book, shareToken }: SharedBookCardProps) {
               strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
+              focusable="false"
             >
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
@@ -56,7 +58,7 @@ export function SharedBookCard({ book, shareToken }: SharedBookCardProps) {
         <div className="absolute top-2 right-2">
           <Badge
             variant="secondary"
-            className="text-sm font-semibold bg-white/90 text-gray-800"
+            className="text-sm font-semibold"
           >
             {book.fileType === "pdf" ? "PDF" : "EPUB"}
           </Badge>
