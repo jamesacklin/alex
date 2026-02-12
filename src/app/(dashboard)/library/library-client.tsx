@@ -30,6 +30,13 @@ export default function LibraryClient() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Keep searchParams in a ref to access current value without triggering effects
+  const searchParamsRef = useRef(searchParams);
+
+  useEffect(() => {
+    searchParamsRef.current = searchParams;
+  });
+
   // Fetch "Now Reading" books separately
   useEffect(() => {
     fetch("/api/books/now-reading")
@@ -151,12 +158,11 @@ export default function LibraryClient() {
   useEffect(() => {
     if (currentPage === 1) return;
     const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(searchParamsRef.current.toString());
       params.set("page", String(currentPage));
       router.replace(`/library?${params}`, { scroll: false });
     }, 500);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, router]);
 
   // Load more handler
