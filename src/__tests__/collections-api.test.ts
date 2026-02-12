@@ -96,11 +96,24 @@ function initSchema(db: Database.Database) {
       added_at INTEGER NOT NULL,
       PRIMARY KEY (collection_id, book_id)
     );
+
+    CREATE TABLE IF NOT EXISTS reading_progress (
+      user_id TEXT NOT NULL REFERENCES users(id),
+      book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'not_started',
+      current_page INTEGER,
+      total_pages INTEGER,
+      epub_location TEXT,
+      percent_complete REAL NOT NULL DEFAULT 0,
+      last_read_at INTEGER,
+      PRIMARY KEY (user_id, book_id)
+    );
   `);
 }
 
 function resetData() {
   sqlite.exec(`
+    DELETE FROM reading_progress;
     DELETE FROM collection_books;
     DELETE FROM collections;
     DELETE FROM books;
