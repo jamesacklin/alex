@@ -63,6 +63,9 @@ export function EpubReader({
   const progressPersistContainers = useRef(new WeakSet<HTMLElement>());
   const lastLocalPersistAt = useRef(0);
   const lastLocalPersistedCfi = useRef<string | null>(null);
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const pendingScrollFraction = useRef<number | null>(null);
+  const isRestoringScroll = useRef(false);
 
   const fontSizeMap = useMemo<Record<FontSize, string>>(
     () => ({
@@ -100,14 +103,18 @@ export function EpubReader({
       try {
         const saved = localStorage.getItem(progressKey);
         if (saved) {
-          const { epubLocation } = JSON.parse(saved) as {
+          const parsed = JSON.parse(saved) as {
             epubLocation?: string;
+            scrollFraction?: number;
           };
+          if (typeof parsed.scrollFraction === "number") {
+            pendingScrollFraction.current = parsed.scrollFraction;
+          }
           if (
-            typeof epubLocation === "string" &&
-            epubLocation.startsWith("epubcfi(")
+            typeof parsed.epubLocation === "string" &&
+            parsed.epubLocation.startsWith("epubcfi(")
           ) {
-            return epubLocation;
+            return parsed.epubLocation;
           }
         }
       } catch (err) {
@@ -128,6 +135,13 @@ export function EpubReader({
   const epubFontWeight = 300;
   const epubLineHeight = 1.6;
   const epubColumnWidth = "80ch";
+
+  const getScrollFraction = useCallback((): number | undefined => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    return maxScroll > 0 ? container.scrollTop / maxScroll : 0;
+  }, []);
 
   const getThemeVars = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -291,12 +305,14 @@ export function EpubReader({
 
 
   const persistLocalProgress = useCallback(
-    (epubLocation: string, percentComplete: number) => {
+    (epubLocation: string, percentComplete: number, scrollFraction?: number) => {
+      if (isRestoringScroll.current) return;
       localStorage.setItem(
         progressKey,
         JSON.stringify({
           epubLocation,
           percentComplete,
+          scrollFraction: scrollFraction ?? null,
           updatedAt: Date.now(),
         }),
       );
@@ -321,24 +337,25 @@ export function EpubReader({
       const start = getLocationStart(currentLocation);
       const epubcfi = start?.cfi;
       if (!epubcfi || !epubcfi.startsWith("epubcfi(")) return;
-      if (!force && epubcfi === lastLocalPersistedCfi.current) return;
 
       try {
         const percent = book.locations.percentageFromCfi(epubcfi) * 100;
-        persistLocalProgress(epubcfi, percent);
+        const sf = getScrollFraction();
+        persistLocalProgress(epubcfi, percent, sf);
         lastLocalPersistAt.current = now;
         lastLocalPersistedCfi.current = epubcfi;
       } catch (err) {
         console.error("Failed to persist current location:", err);
       }
     },
-    [persistLocalProgress],
+    [persistLocalProgress, getScrollFraction],
   );
 
   const attachContainerProgressPersistence = useCallback(
     (container?: HTMLElement | null) => {
       if (!container || progressPersistContainers.current.has(container)) return;
       progressPersistContainers.current.add(container);
+      scrollContainerRef.current = container;
       container.addEventListener(
         "scroll",
         () => {
@@ -464,6 +481,46 @@ export function EpubReader({
     };
   }, [persistCurrentLocationToLocal]);
 
+  // Restore saved scroll position after content renders
+  useEffect(() => {
+    if (!renditionReady || pendingScrollFraction.current === null) return;
+
+    const fraction = pendingScrollFraction.current;
+    pendingScrollFraction.current = null;
+    isRestoringScroll.current = true;
+
+    const restore = () => {
+      let container = scrollContainerRef.current;
+      if (!container) {
+        container = document.querySelector(
+          ".epub-container",
+        ) as HTMLElement | null;
+        if (container) scrollContainerRef.current = container;
+      }
+      if (container) {
+        const maxScroll = container.scrollHeight - container.clientHeight;
+        if (maxScroll > 0) {
+          container.scrollTop = fraction * maxScroll;
+        }
+      }
+    };
+
+    // Retry as content may still be loading (fonts, images, layout)
+    const t1 = setTimeout(restore, 100);
+    const t2 = setTimeout(restore, 300);
+    const t3 = setTimeout(() => {
+      restore();
+      isRestoringScroll.current = false;
+    }, 800);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      isRestoringScroll.current = false;
+    };
+  }, [renditionReady]);
+
   const handleLocationChanged = useCallback(
     (epubcfi: string) => {
       setLoading(false);
@@ -490,8 +547,9 @@ export function EpubReader({
       ) {
         try {
           const percent = book.locations.percentageFromCfi(epubcfi) * 100;
+          const sf = getScrollFraction();
           onLocationChange(epubcfi, percent);
-          persistLocalProgress(epubcfi, percent);
+          persistLocalProgress(epubcfi, percent, sf);
           lastLocalPersistAt.current = Date.now();
           lastLocalPersistedCfi.current = epubcfi;
         } catch (err) {
@@ -503,7 +561,7 @@ export function EpubReader({
         }
       }
     },
-    [onLocationChange, persistLocalProgress],
+    [onLocationChange, persistLocalProgress, getScrollFraction],
   );
 
   const handleGetRendition = useCallback(
