@@ -4,6 +4,32 @@ import { Slot } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Button Component
+ *
+ * IMPORTANT: Icon-only buttons require an accessible name for screen readers.
+ * Always provide an aria-label when using icon sizes without text content.
+ *
+ * @example
+ * // ✅ Good: Icon button with aria-label
+ * <Button size="icon" aria-label="Close dialog">
+ *   <XIcon />
+ * </Button>
+ *
+ * @example
+ * // ✅ Good: Button with text (no aria-label needed)
+ * <Button>
+ *   <SaveIcon />
+ *   Save
+ * </Button>
+ *
+ * @example
+ * // ❌ Bad: Icon-only button without aria-label
+ * <Button size="icon">
+ *   <XIcon />
+ * </Button>
+ */
+
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium cursor-pointer transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
