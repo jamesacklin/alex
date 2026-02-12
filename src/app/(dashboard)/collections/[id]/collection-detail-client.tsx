@@ -76,10 +76,26 @@ export default function CollectionDetailClient() {
 
   // Pagination state
   const [allBooks, setAllBooks] = useState<Book[]>([]);
+  const [nowReadingBooks, setNowReadingBooks] = useState<Book[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Fetch "Now Reading" books separately
+  useEffect(() => {
+    if (!collectionId) return;
+    fetch(`/api/collections/${collectionId}/now-reading`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.books) {
+          setNowReadingBooks(data.books);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch now reading books:", err);
+      });
+  }, [collectionId]);
 
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
@@ -415,38 +431,28 @@ export default function CollectionDetailClient() {
       ) : (
         <>
           {/* Now Reading section */}
-          {(() => {
-            const nowReading = allBooks.filter(
-              (book) => book.readingProgress?.status === "reading"
-            );
-            if (nowReading.length === 0) return null;
-            return (
-              <>
-                <div className="space-y-4">
-                  <h2 className="text-base font-semibold">Now Reading</h2>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                    {nowReading.map((book) => (
-                      <BookCard
-                        key={book.id}
-                        book={book}
-                        actionLabel="Remove from collection"
-                        onAction={() => onRemoveBook(book.id)}
-                      />
-                    ))}
-                  </div>
+          {nowReadingBooks.length > 0 && (
+            <>
+              <div className="space-y-4">
+                <h2 className="text-base font-semibold">Now Reading</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {nowReadingBooks.map((book) => (
+                    <BookCard
+                      key={book.id}
+                      book={book}
+                      actionLabel="Remove from collection"
+                      onAction={() => onRemoveBook(book.id)}
+                    />
+                  ))}
                 </div>
-                <hr className="border-border" />
-              </>
-            );
-          })()}
+              </div>
+              <hr className="border-border" />
+            </>
+          )}
 
           {/* All Books section */}
           {(() => {
-            const nowReadingIds = new Set(
-              allBooks
-                .filter((book) => book.readingProgress?.status === "reading")
-                .map((book) => book.id)
-            );
+            const nowReadingIds = new Set(nowReadingBooks.map((book) => book.id));
             const otherBooks = allBooks.filter((book) => !nowReadingIds.has(book.id));
 
             return (
