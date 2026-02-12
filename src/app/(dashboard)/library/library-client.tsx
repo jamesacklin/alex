@@ -22,12 +22,27 @@ export default function LibraryClient() {
 
   // Fetched data
   const [books, setBooks] = useState<Book[]>([]);
+  const [nowReadingBooks, setNowReadingBooks] = useState<Book[]>([]);
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Fetch "Now Reading" books separately
+  useEffect(() => {
+    fetch("/api/books/now-reading")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.books) {
+          setNowReadingBooks(data.books);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch now reading books:", err);
+      });
+  }, []);
 
   // Fetch initial page or when filters change
   useEffect(() => {
@@ -298,57 +313,54 @@ export default function LibraryClient() {
       ) : (
         <>
           {/* Now Reading section */}
-          {(() => {
-            const nowReading = books.filter(
-              (book) => book.readingProgress?.status === "reading",
-            );
-            if (nowReading.length === 0) return null;
-            return (
-              <>
-                <div className="space-y-4">
-                  <h2 className="text-base font-semibold">Now Reading</h2>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                    {nowReading.map((book) => (
-                      <BookCard key={book.id} book={book} />
-                    ))}
-                  </div>
-                </div>
-                <hr className="border-border" />
-              </>
-            );
-          })()}
-
-          {/* All Books section */}
-          {(() => {
-            const nowReadingIds = new Set(
-              books
-                .filter((book) => book.readingProgress?.status === "reading")
-                .map((book) => book.id)
-            );
-            const otherBooks = books.filter((book) => !nowReadingIds.has(book.id));
-
-            if (otherBooks.length === 0) return null;
-
-            return (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2">
-                  <h2 className="text-base font-semibold">All Books</h2>
-                  {!loading && (
-                    <p className="text-sm text-muted-foreground text-end">
-                      Showing {books.length} of {total}{" "}
-                      {total === 1 ? "book" : "books"}
-                    </p>
-                  )}
-                </div>
-
+          {nowReadingBooks.length > 0 && (
+            <>
+              <div className="space-y-4">
+                <h2 className="text-base font-semibold">Now Reading</h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                  {otherBooks.map((book) => (
+                  {nowReadingBooks.map((book) => (
                     <BookCard key={book.id} book={book} />
                   ))}
                 </div>
+              </div>
+              <hr className="border-border" />
+            </>
+          )}
+
+          {/* All Books section */}
+          {(() => {
+            const nowReadingIds = new Set(nowReadingBooks.map((book) => book.id));
+            const otherBooks = books.filter((book) => !nowReadingIds.has(book.id));
+
+            if (otherBooks.length === 0 && books.length > 0) {
+              // All loaded books are in "Now Reading", but there might be more to load
+              return null;
+            }
+
+            return (
+              <>
+                {otherBooks.length > 0 && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2">
+                      <h2 className="text-base font-semibold">All Books</h2>
+                      {!loading && (
+                        <p className="text-sm text-muted-foreground text-end">
+                          Showing {books.length} of {total}{" "}
+                          {total === 1 ? "book" : "books"}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                      {otherBooks.map((book) => (
+                        <BookCard key={book.id} book={book} />
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {/* Infinite scroll sentinel */}
-                <div ref={sentinelRef} className="h-20" />
+                {hasMore && <div ref={sentinelRef} className="h-20" />}
               </>
             );
           })()}
