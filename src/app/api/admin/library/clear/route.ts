@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/config';
+import { authSession } from '@/lib/auth/config';
 import { db } from '@/lib/db';
 import { books } from '@/lib/db/schema';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export async function POST() {
-  const session = await auth();
+  const session = await authSession();
 
   // Require admin role
   if (!session?.user || session.user.role !== 'admin') {
