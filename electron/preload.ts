@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   rescanLibrary: () => ipcRenderer.invoke('rescan-library'),
   nukeAndRescanLibrary: () => ipcRenderer.invoke('nuke-and-rescan-library'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getLibraryPath: () => ipcRenderer.invoke('get-library-path'),
 });
