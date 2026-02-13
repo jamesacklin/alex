@@ -28,9 +28,15 @@ export default function AdminLibraryPage() {
   const [isClearing, setIsClearing] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [libraryPath, setLibraryPath] = useState<string>("");
 
   useEffect(() => {
-    setIsElectron(typeof window !== "undefined" && !!window.electronAPI);
+    const electron = typeof window !== "undefined" && !!window.electronAPI;
+    setIsElectron(electron);
+
+    if (electron && window.electronAPI) {
+      window.electronAPI.getLibraryPath().then(setLibraryPath);
+    }
   }, []);
 
   const handleClearLibrary = async () => {
@@ -135,23 +141,31 @@ export default function AdminLibraryPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button
-                onClick={handleChangeLibraryPath}
-                disabled={isProcessing}
-              >
-                <svg
-                  className="h-4 w-4 mr-2"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              <div className="space-y-4">
+                {libraryPath && (
+                  <div className="rounded-lg border border-muted-foreground/20 bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground mb-1">Current directory:</p>
+                    <p className="text-sm font-mono break-all">{libraryPath}</p>
+                  </div>
+                )}
+                <Button
+                  onClick={handleChangeLibraryPath}
+                  disabled={isProcessing}
                 >
-                  <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-                </svg>
-                Change Directory
-              </Button>
+                  <svg
+                    className="h-4 w-4 mr-2"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                  </svg>
+                  Change Directory
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

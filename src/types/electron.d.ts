@@ -3,6 +3,7 @@ export interface ElectronAPI {
   rescanLibrary: () => Promise<boolean>;
   nukeAndRescanLibrary: () => Promise<boolean>;
   getAppVersion: () => Promise<string>;
+  getLibraryPath: () => Promise<string>;
 }
 
 declare global {

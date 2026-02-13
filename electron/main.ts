@@ -482,6 +482,10 @@ app.whenReady().then(async () => {
     return app.getVersion();
   });
 
+  ipcMain.handle('get-library-path', () => {
+    return store.get('libraryPath') || '';
+  });
+
   // First-run: prompt for library path if not set
   let libraryPath = store.get('libraryPath') || '';
   if (!libraryPath) {
