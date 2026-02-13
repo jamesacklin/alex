@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookCard, type Book } from "@/components/library/BookCard";
@@ -95,8 +96,6 @@ export default function LibraryClient() {
   }, [q, type, status, sort]);
 
   // Real-time updates: listen to watcher events via SSE
-  const [libraryUpdateDetected, setLibraryUpdateDetected] = useState(false);
-
   useEffect(() => {
     const eventSource = new EventSource("/api/library/events");
 
@@ -104,9 +103,41 @@ export default function LibraryClient() {
       try {
         const data = JSON.parse(event.data);
 
-        // Show banner instead of auto-refresh to preserve scroll position
+        // Auto-refresh library when watcher detects changes
         if (data.type === "library-update") {
-          setLibraryUpdateDetected(true);
+          // Show toast notification
+          toast.info("Library updated", {
+            description: "Refreshing your library...",
+          });
+
+          // Reset to initial state and re-fetch
+          setCurrentPage(1);
+          setLoading(true);
+
+          const params = new URLSearchParams(searchParams.toString());
+          params.delete("page");
+
+          fetch(`/api/books?${params}`)
+            .then((r) => r.json())
+            .then((d) => {
+              setBooks(d.books);
+              setTotal(d.total);
+              setHasMore(d.hasMore);
+              setLoading(false);
+            })
+            .catch(() => setLoading(false));
+
+          // Also refresh now reading section
+          fetch("/api/books/now-reading")
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.books) {
+                setNowReadingBooks(data.books);
+              }
+            })
+            .catch((err) => {
+              console.error("Failed to fetch now reading books:", err);
+            });
         }
       } catch {
         // Ignore parsing errors
@@ -120,28 +151,8 @@ export default function LibraryClient() {
     return () => {
       eventSource.close();
     };
-  }, []);
+  }, [searchParams]);
 
-  const handleRefreshLibrary = () => {
-    setLibraryUpdateDetected(false);
-    // Reset to initial state and re-fetch
-    setCurrentPage(1);
-    setBooks([]);
-    setLoading(true);
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("page");
-
-    fetch(`/api/books?${params}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setBooks(d.books);
-        setTotal(d.total);
-        setHasMore(d.hasMore);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
 
   // Push a new set of search-param updates to the URL
   const navigate = (updates: Record<string, string>, resetPage = true) => {
@@ -221,36 +232,6 @@ export default function LibraryClient() {
   return (
     <div className="space-y-8">
       <h1 className="text-lg font-medium tracking-tight">Library</h1>
-
-      {/* Library update banner */}
-      {libraryUpdateDetected && (
-        <div className="flex items-center gap-3 border-t-2 border-primary bg-muted p-2">
-          <svg
-            className="h-4 w-4 text-primary flex-shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-          </svg>
-          <p className="text-sm text-foreground flex-1">
-            Library updated. Refresh to see changes.
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleRefreshLibrary}
-            className="h-7 px-2 text-sm"
-          >
-            Refresh
-          </Button>
-        </div>
-      )}
 
       {/* Filter row */}
       <div className="flex flex-wrap gap-2 items-end">

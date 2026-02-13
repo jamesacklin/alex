@@ -29,6 +29,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Electron IPC API endpoints — localhost only, no auth required.
+  if (nextUrl.pathname.startsWith("/api/electron/")) {
+    return NextResponse.next();
+  }
+
   // Other API routes — return JSON errors instead of redirecting.
   if (nextUrl.pathname.startsWith("/api/")) {
     if (!isAuthenticated) {
