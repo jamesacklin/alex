@@ -3,10 +3,12 @@ import * as path from 'path';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import { store } from './store';
 import { getDataPaths } from './paths';
+import { createTray, destroyTray } from './tray';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 let watcherProcess: ChildProcess | null = null;
+let isQuitting = false;
 
 const PORT = 3210;
 const isDev = !app.isPackaged;
@@ -143,22 +145,66 @@ async function selectLibraryPath(): Promise<string | null> {
   return selectedPath;
 }
 
+function saveWindowBounds() {
+  if (!mainWindow) return;
+
+  const bounds = mainWindow.getBounds();
+  store.set('windowBounds', bounds);
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+  // Restore window bounds from store
+  const savedBounds = store.get('windowBounds');
+  const windowOptions: Electron.BrowserWindowConstructorOptions = {
+    width: savedBounds?.width ?? 1200,
+    height: savedBounds?.height ?? 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
-  });
+  };
+
+  if (savedBounds?.x !== undefined && savedBounds?.y !== undefined) {
+    windowOptions.x = savedBounds.x;
+    windowOptions.y = savedBounds.y;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.loadURL(`http://localhost:${PORT}`);
 
   if (isDev) {
     mainWindow.webContents.openDevTools();
   }
+
+  // Create system tray
+  createTray(mainWindow, async () => {
+    const newPath = await selectLibraryPath();
+    if (newPath) {
+      restartWatcher(newPath);
+    }
+  });
+
+  // Save window bounds on resize and move (debounced)
+  let saveBoundsTimeout: NodeJS.Timeout | null = null;
+  const debouncedSaveBounds = () => {
+    if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
+    saveBoundsTimeout = setTimeout(() => {
+      saveWindowBounds();
+    }, 500);
+  };
+
+  mainWindow.on('resize', debouncedSaveBounds);
+  mainWindow.on('move', debouncedSaveBounds);
+
+  // Minimize to tray instead of closing
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -204,17 +250,25 @@ app.whenReady().then(async () => {
   }, 3000);
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      mainWindow.show();
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
+  destroyTray();
   killChildProcesses();
 });
 
 app.on('window-all-closed', () => {
+  // On macOS, keep app running in tray
   if (process.platform !== 'darwin') {
     app.quit();
   }
