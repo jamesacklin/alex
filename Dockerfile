@@ -4,27 +4,31 @@
 FROM node:22-bookworm AS builder
 
 # Build tools and native dependencies for canvas and better-sqlite3
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Use cache mount for apt to speed up repeated builds
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
     libcairo2-dev \
     libpango1.0-dev \
     libjpeg-dev \
-    libpng-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libpng-dev
 
 RUN corepack enable pnpm
 
 WORKDIR /app
 
-# Install dependencies (layer-cached: only re-runs when lock file changes)
+# Install dependencies with pnpm store cache mount for faster installs
 COPY package.json pnpm-lock.yaml .pnpm-build-approval.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
-# Build native modules (better-sqlite3 and canvas)
-RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release
-RUN cd node_modules/.pnpm/canvas@3.2.1/node_modules/canvas && npm run install
+# Build native modules in parallel (better-sqlite3 and canvas)
+RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release & \
+    cd node_modules/.pnpm/canvas@3.2.1/node_modules/canvas && npm run install & \
+    wait
 
 # Copy source and build Next.js
 COPY . .
@@ -41,13 +45,15 @@ FROM node:22-bookworm-slim
 #   libpango1.0-0       – text layout for canvas
 #   libjpeg62-turbo     – JPEG encoding for canvas
 #   libpng16-16         – PNG support for canvas
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libcairo2 \
     libpango1.0-0 \
     libjpeg62-turbo \
-    libpng16-16 \
-    && rm -rf /var/lib/apt/lists/*
+    libpng16-16
 
 RUN corepack enable pnpm
 
