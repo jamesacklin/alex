@@ -9,12 +9,21 @@ export interface DataPaths {
 }
 
 export function getDataPaths(libraryPath: string): DataPaths {
-  const userDataPath = app.getPath('userData');
+  const isDev = !app.isPackaged;
 
-  const databasePath = path.join(userDataPath, 'library.db');
-  const coversPath = path.join(userDataPath, 'covers');
+  // In dev mode, use project's data directory; in production, use Electron's userData
+  const baseDataPath = isDev
+    ? path.join(process.cwd(), 'data')
+    : app.getPath('userData');
+
+  const databasePath = path.join(baseDataPath, 'library.db');
+  const coversPath = path.join(baseDataPath, 'covers');
 
   // Ensure directories exist
+  if (!fs.existsSync(baseDataPath)) {
+    fs.mkdirSync(baseDataPath, { recursive: true });
+  }
+
   if (!fs.existsSync(coversPath)) {
     fs.mkdirSync(coversPath, { recursive: true });
   }
