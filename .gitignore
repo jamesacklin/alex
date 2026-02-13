@@ -43,6 +43,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# electron
+/electron/dist
+
 # local data (database, uploaded books)
 /data
 
