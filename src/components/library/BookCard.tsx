@@ -131,7 +131,7 @@ export function BookCard({
   return (
     <Link
       href={`/read/${book.id}`}
-      className="group block border bg-card overflow-hidden"
+      className="group block overflow-hidden"
       onClick={(event) => {
         if (collectionsOpen) {
           event.preventDefault();
@@ -140,7 +140,7 @@ export function BookCard({
       }}
     >
       {/* Cover */}
-      <div className="relative aspect-[2/3] overflow-hidden bg-muted border-b border-border">
+      <div className="relative aspect-[2/3] overflow-hidden bg-muted rounded-sm">
         <img
           src={`/api/books/${book.id}/cover?t=${book.updatedAt}`}
           alt={book.title}
@@ -149,9 +149,9 @@ export function BookCard({
       </div>
 
       {/* Info */}
-      <div className="p-2 space-y-1">
+      <div className="pt-2.5 space-y-1">
         <div className="flex items-start gap-2">
-          <h3 className="flex-1 font-medium text-sm leading-tight line-clamp-2">
+          <h3 className="flex-1 font-normal text-sm leading-tight line-clamp-2">
             {book.title}
           </h3>
           <Button
@@ -189,11 +189,11 @@ export function BookCard({
             {book.author}
           </p>
         )}
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {metadata}
         </p>
         {book.readingProgress?.status === "completed" && (
-          <p className="text-sm text-muted-foreground font-medium">
+          <p className="text-xs text-muted-foreground font-medium">
             Completed
           </p>
         )}

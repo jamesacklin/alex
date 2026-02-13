@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-const ibmPlexSans = IBM_Plex_Sans({
-  variable: "--font-ibm-plex-sans",
+const hankenGrotesk = Hanken_Grotesk({
+  variable: "--font-hanken-grotesk",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["300", "400", "500", "600"],
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -50,7 +50,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}>
+      <body className={`${hankenGrotesk.variable} ${ibmPlexMono.variable}`}>
         {children}
         <Toaster />
       </body>

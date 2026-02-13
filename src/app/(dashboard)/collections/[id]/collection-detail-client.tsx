@@ -352,10 +352,10 @@ export default function CollectionDetailClient() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold">{collection.collection.name}</h1>
+          <h1 className="text-lg font-medium tracking-tight">{collection.collection.name}</h1>
           {collection.collection.description && (
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
               {collection.collection.description}
@@ -435,7 +435,7 @@ export default function CollectionDetailClient() {
             <>
               <div className="space-y-4">
                 <h2 className="text-base font-semibold">Now Reading</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
                   {nowReadingBooks.map((book) => (
                     <BookCard
                       key={book.id}

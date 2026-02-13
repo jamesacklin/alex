@@ -219,8 +219,8 @@ export default function LibraryClient() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-lg font-semibold">Library</h1>
+    <div className="space-y-8">
+      <h1 className="text-lg font-medium tracking-tight">Library</h1>
 
       {/* Library update banner */}
       {libraryUpdateDetected && (
@@ -277,11 +277,11 @@ export default function LibraryClient() {
 
       {/* Grid / Skeleton / Empty */}
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="border overflow-hidden">
+            <div key={i} className="overflow-hidden">
               <Skeleton className="aspect-[2/3]" />
-              <div className="p-2 space-y-2">
+              <div className="pt-2.5 space-y-2">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
               </div>
@@ -326,9 +326,9 @@ export default function LibraryClient() {
           {/* Now Reading section */}
           {nowReadingBooks.length > 0 && (
             <>
-              <div className="space-y-4">
-                <h2 className="text-base font-semibold">Now Reading</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              <div className="space-y-5">
+                <h2 className="text-base font-medium">Now Reading</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
                   {nowReadingBooks.map((book) => (
                     <BookCard key={book.id} book={book} />
                   ))}
@@ -353,7 +353,7 @@ export default function LibraryClient() {
                 {otherBooks.length > 0 && (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2">
-                      <h2 className="text-base font-semibold">All Books</h2>
+                      <h2 className="text-base font-medium">All Books</h2>
                       {!loading && (
                         <p className="text-sm text-muted-foreground text-end">
                           Showing {books.length} of {total}{" "}
@@ -362,7 +362,7 @@ export default function LibraryClient() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
                       {otherBooks.map((book) => (
                         <BookCard key={book.id} book={book} />
                       ))}
@@ -378,11 +378,11 @@ export default function LibraryClient() {
 
           {/* Loading more skeletons */}
           {isLoadingMore && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="border overflow-hidden">
+                <div key={i} className="overflow-hidden">
                   <Skeleton className="aspect-[2/3]" />
-                  <div className="p-2 space-y-2">
+                  <div className="pt-2.5 space-y-2">
                     <Skeleton className="h-4 w-3/4" />
                     <Skeleton className="h-3 w-1/2" />
                   </div>
