@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import { store } from './store';
@@ -112,6 +112,37 @@ function killChildProcesses() {
   }
 }
 
+function restartWatcher(libraryPath: string) {
+  console.log('[Electron] Restarting watcher with new library path...');
+
+  if (watcherProcess) {
+    watcherProcess.kill();
+    watcherProcess = null;
+  }
+
+  if (libraryPath) {
+    startWatcher(libraryPath);
+  }
+}
+
+async function selectLibraryPath(): Promise<string | null> {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+    title: 'Select Library Folder',
+    message: 'Choose a folder containing your EPUB and PDF files',
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const selectedPath = result.filePaths[0];
+  store.set('libraryPath', selectedPath);
+  console.log(`[Electron] Library path set to: ${selectedPath}`);
+
+  return selectedPath;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -134,8 +165,29 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  const libraryPath = store.get('libraryPath') || '';
+app.whenReady().then(async () => {
+  // Set up IPC handlers
+  ipcMain.handle('select-library-path', async () => {
+    const newPath = await selectLibraryPath();
+    if (newPath) {
+      restartWatcher(newPath);
+    }
+    return newPath;
+  });
+
+  ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
+  });
+
+  // First-run: prompt for library path if not set
+  let libraryPath = store.get('libraryPath') || '';
+  if (!libraryPath) {
+    console.log('[Electron] First run detected, prompting for library path...');
+    const selectedPath = await selectLibraryPath();
+    if (selectedPath) {
+      libraryPath = selectedPath;
+    }
+  }
 
   // Initialize database
   runDbSetup(libraryPath);

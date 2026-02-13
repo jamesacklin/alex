@@ -1,4 +1,6 @@
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
-// IPC bridge - to be populated in later phases
-contextBridge.exposeInMainWorld('electronAPI', {});
+contextBridge.exposeInMainWorld('electronAPI', {
+  selectLibraryPath: () => ipcRenderer.invoke('select-library-path'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+});
