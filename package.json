@@ -20,7 +20,7 @@
     "db:reset": "rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push && pnpm db:seed",
     "watcher": "tsx watcher/index.ts",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:dev": "concurrently \"next dev -p 3210\" \"sleep 3 && cross-env ELECTRON_DEV_MODE=true electron electron/dist/main.js\"",
+    "electron:dev": "concurrently \"cross-env ALEX_DESKTOP=true next dev -p 3210\" \"sleep 3 && cross-env ELECTRON_DEV_MODE=true ALEX_DESKTOP=true electron electron/dist/main.js\"",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3,canvas",
     "electron:build": "pnpm build && tsc -p electron/tsconfig.json && electron-builder"
   },

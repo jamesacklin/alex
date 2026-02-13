@@ -267,7 +267,16 @@ app.whenReady().then(async () => {
   } else {
     // Dev mode: server is already running externally via concurrently
     console.log('[Electron] Dev mode: using external server');
-    // Skip db setup in dev mode - already done via normal dev workflow
+
+    // Check if database exists, if not run setup
+    const paths = getDataPaths(libraryPath);
+    const fs = require('fs');
+    const dbExists = fs.existsSync(paths.databasePath);
+
+    if (!dbExists) {
+      console.log('[Electron] Database not found, running initial setup...');
+      runDbSetup(libraryPath);
+    }
 
     // Start watcher only (server is running externally)
     if (libraryPath) {
