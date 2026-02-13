@@ -13,6 +13,7 @@ process.env.DATABASE_PATH = dbFile;
 const authMock = jest.fn();
 
 jest.mock("@/lib/auth/config", () => ({
+  authSession: () => authMock(),
   auth: () => authMock(),
 }));
 
