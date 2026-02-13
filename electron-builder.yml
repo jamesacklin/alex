@@ -1,0 +1,46 @@
+appId: com.alex.app
+productName: Alex
+copyright: Copyright © 2025
+
+directories:
+  output: dist
+  buildResources: electron/icons
+
+files:
+  - .next/standalone/**/*
+  - .next/static/**/*
+  - public/**/*
+  - watcher/**/*
+  - src/lib/db/**/*
+  - electron/dist/**/*
+  - package.json
+  - drizzle.config.ts
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+  - "**/canvas/**"
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  category: public.app-category.productivity
+  icon: electron/icons/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: null
+  entitlementsInherit: null
+
+dmg:
+  title: Alex
+  icon: electron/icons/icon.icns
+  window:
+    width: 540
+    height: 380
+
+# Skip code signing for local development builds
+# In production, configure signing via environment variables
