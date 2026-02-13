@@ -84,10 +84,13 @@ function startServer(libraryPath: string) {
 function startWatcher(libraryPath: string) {
   const env = getEnvVars(libraryPath);
 
+  // Use process.cwd() in dev mode to get project root, app.getAppPath() in production
+  const workingDir = isDev ? process.cwd() : app.getAppPath();
+
   console.log('[Electron] Starting file watcher...');
   watcherProcess = spawn('npx', ['tsx', 'watcher/index.ts'], {
     env,
-    cwd: app.getAppPath(),
+    cwd: workingDir,
     stdio: 'inherit',
   });
 
@@ -264,7 +267,7 @@ app.whenReady().then(async () => {
   } else {
     // Dev mode: server is already running externally via concurrently
     console.log('[Electron] Dev mode: using external server');
-    runDbSetup(libraryPath);
+    // Skip db setup in dev mode - already done via normal dev workflow
 
     // Start watcher only (server is running externally)
     if (libraryPath) {
