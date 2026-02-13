@@ -153,6 +153,8 @@ function saveWindowBounds() {
 }
 
 function createWindow() {
+  console.log('[Electron] Creating main window...');
+
   // Restore window bounds from store
   const savedBounds = store.get('windowBounds');
   const windowOptions: Electron.BrowserWindowConstructorOptions = {
@@ -171,6 +173,7 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow(windowOptions);
+  console.log('[Electron] Window created, loading URL...');
 
   mainWindow.loadURL(`http://localhost:${PORT}`);
 
@@ -178,13 +181,18 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
-  // Create system tray
-  createTray(mainWindow, async () => {
-    const newPath = await selectLibraryPath();
-    if (newPath) {
-      restartWatcher(newPath);
-    }
-  });
+  // Create system tray (optional in dev mode if icons don't exist)
+  try {
+    createTray(mainWindow, async () => {
+      const newPath = await selectLibraryPath();
+      if (newPath) {
+        restartWatcher(newPath);
+      }
+    });
+    console.log('[Electron] System tray created');
+  } catch (error) {
+    console.warn('[Electron] Failed to create system tray (this is OK in dev mode):', error);
+  }
 
   // Save window bounds on resize and move (debounced)
   let saveBoundsTimeout: NodeJS.Timeout | null = null;
@@ -209,6 +217,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  console.log('[Electron] Window setup complete');
 }
 
 app.whenReady().then(async () => {
