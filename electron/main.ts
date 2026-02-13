@@ -267,6 +267,44 @@ function restartWatcher(libraryPath: string) {
   }
 }
 
+async function clearBooksTable(): Promise<boolean> {
+  console.log('[Electron] Clearing books via API...');
+
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/electron/clear-books`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`[Electron] API returned ${response.status}: ${response.statusText}`);
+      return false;
+    }
+
+    const result = (await response.json()) as {
+      success: boolean;
+      deleted?: number;
+      deletedCovers?: number;
+      error?: string;
+      message?: string;
+    };
+    console.log(`[Electron] Clear books result:`, result);
+
+    if (result.success) {
+      console.log(`[Electron] Successfully deleted ${result.deleted} books and ${result.deletedCovers} covers`);
+      return true;
+    } else {
+      console.error('[Electron] API call failed:', result.error);
+      return false;
+    }
+  } catch (error) {
+    console.error('[Electron] Failed to clear books via API:', error);
+    return false;
+  }
+}
+
 async function selectLibraryPath(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
@@ -364,11 +402,78 @@ function createWindow() {
 app.whenReady().then(async () => {
   // Set up IPC handlers
   ipcMain.handle('select-library-path', async () => {
+    const currentPath = store.get('libraryPath');
     const newPath = await selectLibraryPath();
     if (newPath) {
-      restartWatcher(newPath);
+      // Stop watcher first
+      if (watcherProcess) {
+        console.log('[Electron] Stopping watcher before clearing...');
+        watcherProcess.kill();
+        watcherProcess = null;
+        // Wait for watcher to fully stop
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Clear books table when changing library path
+      if (currentPath && currentPath !== newPath) {
+        console.log('[Electron] Library path changed, clearing books...');
+        const success = await clearBooksTable();
+        console.log(`[Electron] Clear books result: ${success}`);
+        // Wait before restarting watcher to ensure UI can refresh
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Start watcher with new path
+      console.log('[Electron] Starting watcher with new path...');
+      startWatcher(newPath);
     }
     return newPath;
+  });
+
+  ipcMain.handle('rescan-library', () => {
+    const libraryPath = store.get('libraryPath');
+    if (libraryPath) {
+      console.log('[Electron] Rescanning library...');
+      restartWatcher(libraryPath);
+      return true;
+    }
+    console.warn('[Electron] No library path set, cannot rescan');
+    return false;
+  });
+
+  ipcMain.handle('nuke-and-rescan-library', async () => {
+    const libraryPath = store.get('libraryPath');
+    if (libraryPath) {
+      console.log('[Electron] Nuking and rescanning library...');
+
+      // Stop watcher first
+      if (watcherProcess) {
+        console.log('[Electron] Stopping watcher before clearing...');
+        watcherProcess.kill();
+        watcherProcess = null;
+        // Wait for watcher to fully stop
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Clear books table
+      console.log('[Electron] Clearing books table...');
+      const success = await clearBooksTable();
+      console.log(`[Electron] Clear books result: ${success}`);
+
+      if (success) {
+        // Wait before restarting watcher to ensure UI can refresh
+        console.log('[Electron] Waiting before restarting watcher...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Restart watcher
+        console.log('[Electron] Restarting watcher...');
+        startWatcher(libraryPath);
+      }
+
+      return success;
+    }
+    console.warn('[Electron] No library path set, cannot nuke and rescan');
+    return false;
   });
 
   ipcMain.handle('get-app-version', () => {
