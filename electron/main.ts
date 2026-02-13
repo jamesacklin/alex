@@ -69,6 +69,7 @@ function runDbSetup(libraryPath: string) {
 
       fs.mkdirSync(path.dirname(absoluteDatabasePath), { recursive: true });
 
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const BetterSqlite3 = require('better-sqlite3') as new (filename: string) => {
         pragma: (sql: string) => void;
         prepare: (sql: string) => { get: (...args: unknown[]) => unknown; run: (...args: unknown[]) => unknown };
@@ -76,6 +77,7 @@ function runDbSetup(libraryPath: string) {
         transaction: (fn: () => void) => () => void;
         close: () => void;
       };
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const bcrypt = require('bcryptjs') as { hashSync: (value: string, rounds: number) => string };
       const db = new BetterSqlite3(absoluteDatabasePath);
 
