@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 
 const ADMIN_EMAIL = "admin@localhost";
 const ADMIN_PASSWORD = "admin123";
+const ADMIN_ID = "1"; // Fixed ID for desktop mode compatibility
 
 async function seed() {
   const existing = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -18,7 +19,7 @@ async function seed() {
   const now = Math.floor(Date.now() / 1000);
 
   await db.insert(users).values({
-    id: crypto.randomUUID(),
+    id: ADMIN_ID,
     email: ADMIN_EMAIL,
     passwordHash,
     displayName: "Admin",

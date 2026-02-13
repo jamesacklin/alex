@@ -258,7 +258,7 @@ export default function DashboardLayout({
 
         <div className="flex items-center justify-end min-w-[180px]">
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+            <DropdownMenuTrigger asChild suppressHydrationWarning>
               <Button
                 variant="link"
                 className="gap-2 px-2 text-sidebar-foreground"

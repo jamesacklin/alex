@@ -31,13 +31,15 @@ function getEnvVars(libraryPath: string) {
 
 function runDbSetup(libraryPath: string) {
   const env = getEnvVars(libraryPath);
+  // Use process.cwd() in dev mode to get project root, app.getAppPath() in production
+  const workingDir = isDev ? process.cwd() : app.getAppPath();
 
   console.log('[Electron] Running database migration...');
   try {
     execSync('npx drizzle-kit push', {
       stdio: 'inherit',
       env,
-      cwd: app.getAppPath(),
+      cwd: workingDir,
     });
     console.log('[Electron] Database migration complete');
   } catch (error) {
@@ -49,7 +51,7 @@ function runDbSetup(libraryPath: string) {
     execSync('npx tsx src/lib/db/seed.ts', {
       stdio: 'inherit',
       env,
-      cwd: app.getAppPath(),
+      cwd: workingDir,
     });
     console.log('[Electron] Database seed complete');
   } catch (error) {
