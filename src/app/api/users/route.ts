@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { asc, eq } from "drizzle-orm";
-import { auth } from "@/lib/auth/config";
+import { authSession as auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 

@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { auth } from "@/lib/auth/config";
+import { authSession as auth } from "@/lib/auth/config";
 
 export async function createUser(data: {
   email: string;

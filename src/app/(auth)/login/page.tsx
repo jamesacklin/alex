@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -38,6 +39,13 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
+
+  // Desktop mode bypass: redirect to library immediately
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_ALEX_DESKTOP === 'true') {
+      router.replace('/library');
+    }
+  }, [router]);
 
   async function onSubmit({ email, password }: LoginValues) {
     const result = await signIn("credentials", {
