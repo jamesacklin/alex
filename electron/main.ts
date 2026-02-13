@@ -235,19 +235,35 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Initialize database
-  runDbSetup(libraryPath);
+  // Check if running in dev mode with external server (electron:dev script)
+  const useExternalServer = process.env.ELECTRON_DEV_MODE === 'true';
 
-  // Start processes
-  startServer(libraryPath);
-  if (libraryPath) {
-    startWatcher(libraryPath);
-  }
+  if (!useExternalServer) {
+    // Production mode: Electron manages all processes
+    console.log('[Electron] Production mode: starting server and watcher');
+    runDbSetup(libraryPath);
+    startServer(libraryPath);
+    if (libraryPath) {
+      startWatcher(libraryPath);
+    }
 
-  // Wait a bit for the server to start, then create window
-  setTimeout(() => {
+    // Wait for server to start, then create window
+    setTimeout(() => {
+      createWindow();
+    }, 3000);
+  } else {
+    // Dev mode: server is already running externally via concurrently
+    console.log('[Electron] Dev mode: using external server');
+    runDbSetup(libraryPath);
+
+    // Start watcher only (server is running externally)
+    if (libraryPath) {
+      startWatcher(libraryPath);
+    }
+
+    // Server is already running, create window immediately
     createWindow();
-  }, 3000);
+  }
 
   app.on('activate', () => {
     if (mainWindow) {
