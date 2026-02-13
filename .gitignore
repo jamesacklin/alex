@@ -45,3 +45,6 @@ next-env.d.ts
 
 # local data (database, uploaded books)
 /data
+
+# test script
+bootstrap.sh

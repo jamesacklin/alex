@@ -159,8 +159,8 @@ export default function DashboardLayout({
       )}
 
       {/* Header */}
-      <header className="flex h-10 shrink-0 items-center border-b border-border bg-sidebar text-sidebar-foreground px-3">
-        <div className="flex items-center gap-2 min-w-[160px]">
+      <header className="flex h-14 shrink-0 items-center border-b border-border bg-sidebar text-sidebar-foreground px-5">
+        <div className="flex items-center gap-3 min-w-[180px]">
           <button
             className="md:hidden text-sidebar-foreground"
             aria-label="Open sidebar"
@@ -181,7 +181,7 @@ export default function DashboardLayout({
             </svg>
           </button>
           <AppLogo className="shrink-0 text-sidebar-foreground" />
-          <span className="text-sm font-semibold">Alex</span>
+          <span className="text-sm font-medium tracking-wide">Alex</span>
         </div>
 
         <div className="flex-1 flex justify-center">
@@ -256,7 +256,7 @@ export default function DashboardLayout({
           )}
         </div>
 
-        <div className="flex items-center justify-end min-w-[160px]">
+        <div className="flex items-center justify-end min-w-[180px]">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -309,12 +309,12 @@ export default function DashboardLayout({
         {/* Sidebar */}
         <aside
           className={[
-            "fixed top-10 bottom-0 left-0 z-50 w-52 bg-sidebar border-r border-sidebar-border flex flex-col",
+            "fixed top-14 bottom-0 left-0 z-50 w-56 bg-sidebar border-r border-sidebar-border flex flex-col",
             sidebarOpen ? "translate-x-0" : "-translate-x-full",
             "md:relative md:translate-x-0 md:inset-y-0",
           ].join(" ")}
         >
-          <div className="md:hidden flex h-10 shrink-0 items-center justify-end px-3 border-b border-sidebar-border">
+          <div className="md:hidden flex h-14 shrink-0 items-center justify-end px-5 border-b border-sidebar-border">
             <button
               className="text-muted-foreground hover:text-foreground"
               aria-label="Close sidebar"
@@ -350,7 +350,7 @@ export default function DashboardLayout({
                   return (
                     <div
                       key={item.href}
-                      className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed border-b border-border border-l-2 border-transparent"
+                      className="flex items-center gap-3 px-5 py-3 text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed border-l-2 border-transparent"
                     >
                       {item.icon}
                       <span className="flex-1">{item.label}</span>
@@ -367,9 +367,9 @@ export default function DashboardLayout({
                     href={item.href}
                     onClick={() => setSidebarOpen(false)}
                     className={[
-                      "flex items-center gap-3 px-3 py-2 text-sm font-medium border-b border-border border-l-2",
+                      "flex items-center gap-3 px-5 py-3 text-sm font-medium border-l-2",
                       isActive
-                        ? "border-primary bg-muted font-semibold text-foreground"
+                        ? "border-primary bg-muted font-medium text-foreground"
                         : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
                     ].join(" ")}
                   >
@@ -385,7 +385,7 @@ export default function DashboardLayout({
         {/* Main area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Page content */}
-          <main className="flex-1 overflow-auto p-4">{children}</main>
+          <main className="flex-1 overflow-auto p-6 md:p-8">{children}</main>
         </div>
       </div>
     </div>

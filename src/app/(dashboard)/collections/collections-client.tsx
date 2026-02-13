@@ -111,9 +111,9 @@ export default function CollectionsClient() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-semibold">Collections</h1>
+        <h1 className="text-lg font-medium tracking-tight">Collections</h1>
         <Button
           type="button"
           variant="link"
@@ -189,7 +189,7 @@ export default function CollectionsClient() {
       </Dialog>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} className="gap-3">
               <CardHeader className="pb-1">
@@ -228,7 +228,7 @@ export default function CollectionsClient() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {collections.map((collection) => (
             <Link key={collection.id} href={`/collections/${collection.id}`} className="group">
               <Card className="h-full">
