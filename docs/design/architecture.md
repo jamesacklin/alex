@@ -66,14 +66,16 @@ graph TB
 
     %% Library Browse Flow
     Pages -->|Fetch Books| API
+    Pages -->|Fetch Now Reading| API
     API -->|Query Books| DB
+    API -->|Query reading status=reading| DB
     API -->|Return JSON| UI
 
     %% Real-time Updates
     SSE -->|Subscribe| SSEEndpoint
     SSEEndpoint -->|Poll Every 2s| DB
     SSEEndpoint -->|library_version| SSE
-    SSE -->|Trigger Refresh| UI
+    SSE -->|Show Refresh Banner| UI
 
     %% File Watching Flow
     LibFolder -.->|File Added/Changed/Deleted| Chokidar
@@ -101,7 +103,7 @@ graph TB
 
     %% Reading Flow - PDF
     PDF -->|Request Page| API
-    API -->|/api/books/[id]/pdf| LibFolder
+    API -->|/api/books/[id]/file| LibFolder
     PDF -->|Save Progress| API
     API -->|Update Progress| DB
 
@@ -157,7 +159,7 @@ graph TB
 ### Client Browser
 
 **React UI**
-- Next.js 19 client components
+- Next.js App Router with client/server components
 - Tailwind CSS v4 for styling
 - shadcn/ui component library
 - Responsive design for mobile and desktop
@@ -177,7 +179,10 @@ graph TB
 - Reflowable EPUB rendering via react-reader
 - Table of contents navigation
 - Chapter skipping
-- Customizable font sizes (Times New Roman)
+- Continuous vertical scrolling
+- `80ch` reading column with themed typography (IBM Plex Serif)
+- Header progress meter with precise percentage display
+- Scroll-fraction restore when viewport dimensions match the saved session
 
 ### Next.js App Router
 
@@ -185,7 +190,7 @@ graph TB
 - `/library` - Main library grid view with search and filters
 - `/collections` - User's collections list
 - `/collections/[id]` - Collection detail with edit/delete/share controls
-- `/read/[id]` - Book reader (PDF or EPUB)
+- `/read/[bookId]` - Book reader (PDF or EPUB)
 - `/shared/[token]` - Public collection view (no auth required)
 - `/shared/[token]/read/[bookId]` - Public book reader (no auth required)
 - `/admin/users` - User management (admin only)
@@ -195,6 +200,7 @@ graph TB
 
 Authenticated:
 - `GET /api/books` - List books with pagination, search, filters
+- `GET /api/books/now-reading` - List current user's books where `reading_progress.status='reading'`
 - `GET /api/books/[id]` - Get book metadata
 - `GET /api/books/[id]/file` - Serve book file (PDF or EPUB)
 - `GET /api/books/[id]/book.epub` - Serve EPUB file
@@ -204,6 +210,7 @@ Authenticated:
 - `GET /api/collections` - List user's collections
 - `POST /api/collections` - Create collection
 - `GET /api/collections/[id]` - Get collection with books
+- `GET /api/collections/[id]/now-reading` - List currently reading books in a specific collection
 - `PUT /api/collections/[id]` - Update collection
 - `DELETE /api/collections/[id]` - Delete collection
 - `POST /api/collections/[id]/share` - Enable sharing (generates token)
@@ -291,16 +298,24 @@ Public (no auth):
 
 ### Reading Experience
 1. User clicks book card in library
-2. Navigate to `/read/[id]`
+2. Navigate to `/read/[bookId]`
 3. Fetch book metadata from API
 4. Fetch reading progress for current user
 5. Load appropriate reader (PDF.js or epub.js)
 6. Stream book file from API
 7. Render at last saved position
-8. On page/location change, debounce progress update
-9. Calculate percentage complete
-10. Update `reading_progress` table
-11. Update book status (not_started → reading → completed)
+8. For EPUB, restore saved scroll fraction when viewport dimensions still match
+9. On page/location change, debounce progress update
+10. Calculate percentage complete
+11. Update `reading_progress` table
+12. Update book status (not_started → reading → completed)
+
+### Now Reading Shelf Loading
+1. Client fetches `/api/books/now-reading` on the library page (or `/api/collections/[id]/now-reading` in collection detail)
+2. Server filters to `reading_progress.status='reading'` for the current user
+3. Results are ordered by `reading_progress.last_read_at DESC`
+4. Client renders a dedicated "Now Reading" section
+5. Client excludes those IDs from the paginated "All Books" list to avoid duplicates and load-loop churn
 
 ### Public Collection Sharing
 1. Collection owner clicks "Share" on collection detail page
@@ -326,9 +341,10 @@ Public (no auth):
 3. Server sends initial "connected" message
 4. Server polls `settings.library_version` every 2 seconds
 5. When version changes, server pushes "library-update" event
-6. Client receives event, refetches `/api/books`
-7. UI updates with new/changed/deleted books
-8. Connection maintained with keepalive pings
+6. Client receives event and shows a refresh banner (instead of auto-refresh)
+7. User clicks refresh, then client refetches `/api/books`
+8. UI updates with new/changed/deleted books
+9. Connection maintained with keepalive pings
 
 ## Deployment Architecture
 

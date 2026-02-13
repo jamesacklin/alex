@@ -312,7 +312,7 @@ LEFT JOIN reading_progress rp
   ON b.id = rp.book_id
   AND rp.user_id = ?
 ORDER BY b.added_at DESC
-LIMIT 20 OFFSET ?;
+LIMIT 24 OFFSET ?;
 ```
 
 **Search books by title or author:**
@@ -323,13 +323,47 @@ WHERE title LIKE '%search%'
 ORDER BY title ASC;
 ```
 
-**Get user's currently reading books:**
+**Get user's currently reading books (used by `GET /api/books/now-reading`):**
 ```sql
-SELECT b.*, rp.percent_complete
+SELECT
+  b.id,
+  b.title,
+  b.author,
+  b.cover_path,
+  b.file_type,
+  b.page_count,
+  b.updated_at,
+  rp.status,
+  rp.percent_complete,
+  rp.last_read_at
 FROM books b
 JOIN reading_progress rp
   ON b.id = rp.book_id
 WHERE rp.user_id = ?
+  AND rp.status = 'reading'
+ORDER BY rp.last_read_at DESC;
+```
+
+**Get currently reading books inside a collection (used by `GET /api/collections/[id]/now-reading`):**
+```sql
+SELECT
+  b.id,
+  b.title,
+  b.author,
+  b.cover_path,
+  b.file_type,
+  b.page_count,
+  b.updated_at,
+  rp.status,
+  rp.percent_complete,
+  rp.last_read_at
+FROM collection_books cb
+JOIN books b
+  ON cb.book_id = b.id
+JOIN reading_progress rp
+  ON rp.book_id = b.id
+WHERE cb.collection_id = ?
+  AND rp.user_id = ?
   AND rp.status = 'reading'
 ORDER BY rp.last_read_at DESC;
 ```
@@ -454,6 +488,7 @@ All foreign keys are indexed automatically. Additional indexes:
 ### Query Optimization
 
 - **Pagination**: All list queries use LIMIT/OFFSET
+- **Sectioned loading**: Library/collection UIs fetch "Now Reading" and paginated "All Books" separately to prevent duplicate cards
 - **Lazy Loading**: Cover images loaded separately via API
 - **Progress Debouncing**: Frontend debounces progress updates (reduces writes)
 - **Connection Pooling**: better-sqlite3 uses single connection (SQLite limitation)

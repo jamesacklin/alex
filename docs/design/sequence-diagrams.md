@@ -39,15 +39,20 @@ sequenceDiagram
     SSE->>DB: getLibraryVersion()
     DB-->>SSE: New version: 12346
     SSE-->>Client: library-update event
+    Client->>Client: Show "Library updated" banner
+    User->>Client: Click "Refresh"
     Client->>API: GET /api/books
     API->>DB: SELECT books
     DB-->>API: Book data
     API-->>Client: JSON response
-    Client->>Client: Update UI
+    Client->>API: GET /api/books/now-reading
+    API->>DB: SELECT reading books ORDER BY last_read_at DESC
+    API-->>Client: JSON response
+    Client->>Client: Update Now Reading + All Books UI
 
     Note over User,Client: User Reads Book
     User->>Client: Click book
-    Client->>API: GET /read/[id]
+    Client->>API: GET /read/[bookId]
     API->>DB: Get book metadata
     Client->>API: GET /api/books/[id]/book.epub
     API->>LibFolder: Read epub file
@@ -217,7 +222,7 @@ sequenceDiagram
     API-->>UI: Progress data
 
     UI->>Worker: Initialize PDF.js
-    UI->>API: GET /api/books/[id]/pdf
+    UI->>API: GET /api/books/[id]/file
     API->>FS: Read PDF file
     FS-->>API: File stream
     API-->>Worker: PDF binary data
@@ -287,8 +292,9 @@ sequenceDiagram
     Rendition-->>UI: TOC data
 
     Rendition->>Rendition: Navigate to epubcfi(...)
-    Rendition->>Rendition: Apply font (Times New Roman)
+    Rendition->>Rendition: Apply font (IBM Plex Serif)
     Rendition->>Rendition: Apply font size
+    Rendition->>Rendition: Constrain content to 80ch
     Rendition->>Rendition: Render HTML content
     Rendition-->>UI: Rendered page
 
@@ -312,9 +318,10 @@ sequenceDiagram
 1. **ArrayBuffer Loading**: Entire EPUB loaded into memory (fast navigation)
 2. **CFI Locations**: ePub Canonical Fragment Identifiers for precise positioning
 3. **TOC Extraction**: Table of contents parsed from EPUB manifest
-4. **Typography Control**: Font size customization (Times New Roman font family)
-5. **Reflowable Text**: Content adapts to viewport size
-6. **Percentage Calculation**: epub.js generates location spine for progress tracking
+4. **Typography Control**: Font size customization (IBM Plex Serif + 80ch column)
+5. **Progress Meter**: Header displays precise percentage while reading
+6. **Scroll Restore**: Saved scroll fraction is restored when viewport dimensions match
+7. **Percentage Calculation**: epub.js generates location spine for progress tracking
 
 ---
 
@@ -364,8 +371,43 @@ sequenceDiagram
 2. **URL State**: Search and filters stored in query parameters
 3. **Full-text Search**: Searches title and author fields
 4. **Combined Filters**: Multiple filters applied simultaneously
-5. **Pagination**: Results paginated (20 per page)
+5. **Pagination**: Results paginated (24 per page)
 6. **User-specific**: Progress filters join with current user's reading data
+
+---
+
+## Now Reading Sections Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Library / Collection UI
+    participant API
+    participant DB as Database
+
+    User->>UI: Open library or collection page
+    UI->>API: GET /api/books/now-reading (or /api/collections/[id]/now-reading)
+    API->>DB: JOIN books + reading_progress
+    API->>DB: WHERE status='reading' AND user_id=?
+    API->>DB: ORDER BY last_read_at DESC
+    DB-->>API: Now Reading books
+    API-->>UI: { books: [...] }
+
+    UI->>API: GET paginated all-books endpoint
+    API->>DB: SELECT paginated books (+ progress join)
+    DB-->>API: { books, total, hasMore }
+    API-->>UI: JSON response
+
+    UI->>UI: Exclude Now Reading IDs from All Books grid
+    UI->>UI: Render separate sections without duplicates
+```
+
+### Key Points
+
+1. **Dedicated endpoints**: Now Reading data is fetched independently from the main paginated list.
+2. **Stable ordering**: Uses `reading_progress.last_read_at DESC` for recency.
+3. **Duplicate prevention**: Client removes Now Reading IDs from All Books before rendering.
+4. **Infinite-scroll safety**: Section split avoids repeated loads caused by duplicate results.
 
 ---
 
