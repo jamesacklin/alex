@@ -19,7 +19,7 @@ declare module "next-auth" {
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuthResult = NextAuth({
   trustHost: true,
   session: {
     strategy: "jwt",
@@ -74,3 +74,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export const { handlers, signIn, signOut } = nextAuthResult;
+
+// Desktop mode bypass: return a synthetic admin session without requiring login
+async function desktopSession() {
+  return {
+    user: { id: '1', email: 'admin@localhost', displayName: 'Admin', role: 'admin' },
+    expires: new Date(Date.now() + 365 * 86400000).toISOString(),
+  };
+}
+
+export const authSession = process.env.ALEX_DESKTOP === 'true'
+  ? desktopSession
+  : nextAuthResult.auth;

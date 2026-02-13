@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth/config";
+import { authSession as auth } from "@/lib/auth/config";
 import { redirect } from "next/navigation";
 import DashboardLayout from "./dashboard-layout";
 
