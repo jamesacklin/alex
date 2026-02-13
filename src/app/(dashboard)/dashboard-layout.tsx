@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { toast } from "sonner";
 import { AppLogo } from "@/components/branding/AppLogo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -17,16 +16,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 interface User {
   id: string;
@@ -111,9 +100,6 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showNukeDialog, setShowNukeDialog] = useState(false);
-  const [isElectron, setIsElectron] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -125,71 +111,6 @@ export default function DashboardLayout({
 
   const navItems =
     user.role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
-
-  useEffect(() => {
-    setIsElectron(typeof window !== "undefined" && !!window.electronAPI);
-  }, []);
-
-  const handleChangeLibraryPath = async () => {
-    if (!window.electronAPI || isProcessing) return;
-    setIsProcessing(true);
-    try {
-      const newPath = await window.electronAPI.selectLibraryPath();
-      if (newPath) {
-        toast.success("Library directory changed", {
-          description: "Books cleared and library will be re-indexed",
-        });
-        // Backend waits before restarting watcher, safe to refresh now
-        router.refresh();
-      }
-    } catch (error) {
-      console.error("Failed to change library path:", error);
-      toast.error("Failed to change library directory");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRescan = async () => {
-    if (!window.electronAPI || isProcessing) return;
-    setIsProcessing(true);
-    try {
-      const success = await window.electronAPI.rescanLibrary();
-      if (success) {
-        toast.info("Library rescan started", {
-          description: "Scanning for new books...",
-        });
-      }
-    } catch (error) {
-      console.error("Failed to rescan library:", error);
-      toast.error("Failed to rescan library");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleNukeAndRescan = async () => {
-    if (!window.electronAPI || isProcessing) return;
-    setIsProcessing(true);
-    try {
-      const success = await window.electronAPI.nukeAndRescanLibrary();
-      setShowNukeDialog(false);
-      if (success) {
-        toast.success("Library cleared", {
-          description: "All books removed. Re-scanning directory...",
-        });
-        // Backend waits before restarting watcher, safe to refresh now
-        router.refresh();
-      } else {
-        toast.error("Failed to clear library");
-      }
-    } catch (error) {
-      console.error("Failed to nuke and rescan library:", error);
-      toast.error("Failed to clear library");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow;
@@ -415,8 +336,8 @@ export default function DashboardLayout({
           </div>
 
           {/* Nav links */}
-          <nav className="flex-1 overflow-y-auto flex flex-col">
-            <div className="flex-1">
+          <nav className="flex-1 overflow-y-auto">
+            <div>
               {navItems.map((item) => {
                 const itemBase = `/${item.href.split("/").filter(Boolean)[0] ?? ""}`;
                 const isActive =
@@ -458,78 +379,6 @@ export default function DashboardLayout({
                 );
               })}
             </div>
-
-            {/* Library Settings (Electron only) */}
-            {isElectron && (
-              <div className="border-t border-sidebar-border mt-auto">
-                <div className="px-3 py-2">
-                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 py-2">
-                    Library
-                  </div>
-                  <button
-                    onClick={handleChangeLibraryPath}
-                    disabled={isProcessing}
-                    className="w-full flex items-center gap-3 px-2 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-                    </svg>
-                    Change directory
-                  </button>
-                  <button
-                    onClick={handleRescan}
-                    disabled={isProcessing}
-                    className="w-full flex items-center gap-3 px-2 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <svg
-                      className={`h-4 w-4 ${isProcessing ? "animate-spin" : ""}`}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                      <path d="M3 3v5h5" />
-                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                      <path d="M16 16h5v5" />
-                    </svg>
-                    Rescan
-                  </button>
-                  <button
-                    onClick={() => setShowNukeDialog(true)}
-                    disabled={isProcessing}
-                    className="w-full flex items-center gap-3 px-2 py-2 text-sm text-destructive hover:bg-destructive/10 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                      <line x1="10" y1="11" x2="10" y2="17" />
-                      <line x1="14" y1="11" x2="14" y2="17" />
-                    </svg>
-                    Clear and rescan
-                  </button>
-                </div>
-              </div>
-            )}
           </nav>
         </aside>
 
@@ -539,29 +388,6 @@ export default function DashboardLayout({
           <main className="flex-1 overflow-auto p-6 md:p-8">{children}</main>
         </div>
       </div>
-
-      {/* Nuke confirmation dialog */}
-      <AlertDialog open={showNukeDialog} onOpenChange={setShowNukeDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear library and rescan?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove all books from the library database and rescan
-              your library directory. Your collections and reading progress will
-              be preserved, but books will need to be re-indexed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleNukeAndRescan}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Clear and rescan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
