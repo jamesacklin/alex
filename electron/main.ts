@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import { store } from './store';
@@ -272,7 +273,6 @@ app.whenReady().then(async () => {
 
     // Check if database exists, if not run setup
     const paths = getDataPaths(libraryPath);
-    const fs = require('fs');
     const dbExists = fs.existsSync(paths.databasePath);
 
     if (!dbExists) {

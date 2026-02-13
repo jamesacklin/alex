@@ -1,7 +1,6 @@
 import { db } from "../src/lib/db";
 import { users, readingProgress } from "../src/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { sql } from "drizzle-orm";
 
 const ADMIN_EMAIL = "admin@localhost";
 const ADMIN_ID = "1";

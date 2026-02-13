@@ -12,14 +12,19 @@ interface StoreSchema {
   nextauthSecret: string;
 }
 
+interface StoreApi {
+  get<Key extends keyof StoreSchema>(key: Key): StoreSchema[Key];
+  set<Key extends keyof StoreSchema>(key: Key, value: StoreSchema[Key]): void;
+}
+
 function generateSecret(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// Using 'as any' to work around TypeScript resolution issues with electron-store
+// electron-store's inherited Conf methods are not visible with this tsconfig's moduleResolution.
 export const store = new Store<StoreSchema>({
   defaults: {
     libraryPath: '',
     nextauthSecret: generateSecret(),
   },
-}) as any;
+}) as unknown as StoreApi;
