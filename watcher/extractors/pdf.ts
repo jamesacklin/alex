@@ -97,7 +97,7 @@ function renderSynthetic(bookId: string, title: string, author: string | undefin
 }
 
 function generateCover(filePath: string, bookId: string, title: string, author: string | undefined): string | undefined {
-  const coversDir = path.resolve("data/covers");
+  const coversDir = path.resolve(process.env.COVERS_PATH ?? "data/covers");
   fs.mkdirSync(coversDir, { recursive: true });
 
   if (detectPdftoppm()) {

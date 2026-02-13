@@ -17,7 +17,7 @@ export async function extractEpubMetadata(filePath: string, bookId: string): Pro
     if (epub.metadata.cover) {
       try {
         const [coverBuffer] = await epub.getImageAsync(epub.metadata.cover);
-        const coversDir = path.resolve("data/covers");
+        const coversDir = path.resolve(process.env.COVERS_PATH ?? "data/covers");
         fs.mkdirSync(coversDir, { recursive: true });
         coverPath = path.join(coversDir, `${bookId}.jpg`);
         fs.writeFileSync(coverPath, coverBuffer);
