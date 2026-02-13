@@ -42,5 +42,33 @@ dmg:
     width: 540
     height: 380
 
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: electron/icons/icon.png
+  publisherName: Alex
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+  category: Utility
+  icon: electron/icons/icon.png
+
 # Skip code signing for local development builds
 # In production, configure signing via environment variables
