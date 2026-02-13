@@ -17,7 +17,7 @@ async function removeDuplicates() {
 
   let duplicatesRemoved = 0;
 
-  for (const [hash, bookList] of byHash.entries()) {
+  for (const bookList of byHash.values()) {
     if (bookList.length > 1) {
       // Sort by addedAt to keep the oldest
       bookList.sort((a, b) => a.addedAt - b.addedAt);
