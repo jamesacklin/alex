@@ -14,6 +14,25 @@ let isQuitting = false;
 const PORT = 3210;
 const isDev = !app.isPackaged;
 
+function getPackagedNodeCommand(): string {
+  const helperName = `${app.getName()} Helper`;
+  const helperPath = path.join(
+    process.resourcesPath,
+    '..',
+    'Frameworks',
+    `${helperName}.app`,
+    'Contents',
+    'MacOS',
+    helperName,
+  );
+
+  if (fs.existsSync(helperPath)) {
+    return helperPath;
+  }
+
+  return process.execPath;
+}
+
 function getEnvVars(libraryPath: string) {
   const paths = getDataPaths(libraryPath);
   const nextauthSecret = store.get('nextauthSecret');
@@ -31,9 +50,80 @@ function getEnvVars(libraryPath: string) {
 }
 
 function runDbSetup(libraryPath: string) {
+  if (!isDev) {
+    const env = getEnvVars(libraryPath);
+    const databasePath = env.DATABASE_PATH;
+    if (!databasePath) {
+      console.error('[Electron] DATABASE_PATH is not set; skipping packaged database setup');
+      return;
+    }
+
+    const absoluteDatabasePath = path.resolve(databasePath);
+    const migrationPath = path.join(app.getAppPath(), 'src/lib/db/migrations/0000_wide_expediter.sql');
+
+    try {
+      if (!fs.existsSync(migrationPath)) {
+        console.error(`[Electron] Migration file not found: ${migrationPath}`);
+        return;
+      }
+
+      fs.mkdirSync(path.dirname(absoluteDatabasePath), { recursive: true });
+
+      const BetterSqlite3 = require('better-sqlite3') as new (filename: string) => {
+        pragma: (sql: string) => void;
+        prepare: (sql: string) => { get: (...args: unknown[]) => unknown; run: (...args: unknown[]) => unknown };
+        exec: (sql: string) => void;
+        transaction: (fn: () => void) => () => void;
+        close: () => void;
+      };
+      const bcrypt = require('bcryptjs') as { hashSync: (value: string, rounds: number) => string };
+      const db = new BetterSqlite3(absoluteDatabasePath);
+
+      try {
+        db.pragma('journal_mode = WAL');
+        db.pragma('foreign_keys = ON');
+
+        const usersTableExists = db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users' LIMIT 1")
+          .get();
+
+        if (!usersTableExists) {
+          const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+          const statements = migrationSql
+            .split('--> statement-breakpoint')
+            .map((statement) => statement.trim())
+            .filter((statement) => statement.length > 0);
+
+          const runMigration = db.transaction(() => {
+            for (const statement of statements) {
+              db.exec(statement);
+            }
+          });
+          runMigration();
+          console.log('[Electron] Database schema initialized for packaged build');
+        }
+
+        const adminEmail = 'admin@localhost';
+        const existingAdmin = db.prepare('SELECT 1 FROM users WHERE email = ? LIMIT 1').get(adminEmail);
+        if (!existingAdmin) {
+          const now = Math.floor(Date.now() / 1000);
+          const passwordHash = bcrypt.hashSync('admin123', 10);
+          db.prepare(
+            'INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          ).run('1', adminEmail, passwordHash, 'Admin', 'admin', now, now);
+          console.log('[Electron] Seeded default admin user for packaged build');
+        }
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      console.error('[Electron] Packaged database setup failed:', error);
+    }
+    return;
+  }
+
   const env = getEnvVars(libraryPath);
-  // Use process.cwd() in dev mode to get project root, app.getAppPath() in production
-  const workingDir = isDev ? process.cwd() : app.getAppPath();
+  const workingDir = process.cwd();
 
   console.log('[Electron] Running database migration...');
   try {
@@ -62,18 +152,46 @@ function runDbSetup(libraryPath: string) {
 
 function startServer(libraryPath: string) {
   const env = getEnvVars(libraryPath);
-
-  const command = isDev ? 'npx' : 'node';
+  const packagedBootstrapScript = [
+    "const Module=require('node:module')",
+    "const path=require('node:path')",
+    "const originalResolveFilename=Module._resolveFilename",
+    "Module._resolveFilename=function(request,parent,isMain,options){",
+    "if(/^better-sqlite3-[a-f0-9]{8,}$/i.test(request))request='better-sqlite3'",
+    "if(/^canvas-[a-f0-9]{8,}$/i.test(request))request='canvas'",
+    'return originalResolveFilename.call(this,request,parent,isMain,options)',
+    '}',
+    'const chdir=process.chdir.bind(process)',
+    "process.chdir=(directory)=>{try{chdir(directory)}catch(error){if(!error||error.code!=='ENOTDIR')throw error}}",
+    "require(path.join(process.argv[1],'.next/standalone/server.js'))",
+  ].join(';');
+  const command = isDev ? 'npx' : getPackagedNodeCommand();
   const args = isDev
     ? ['next', 'dev', '-p', PORT.toString()]
-    : ['.next/standalone/server.js'];
+    : [
+        '-e',
+        packagedBootstrapScript,
+        app.getAppPath(),
+      ];
+  const serverEnv = isDev
+    ? env
+    : {
+        ...env,
+        ELECTRON_RUN_AS_NODE: '1',
+      };
+  const workingDir = isDev ? app.getAppPath() : process.resourcesPath;
 
   console.log('[Electron] Starting Next.js server...');
-  serverProcess = spawn(command, args, {
-    env,
-    cwd: app.getAppPath(),
-    stdio: 'inherit',
-  });
+  try {
+    serverProcess = spawn(command, args, {
+      env: serverEnv,
+      cwd: workingDir,
+      stdio: 'inherit',
+    });
+  } catch (error) {
+    console.error('[Electron] Failed to spawn server process:', error);
+    return;
+  }
 
   serverProcess.on('error', (error) => {
     console.error('[Electron] Server process error:', error);
@@ -86,16 +204,32 @@ function startServer(libraryPath: string) {
 
 function startWatcher(libraryPath: string) {
   const env = getEnvVars(libraryPath);
+  const command = isDev ? 'npx' : getPackagedNodeCommand();
+  const args = isDev ? ['tsx', 'watcher/index.ts'] : [path.join(app.getAppPath(), 'watcher/dist/watcher/index.js')];
+  const watcherEnv = isDev
+    ? env
+    : {
+        ...env,
+        ELECTRON_RUN_AS_NODE: '1',
+      };
+  const workingDir = isDev ? process.cwd() : process.resourcesPath;
 
-  // Use process.cwd() in dev mode to get project root, app.getAppPath() in production
-  const workingDir = isDev ? process.cwd() : app.getAppPath();
+  if (!isDev && !fs.existsSync(args[0])) {
+    console.error(`[Electron] Watcher entry not found: ${args[0]}`);
+    return;
+  }
 
   console.log('[Electron] Starting file watcher...');
-  watcherProcess = spawn('npx', ['tsx', 'watcher/index.ts'], {
-    env,
-    cwd: workingDir,
-    stdio: 'inherit',
-  });
+  try {
+    watcherProcess = spawn(command, args, {
+      env: watcherEnv,
+      cwd: workingDir,
+      stdio: 'inherit',
+    });
+  } catch (error) {
+    console.error('[Electron] Failed to spawn watcher process:', error);
+    return;
+  }
 
   watcherProcess.on('error', (error) => {
     console.error('[Electron] Watcher process error:', error);

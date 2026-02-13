@@ -1,10 +1,12 @@
 {
   "name": "alex",
   "version": "0.1.1",
+  "main": "electron/dist/main.js",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild": "pnpm build:native",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings 0",
     "start": "next start",
     "test": "jest",
@@ -13,7 +15,7 @@
     "test:watch": "jest --watch",
     "env:setup": "bash -c 'ENV_HASH=$(node -e \"console.log(require(\\\"crypto\\\").randomBytes(32).toString(\\\"hex\\\"))\"); cp .env.example .env; if [[ \"$OSTYPE\" == \"darwin\"* ]]; then sed -i \"\" \"s/^NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=${ENV_HASH}/\" .env; else sed -i \"s/^NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=${ENV_HASH}/\" .env; fi'",
     "setup": "pnpm install && pnpm env:setup && pnpm build:native && mkdir -p data && pnpm db:push && pnpm db:seed",
-    "build:native": "cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release && cd ../../../canvas@3.2.1/node_modules/canvas && npm run install",
+    "build:native": "pnpm rebuild better-sqlite3 canvas",
     "postinstall": "pnpm build:native || echo 'Warning: Failed to build native modules. Run: pnpm build:native'",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/lib/db/seed.ts",
@@ -22,7 +24,10 @@
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:dev": "concurrently \"cross-env ALEX_DESKTOP=true next dev -p 3210\" \"sleep 3 && cross-env ELECTRON_DEV_MODE=true ALEX_DESKTOP=true electron electron/dist/main.js\"",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3,canvas",
-    "electron:build": "pnpm build && tsc -p electron/tsconfig.json && electron-builder"
+    "prepare:standalone": "node -e \"const fs=require('node:fs');fs.mkdirSync('.next/standalone/.next',{recursive:true});fs.rmSync('.next/standalone/.next/static',{recursive:true,force:true});fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true});\"",
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "electron:build": "pnpm clean:dist && pnpm build && pnpm prepare:standalone && pnpm watcher:build && tsc -p electron/tsconfig.json && pnpm electron:rebuild && if [ \"$(uname)\" = \"Darwin\" ]; then electron-builder --mac --arm64; else electron-builder; fi",
+    "watcher:build": "tsc -p watcher/tsconfig.build.json"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -68,7 +73,6 @@
     "drizzle-kit": "^0.31.8",
     "electron": "^34.3.2",
     "electron-builder": "^25.1.8",
-    "electron-store": "^10.0.0",
     "eslint": "^8",
     "eslint-plugin-react": "^7",
     "eslint-plugin-react-hooks": "^5",

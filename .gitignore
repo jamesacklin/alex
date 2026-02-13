@@ -45,6 +45,7 @@ next-env.d.ts
 
 # electron
 /electron/dist
+/watcher/dist
 /dist
 
 # local data (database, uploaded books)

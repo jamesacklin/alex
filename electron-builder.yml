@@ -8,7 +8,6 @@ directories:
 
 files:
   - .next/standalone/**/*
-  - .next/static/**/*
   - public/**/*
   - watcher/**/*
   - src/lib/db/**/*
@@ -27,9 +26,7 @@ mac:
     - target: dmg
       arch:
         - arm64
-        - x64
   category: public.app-category.productivity
-  icon: electron/icons/icon.icns
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: null
@@ -37,7 +34,6 @@ mac:
 
 dmg:
   title: Alex
-  icon: electron/icons/icon.icns
   window:
     width: 540
     height: 380
@@ -48,7 +44,6 @@ win:
       arch:
         - x64
         - arm64
-  icon: electron/icons/icon.png
   publisherName: Alex
 
 nsis:
@@ -68,7 +63,6 @@ linux:
         - x64
         - arm64
   category: Utility
-  icon: electron/icons/icon.png
 
 # Skip code signing for local development builds
 # In production, configure signing via environment variables
