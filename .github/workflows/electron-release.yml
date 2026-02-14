@@ -3,6 +3,16 @@ name: Build Electron App on Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: 'Skip uploading artifacts to release (useful for testing)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build-macos:
@@ -53,11 +63,16 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
       - name: Upload DMG files to release
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_upload != 'true')
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -126,11 +141,16 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
       - name: Upload Windows installers to release
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_upload != 'true')
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -197,11 +217,16 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
       - name: Upload Linux packages to release
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_upload != 'true')
         uses: softprops/action-gh-release@v1
         with:
           files: |
