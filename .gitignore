@@ -9,6 +9,8 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+.pnpm-store
+.swc
 
 # testing
 /coverage
