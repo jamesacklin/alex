@@ -4,6 +4,8 @@ import { books } from '@/lib/db/schema';
 import * as fs from 'fs';
 import * as path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   // Only allow requests from localhost (Electron)
   const host = request.headers.get('host');

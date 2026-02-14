@@ -4,6 +4,8 @@ import { authSession as auth } from "@/lib/auth/config";
 import { asc } from "drizzle-orm";
 import UsersTable from "./users-table";
 
+export const dynamic = "force-dynamic";
+
 export default async function UsersPage() {
   const session = await auth();
 
