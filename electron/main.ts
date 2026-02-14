@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess, execSync } from 'child_process';
@@ -333,11 +333,26 @@ function saveWindowBounds() {
   store.set('windowBounds', bounds);
 }
 
+function getMainWindowIconPath(): string | undefined {
+  if (process.platform === 'win32') {
+    const winIconPath = path.join(__dirname, '../icons/windows/icon.ico');
+    return fs.existsSync(winIconPath) ? winIconPath : undefined;
+  }
+
+  if (process.platform === 'linux') {
+    const linuxIconPath = path.join(__dirname, '../icons/linux/icons/512x512.png');
+    return fs.existsSync(linuxIconPath) ? linuxIconPath : undefined;
+  }
+
+  return undefined;
+}
+
 function createWindow() {
   console.log('[Electron] Creating main window...');
 
   // Restore window bounds from store
   const savedBounds = store.get('windowBounds');
+  const iconPath = getMainWindowIconPath();
   const windowOptions: Electron.BrowserWindowConstructorOptions = {
     width: savedBounds?.width ?? 1200,
     height: savedBounds?.height ?? 800,
@@ -347,6 +362,10 @@ function createWindow() {
       nodeIntegration: false,
     },
   };
+
+  if (iconPath) {
+    windowOptions.icon = iconPath;
+  }
 
   if (savedBounds?.x !== undefined && savedBounds?.y !== undefined) {
     windowOptions.x = savedBounds.x;
@@ -405,7 +424,35 @@ function createWindow() {
   console.log('[Electron] Window setup complete');
 }
 
+function setMacAppIcon() {
+  if (process.platform !== 'darwin') {
+    return;
+  }
+
+  const candidatePaths = [
+    path.join(__dirname, '../icons/macos/icon.icns'),
+    path.join(process.resourcesPath, 'icon.icns'),
+    path.join(process.resourcesPath, 'macos/icon.icns'),
+  ];
+
+  const iconPath = candidatePaths.find((candidatePath) => fs.existsSync(candidatePath));
+  if (!iconPath) {
+    console.warn('[Electron] macOS app icon not found in expected locations');
+    return;
+  }
+
+  const icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    console.warn(`[Electron] Failed to load macOS app icon: ${iconPath}`);
+    return;
+  }
+
+  app.dock.setIcon(icon);
+}
+
 app.whenReady().then(async () => {
+  setMacAppIcon();
+
   // Set up IPC handlers
   ipcMain.handle('select-library-path', async () => {
     const currentPath = store.get('libraryPath');

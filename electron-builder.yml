@@ -22,6 +22,7 @@ asarUnpack:
   - "**/canvas/**"
 
 mac:
+  icon: macos/icon.icns
   target:
     - target: dmg
       arch:
@@ -39,6 +40,7 @@ dmg:
     height: 380
 
 win:
+  icon: windows/icon.ico
   target:
     - target: nsis
       arch:
@@ -53,6 +55,7 @@ nsis:
   createStartMenuShortcut: true
 
 linux:
+  icon: linux/icons/512x512.png
   target:
     - target: AppImage
       arch:
