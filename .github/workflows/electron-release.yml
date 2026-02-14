@@ -5,14 +5,10 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      skip_upload:
-        description: 'Skip uploading artifacts to release (useful for testing)'
+      upload_to_release:
+        description: 'Release tag to upload artifacts to (e.g., v0.3.0). Leave empty to skip upload.'
         required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
+        type: string
 
 jobs:
   build-macos:
@@ -72,9 +68,10 @@ jobs:
           echo "Building version: $VERSION"
 
       - name: Upload DMG files to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
             dist/*.dmg
         env:
@@ -150,9 +147,10 @@ jobs:
           echo "Building version: $VERSION"
 
       - name: Upload Windows installers to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
             dist/*.exe
         env:
@@ -226,9 +224,10 @@ jobs:
           echo "Building version: $VERSION"
 
       - name: Upload Linux packages to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
             dist/*.AppImage
             dist/*.deb
