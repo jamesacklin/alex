@@ -25,7 +25,9 @@ import {
 export default function AdminLibraryPage() {
   const router = useRouter();
   const [showClearDialog, setShowClearDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [libraryPath, setLibraryPath] = useState<string>("");
@@ -117,6 +119,31 @@ export default function AdminLibraryPage() {
       toast.error("Failed to rescan library");
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleResetApp = async () => {
+    if (!window.electronAPI || isResetting) return;
+    setIsResetting(true);
+    try {
+      const result = await window.electronAPI.resetApp();
+      if (result.success) {
+        setShowResetDialog(false);
+        toast.success("App reset", {
+          description: "Reloading onboarding...",
+        });
+        // Wait a moment then reload to /onboarding
+        setTimeout(() => {
+          window.location.href = "/onboarding";
+        }, 500);
+      } else {
+        toast.error("Failed to reset app");
+        setIsResetting(false);
+      }
+    } catch (error) {
+      console.error("Failed to reset app:", error);
+      toast.error("Failed to reset app");
+      setIsResetting(false);
     }
   };
 
@@ -283,6 +310,55 @@ export default function AdminLibraryPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Electron-only: Reset App */}
+        {isElectron && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Reset App</CardTitle>
+              <CardDescription>
+                Clear all data and return to the onboarding screen. This will
+                remove your library path, clear all books, and restart the
+                setup process.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-muted-foreground/20 bg-muted/50 p-4">
+                  <h4 className="text-sm font-medium mb-2">What happens:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    <li>All books deleted from database</li>
+                    <li>All cover images removed from storage</li>
+                    <li>Library path cleared</li>
+                    <li>App returns to onboarding screen</li>
+                  </ul>
+                </div>
+
+                <Button
+                  variant="destructive"
+                  onClick={() => setShowResetDialog(true)}
+                  disabled={isResetting}
+                >
+                  <svg
+                    className="h-4 w-4 mr-2"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                    <path d="M16 16h5v5" />
+                  </svg>
+                  Reset App
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
@@ -304,6 +380,29 @@ export default function AdminLibraryPage() {
               disabled={isClearing}
             >
               {isClearing ? "Clearing..." : "Clear Library"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset app and restart onboarding?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will clear all books, remove your library path, and return
+              you to the onboarding screen. You will need to select your
+              library folder again. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleResetApp}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isResetting}
+            >
+              {isResetting ? "Resetting..." : "Reset App"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
