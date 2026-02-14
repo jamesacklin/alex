@@ -85,6 +85,10 @@ async function desktopSession() {
   };
 }
 
-export const authSession = process.env.ALEX_DESKTOP === 'true'
-  ? desktopSession
-  : nextAuthResult.auth;
+// Dynamic auth session that checks ALEX_DESKTOP at runtime
+export async function authSession() {
+  if (process.env.ALEX_DESKTOP === 'true') {
+    return desktopSession();
+  }
+  return nextAuthResult.auth();
+}

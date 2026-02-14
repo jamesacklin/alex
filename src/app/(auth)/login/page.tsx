@@ -40,11 +40,19 @@ export default function LoginPage() {
     defaultValues: { email: "", password: "" },
   });
 
-  // Desktop mode bypass: redirect to library immediately
+  // Desktop mode bypass: auto-login as admin@localhost and redirect
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_ALEX_DESKTOP === 'true') {
-      router.replace('/library');
+    async function autoLogin() {
+      if (process.env.NEXT_PUBLIC_ALEX_DESKTOP === 'true') {
+        await signIn("credentials", {
+          email: "admin@localhost",
+          password: "admin123",
+          redirect: false,
+        });
+        router.replace('/library');
+      }
     }
+    autoLogin();
   }, [router]);
 
   async function onSubmit({ email, password }: LoginValues) {
