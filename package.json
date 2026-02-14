@@ -22,11 +22,12 @@
     "db:reset": "rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push && pnpm db:seed",
     "watcher": "tsx watcher/index.ts",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:dev": "concurrently \"cross-env ALEX_DESKTOP=true next dev -p 3210\" \"sleep 3 && cross-env ELECTRON_DEV_MODE=true ALEX_DESKTOP=true electron electron/dist/main.js\"",
+    "electron:dev": "pnpm build:native && pnpm electron:compile && cross-env ALEX_DESKTOP=true electron electron/dist/main.js",
+    "electron:dev:external": "concurrently \"cross-env NEXTAUTH_URL=http://localhost:3210 ALEX_DESKTOP=true next dev -p 3210\" \"sleep 3 && cross-env ELECTRON_DEV_MODE=true ALEX_DESKTOP=true electron electron/dist/main.js\"",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3,canvas",
     "prepare:standalone": "node -e \"const fs=require('node:fs');fs.mkdirSync('.next/standalone/.next',{recursive:true});fs.rmSync('.next/standalone/.next/static',{recursive:true,force:true});fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true});\"",
     "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "electron:build": "pnpm clean:dist && pnpm build && pnpm prepare:standalone && pnpm watcher:build && tsc -p electron/tsconfig.json && pnpm electron:rebuild && if [ \"$(uname)\" = \"Darwin\" ]; then electron-builder --mac --arm64; else electron-builder; fi",
+    "electron:build": "pnpm clean:dist && pnpm build && pnpm prepare:standalone && pnpm watcher:build && tsc -p electron/tsconfig.json && pnpm electron:rebuild && if [ \"$(uname)\" = \"Darwin\" ]; then electron-builder --mac --arm64; else electron-builder; fi && pnpm build:native",
     "watcher:build": "tsc -p watcher/tsconfig.build.json"
   },
   "dependencies": {

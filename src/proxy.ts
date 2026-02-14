@@ -60,7 +60,9 @@ export default auth((req) => {
 
 export const config = {
   matcher: [
-    // Run on every path except Next.js internals and static assets
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+    // Pages (excluding static assets)
+    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\..*).*)",
+    // API routes (including extensions like /book.epub)
+    "/api/:path*",
   ],
 };

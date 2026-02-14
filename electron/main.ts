@@ -15,6 +15,10 @@ let isFirstRun = false;
 const PORT = 3210;
 const isDev = !app.isPackaged;
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getPackagedNodeCommand(): string {
   const helperName = `${app.getName()} Helper`;
   const helperPath = path.join(
@@ -130,7 +134,7 @@ function runDbSetup(libraryPath: string) {
 
   console.log('[Electron] Running database migration...');
   try {
-    execSync('npx drizzle-kit push', {
+    execSync('pnpm exec drizzle-kit push', {
       stdio: 'inherit',
       env,
       cwd: workingDir,
@@ -142,7 +146,7 @@ function runDbSetup(libraryPath: string) {
 
   console.log('[Electron] Running database seed...');
   try {
-    execSync('npx tsx src/lib/db/seed.ts', {
+    execSync('pnpm exec tsx src/lib/db/seed.ts', {
       stdio: 'inherit',
       env,
       cwd: workingDir,
@@ -168,9 +172,11 @@ function startServer(libraryPath: string) {
     "process.chdir=(directory)=>{try{chdir(directory)}catch(error){if(!error||error.code!=='ENOTDIR')throw error}}",
     "require(path.join(process.argv[1],'.next/standalone/server.js'))",
   ].join(';');
-  const command = isDev ? 'npx' : getPackagedNodeCommand();
+  const command = isDev
+    ? (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
+    : getPackagedNodeCommand();
   const args = isDev
-    ? ['next', 'dev', '-p', PORT.toString()]
+    ? ['next', 'dev', '-p', PORT.toString(), '-H', '127.0.0.1']
     : [
         '-e',
         packagedBootstrapScript,
@@ -189,12 +195,20 @@ function startServer(libraryPath: string) {
     serverProcess = spawn(command, args, {
       env: serverEnv,
       cwd: workingDir,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn server process:', error);
     return;
   }
+
+  serverProcess.stdout?.on('data', (data: Buffer) => {
+    process.stdout.write(`[Next] ${data.toString()}`);
+  });
+
+  serverProcess.stderr?.on('data', (data: Buffer) => {
+    process.stderr.write(`[Next] ${data.toString()}`);
+  });
 
   serverProcess.on('error', (error) => {
     console.error('[Electron] Server process error:', error);
@@ -203,6 +217,38 @@ function startServer(libraryPath: string) {
   serverProcess.on('exit', (code) => {
     console.log(`[Electron] Server process exited with code ${code}`);
   });
+}
+
+async function waitForServerReady(timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = null;
+
+  while (Date.now() < deadline) {
+    if (serverProcess && serverProcess.exitCode !== null) {
+      console.error(`[Electron] Server exited before becoming ready (code: ${serverProcess.exitCode})`);
+      return false;
+    }
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${PORT}/login`, {
+        method: 'GET',
+      });
+      if (response.status >= 200 && response.status < 500) {
+        return true;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await sleep(500);
+  }
+
+  if (lastError) {
+    console.error('[Electron] Timed out waiting for server:', lastError);
+  } else {
+    console.error('[Electron] Timed out waiting for server readiness');
+  }
+  return false;
 }
 
 function startWatcher(libraryPath: string) {
@@ -618,10 +664,16 @@ app.whenReady().then(async () => {
       startWatcher(libraryPath);
     }
 
-    // Wait for server to start, then create window
-    setTimeout(() => {
-      createWindow();
-    }, 3000);
+    const serverReady = await waitForServerReady();
+    if (!serverReady) {
+      dialog.showErrorBox(
+        'Server failed to start',
+        `Next.js server did not start on http://127.0.0.1:${PORT}. Check logs prefixed with [Next].`,
+      );
+      return;
+    }
+
+    createWindow();
   } else {
     // Dev mode: server is already running externally via concurrently
     console.log('[Electron] Dev mode: using external server');

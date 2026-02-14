@@ -6,9 +6,13 @@ import { collections } from "@/lib/db/schema";
 
 export const dynamic = 'force-dynamic';
 
+function getOrigin(req: Request) {
+  return new URL(req.url).origin;
+}
+
 // POST /api/collections/[id]/share — enable sharing
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
@@ -33,7 +37,7 @@ export async function POST(
 
   // If already shared, return existing token
   if (collection.shareToken) {
-    const shareUrl = `${process.env.NEXTAUTH_URL}/shared/${collection.shareToken}`;
+    const shareUrl = `${getOrigin(req)}/shared/${collection.shareToken}`;
     return NextResponse.json({
       shareToken: collection.shareToken,
       shareUrl,
@@ -49,7 +53,7 @@ export async function POST(
     .set({ shareToken, sharedAt })
     .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
 
-  const shareUrl = `${process.env.NEXTAUTH_URL}/shared/${shareToken}`;
+  const shareUrl = `${getOrigin(req)}/shared/${shareToken}`;
 
   return NextResponse.json({
     shareToken,

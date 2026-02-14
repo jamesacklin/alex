@@ -137,6 +137,27 @@ pnpm watcher        # file watcher (watches ./data/library by default)
 
 > **Note:** If you see errors about missing `better_sqlite3.node` bindings, run `pnpm build:native` to compile the native modules for your platform.
 
+### Electron Development
+
+Use:
+
+```sh
+pnpm electron:dev
+```
+
+This runs Electron with the internal app-managed Next server on `http://localhost:3210` and rebuilds native modules for your current Node runtime before launch.
+
+If you explicitly want an externally managed Next dev server, use:
+
+```sh
+pnpm electron:dev:external
+```
+
+Native module ABI notes:
+- `pnpm build:native` compiles `better-sqlite3`/`canvas` for your local Node runtime (used by web/Next dev).
+- `pnpm electron:rebuild` compiles those modules for Electron's Node ABI (used for packaged Electron builds).
+- `pnpm electron:build` now restores Node-native modules at the end so regular web dev keeps working.
+
 ### Useful scripts
 
 | Script | What it does |
@@ -147,6 +168,8 @@ pnpm watcher        # file watcher (watches ./data/library by default)
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |
 | `pnpm watcher` | Background file watcher |
+| `pnpm electron:dev` | Electron dev mode (app-managed server on `:3210`) |
+| `pnpm electron:dev:external` | Electron dev with separately started Next dev server |
 | `pnpm db:push` | Apply schema changes to the database |
 | `pnpm db:seed` | Seed the default admin account |
 | `pnpm db:reset` | Wipe the database and re-seed from scratch |

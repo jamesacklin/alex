@@ -10,10 +10,11 @@ export function AppLogo({ className }: AppLogoProps) {
     <Image
       src="/icon.png"
       alt=""
-      width={24}
-      height={24}
       className={cn("h-6 w-6", className)}
       aria-hidden="true"
+      width={24}
+      height={24}
+      unoptimized
     />
   );
 }
