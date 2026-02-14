@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { authSession as auth } from "@/lib/auth/config";
 import { redirect } from "next/navigation";
 import DashboardLayout from "./dashboard-layout";
@@ -13,6 +14,8 @@ export default async function Layout({
   }
 
   return (
-    <DashboardLayout user={session.user}>{children}</DashboardLayout>
+    <Suspense>
+      <DashboardLayout user={session.user}>{children}</DashboardLayout>
+    </Suspense>
   );
 }
