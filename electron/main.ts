@@ -10,6 +10,7 @@ let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 let watcherProcess: ChildProcess | null = null;
 let isQuitting = false;
+let isFirstRun = false;
 
 const PORT = 3210;
 const isDev = !app.isPackaged;
@@ -355,7 +356,10 @@ function createWindow() {
   mainWindow = new BrowserWindow(windowOptions);
   console.log('[Electron] Window created, loading URL...');
 
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+  const startUrl = isFirstRun
+    ? `http://localhost:${PORT}/onboarding`
+    : `http://localhost:${PORT}`;
+  mainWindow.loadURL(startUrl);
 
   if (isDev) {
     mainWindow.webContents.openDevTools();
@@ -486,14 +490,73 @@ app.whenReady().then(async () => {
     return store.get('libraryPath') || '';
   });
 
-  // First-run: prompt for library path if not set
-  let libraryPath = store.get('libraryPath') || '';
-  if (!libraryPath) {
-    console.log('[Electron] First run detected, prompting for library path...');
-    const selectedPath = await selectLibraryPath();
-    if (selectedPath) {
-      libraryPath = selectedPath;
+  ipcMain.handle('select-library-path-initial', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Library Folder',
+      message: 'Choose a folder containing your EPUB and PDF files',
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
     }
+
+    const selectedPath = result.filePaths[0];
+    store.set('libraryPath', selectedPath);
+    console.log(`[Electron] Initial library path set to: ${selectedPath}`);
+    return selectedPath;
+  });
+
+  ipcMain.handle('complete-onboarding', () => {
+    const libPath = store.get('libraryPath');
+    if (!libPath) {
+      return { success: false, error: 'No library path set' };
+    }
+
+    try {
+      startWatcher(libPath);
+      isFirstRun = false;
+      return { success: true };
+    } catch (error) {
+      console.error('[Electron] Onboarding setup failed:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('reset-app', async () => {
+    try {
+      console.log('[Electron] Resetting app...');
+
+      // Stop watcher if running
+      if (watcherProcess) {
+        watcherProcess.kill();
+        watcherProcess = null;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Clear all books via API
+      const success = await clearBooksTable();
+      if (!success) {
+        console.error('[Electron] Failed to clear books during reset');
+      }
+
+      // Clear library path from store
+      store.set('libraryPath', '');
+      isFirstRun = true;
+
+      console.log('[Electron] App reset complete');
+      return { success: true };
+    } catch (error) {
+      console.error('[Electron] App reset failed:', error);
+      return { success: false };
+    }
+  });
+
+  // First-run detection
+  const libraryPath = store.get('libraryPath') || '';
+  if (!libraryPath) {
+    console.log('[Electron] First run detected, will show onboarding page');
+    isFirstRun = true;
   }
 
   // Check if running in dev mode with external server (electron:dev script)
