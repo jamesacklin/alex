@@ -3,6 +3,10 @@
   "version": "0.3.0",
   "main": "electron/dist/main.js",
   "private": true,
+  "author": {
+    "name": "James Acklin",
+    "email": "james@ackl.in"
+  },
   "scripts": {
     "dev": "pnpm dev:prerun && next dev",
     "build": "next build",
@@ -27,7 +31,10 @@
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3,canvas",
     "prepare:standalone": "node -e \"const fs=require('node:fs');fs.mkdirSync('.next/standalone/.next',{recursive:true});fs.rmSync('.next/standalone/.next/static',{recursive:true,force:true});fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true});\"",
     "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "electron:build": "pnpm clean:dist && pnpm build && pnpm prepare:standalone && pnpm watcher:build && tsc -p electron/tsconfig.json && pnpm electron:rebuild && if [ \"$(uname)\" = \"Darwin\" ]; then electron-builder --mac --arm64; else electron-builder; fi && pnpm build:native",
+    "electron:build": "pnpm clean:dist && pnpm build && pnpm prepare:standalone && pnpm watcher:build && tsc -p electron/tsconfig.json && pnpm electron:rebuild",
+    "electron:build:mac": "pnpm electron:build && electron-builder --mac --arm64 && pnpm build:native",
+    "electron:build:win": "pnpm electron:build && electron-builder --win && pnpm build:native",
+    "electron:build:linux": "pnpm electron:build && electron-builder --linux && pnpm build:native",
     "watcher:build": "tsc -p watcher/tsconfig.build.json",
     "dev:prerun": "node scripts/dev-prerun.js"
   },

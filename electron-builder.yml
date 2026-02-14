@@ -2,6 +2,9 @@ appId: com.alex.app
 productName: Alex
 copyright: Copyright © 2025
 
+# Don't auto-publish to GitHub - we manually upload via workflow
+publish: null
+
 directories:
   output: dist
   buildResources: electron/icons

@@ -50,7 +50,7 @@ jobs:
         run: pnpm electron:compile
 
       - name: Build Electron app
-        run: pnpm electron:build
+        run: pnpm electron:build:mac
         env:
           # Skip code signing for CI builds (add secrets for production signing)
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -128,7 +128,7 @@ jobs:
         run: pnpm electron:compile
 
       - name: Build Electron app
-        run: pnpm electron:build
+        run: pnpm electron:build:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -207,7 +207,7 @@ jobs:
         run: pnpm electron:compile
 
       - name: Build Electron app
-        run: pnpm electron:build
+        run: pnpm electron:build:linux
 
       - name: List built files
         run: |
