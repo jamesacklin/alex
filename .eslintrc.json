@@ -34,6 +34,18 @@
     "react/prop-types": "off",
     "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
   },
+  "overrides": [
+    {
+      "files": ["scripts/**/*.js"],
+      "parserOptions": {
+        "project": null,
+        "sourceType": "script"
+      },
+      "rules": {
+        "@typescript-eslint/no-require-imports": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     "node_modules/",
     ".next/",
