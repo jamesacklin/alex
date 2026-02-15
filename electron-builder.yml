@@ -35,7 +35,9 @@ mac:
   gatekeeperAssess: false
   entitlements: null
   entitlementsInherit: null
-  identity: null
+  # Use ad-hoc signing (free, no certificate needed)
+  # This prevents "damaged" errors on unsigned builds
+  identity: "-"
 
 win:
   icon: windows/icon.ico
