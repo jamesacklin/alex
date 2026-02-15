@@ -36,7 +36,7 @@
   },
   "overrides": [
     {
-      "files": ["scripts/**/*.js"],
+      "files": ["scripts/**/*.js", "electron/**/*.js"],
       "parserOptions": {
         "project": null,
         "sourceType": "script"

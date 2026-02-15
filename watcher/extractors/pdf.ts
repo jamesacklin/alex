@@ -4,10 +4,35 @@ import { PDFParse } from "pdf-parse";
 import { createCanvas } from "canvas";
 import type { BookMetadata } from "../types";
 
+interface PDFDocument {
+  getPage(pageNum: number): Promise<PDFPage>;
+  destroy(): void;
+}
+
+interface PDFPage {
+  getViewport(params: { scale: number }): PDFViewport;
+  render(params: { canvasContext: unknown; viewport: PDFViewport }): { promise: Promise<void> };
+}
+
+interface PDFViewport {
+  width: number;
+  height: number;
+}
+
+interface CanvasAndContext {
+  canvas: {
+    width: number;
+    height: number;
+    toBuffer(type: string, options?: { quality: number }): Buffer;
+  };
+  context: unknown;
+}
+
 // --- primary: render page 1 via pdfjs-dist + node-canvas ---
 async function renderWithPdfjs(filePath: string, bookId: string, coversDir: string): Promise<string | undefined> {
-  let pdfDoc: any = null;
+  let pdfDoc: PDFDocument | null = null;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.mjs");
 
     // Resolve resource paths from the installed package
@@ -16,22 +41,24 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
     const standardFontDataUrl = path.join(pdfjsPkgDir, "standard_fonts") + path.sep;
 
     // Custom CanvasFactory using node-canvas (pdfjs expects this interface)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createCanvas: createNodeCanvas } = require("canvas");
     class NodeCanvasFactory {
-      create(width: number, height: number) {
+      create(width: number, height: number): CanvasAndContext {
         const canvas = createNodeCanvas(width, height);
         const context = canvas.getContext("2d");
         return { canvas, context };
       }
-      reset(canvasAndContext: any, width: number, height: number) {
+      reset(canvasAndContext: CanvasAndContext, width: number, height: number) {
         canvasAndContext.canvas.width = width;
         canvasAndContext.canvas.height = height;
       }
-      destroy(canvasAndContext: any) {
+      destroy(canvasAndContext: CanvasAndContext) {
         canvasAndContext.canvas.width = 0;
         canvasAndContext.canvas.height = 0;
-        canvasAndContext.canvas = null;
-        canvasAndContext.context = null;
+        // Clear references for garbage collection
+        (canvasAndContext as { canvas: unknown; context: unknown }).canvas = null;
+        (canvasAndContext as { canvas: unknown; context: unknown }).context = null;
       }
     }
 
@@ -65,7 +92,11 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
     return undefined;
   } finally {
     if (pdfDoc) {
-      try { pdfDoc.destroy(); } catch {}
+      try {
+        pdfDoc.destroy();
+      } catch {
+        // Suppress cleanup errors - already in error state
+      }
     }
   }
 }
