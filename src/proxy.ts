@@ -6,6 +6,11 @@ export default auth((req) => {
   const session = req.auth;
   const isAuthenticated = !!session;
 
+  // Desktop mode: skip all auth checks — session is synthetic
+  if (process.env.ALEX_DESKTOP === 'true') {
+    return NextResponse.next();
+  }
+
   // Public pages — no auth required.
   // /setup's own page checks whether users exist and redirects if so.
   if (nextUrl.pathname === "/login" || nextUrl.pathname === "/setup") {
