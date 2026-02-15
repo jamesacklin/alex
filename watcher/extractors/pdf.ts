@@ -1,35 +1,72 @@
 import path from "path";
 import fs from "fs";
-import { execFileSync } from "child_process";
 import { PDFParse } from "pdf-parse";
 import { createCanvas } from "canvas";
 import type { BookMetadata } from "../types";
 
-// --- one-time detection: is pdftoppm available? ---
-let hasPdftoppm: boolean | null = null;
-function detectPdftoppm(): boolean {
-  if (hasPdftoppm !== null) return hasPdftoppm;
+// --- primary: render page 1 via pdfjs-dist + node-canvas ---
+async function renderWithPdfjs(filePath: string, bookId: string, coversDir: string): Promise<string | undefined> {
+  let pdfDoc: any = null;
   try {
-    execFileSync("pdftoppm", ["-v"], { stdio: "pipe" });
-    hasPdftoppm = true;
-  } catch {
-    hasPdftoppm = false;
-  }
-  return hasPdftoppm;
-}
+    const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.mjs");
 
-// --- primary: render page 1 via poppler ---
-function renderWithPdftoppm(filePath: string, bookId: string, coversDir: string): string | undefined {
-  try {
-    const outPrefix = path.join(coversDir, bookId);
-    execFileSync("pdftoppm", [
-      "-jpeg", "-r", "150", "-singlefile", "-f", "1", "-l", "1",
-      filePath, outPrefix,
-    ]);
-    const coverPath = `${outPrefix}.jpg`;
-    return fs.existsSync(coverPath) ? coverPath : undefined;
-  } catch {
+    // Resolve resource paths from the installed package
+    const pdfjsPkgDir = path.dirname(require.resolve("pdfjs-dist/package.json"));
+    const cMapUrl = path.join(pdfjsPkgDir, "cmaps") + path.sep;
+    const standardFontDataUrl = path.join(pdfjsPkgDir, "standard_fonts") + path.sep;
+
+    // Custom CanvasFactory using node-canvas (pdfjs expects this interface)
+    const { createCanvas: createNodeCanvas } = require("canvas");
+    class NodeCanvasFactory {
+      create(width: number, height: number) {
+        const canvas = createNodeCanvas(width, height);
+        const context = canvas.getContext("2d");
+        return { canvas, context };
+      }
+      reset(canvasAndContext: any, width: number, height: number) {
+        canvasAndContext.canvas.width = width;
+        canvasAndContext.canvas.height = height;
+      }
+      destroy(canvasAndContext: any) {
+        canvasAndContext.canvas.width = 0;
+        canvasAndContext.canvas.height = 0;
+        canvasAndContext.canvas = null;
+        canvasAndContext.context = null;
+      }
+    }
+
+    const data = new Uint8Array(fs.readFileSync(filePath));
+
+    pdfDoc = await pdfjsLib.getDocument({
+      data,
+      cMapUrl,
+      cMapPacked: true,
+      standardFontDataUrl,
+      canvasFactory: new NodeCanvasFactory(),
+      isEvalSupported: false,
+      disableWorker: true,
+    }).promise;
+
+    const page = await pdfDoc.getPage(1);
+    const viewport = page.getViewport({ scale: 150 / 72 }); // 150 DPI
+
+    const canvasFactory = new NodeCanvasFactory();
+    const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
+
+    await page.render({ canvasContext: context, viewport }).promise;
+
+    const coverPath = path.join(coversDir, `${bookId}.jpg`);
+    const jpegBuffer = canvas.toBuffer("image/jpeg", { quality: 0.9 });
+    fs.writeFileSync(coverPath, jpegBuffer);
+
+    return coverPath;
+  } catch (err) {
+    console.error("[pdf] pdfjs-dist render failed:", err);
     return undefined;
+  } finally {
+    if (pdfDoc) {
+      try { pdfDoc.destroy(); } catch {}
+    }
   }
 }
 
@@ -96,13 +133,15 @@ function renderSynthetic(bookId: string, title: string, author: string | undefin
   }
 }
 
-function generateCover(filePath: string, bookId: string, title: string, author: string | undefined): string | undefined {
+async function generateCover(filePath: string, bookId: string, title: string, author: string | undefined): Promise<string | undefined> {
   const coversDir = path.resolve(process.env.COVERS_PATH ?? "data/covers");
   fs.mkdirSync(coversDir, { recursive: true });
 
-  if (detectPdftoppm()) {
-    return renderWithPdftoppm(filePath, bookId, coversDir);
-  }
+  // Primary: pdfjs-dist + node-canvas (no system deps)
+  const pdfjsCover = await renderWithPdfjs(filePath, bookId, coversDir);
+  if (pdfjsCover) return pdfjsCover;
+
+  // Fallback: synthetic gradient cover
   return renderSynthetic(bookId, title, author, coversDir);
 }
 
@@ -126,7 +165,7 @@ export async function extractPdfMetadata(filePath: string, bookId: string): Prom
     // metadata extraction failed — title stays as filename fallback
   }
 
-  const coverPath = generateCover(filePath, bookId, title, author);
+  const coverPath = await generateCover(filePath, bookId, title, author);
 
   return { title, author, pageCount, coverPath };
 }
