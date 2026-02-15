@@ -1,10 +1,12 @@
 import path from "path";
 import fs from "fs";
+import Module from "module";
 import { PDFParse } from "pdf-parse";
 import { createCanvas } from "canvas";
 import type { BookMetadata } from "../types";
 
 interface PDFDocument {
+  numPages: number;
   getPage(pageNum: number): Promise<PDFPage>;
   destroy(): void;
 }
@@ -23,12 +25,12 @@ interface CanvasAndContext {
   canvas: {
     width: number;
     height: number;
-    toBuffer(type: string, options?: { quality: number }): Buffer;
+    toBuffer(type: string, options?: Record<string, unknown>): Buffer;
   };
   context: unknown;
 }
 
-// --- primary: render page 1 via pdfjs-dist + node-canvas ---
+// --- primary: render page 1 via pdfjs-dist + @napi-rs/canvas ---
 async function renderWithPdfjs(filePath: string, bookId: string, coversDir: string): Promise<string | undefined> {
   let pdfDoc: PDFDocument | null = null;
   try {
@@ -40,12 +42,16 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
     const cMapUrl = path.join(pdfjsPkgDir, "cmaps") + path.sep;
     const standardFontDataUrl = path.join(pdfjsPkgDir, "standard_fonts") + path.sep;
 
-    // Custom CanvasFactory using node-canvas (pdfjs expects this interface)
+    // pdfjs-dist v5 polyfills Path2D using @napi-rs/canvas (a transitive dep).
+    // The render canvas must also come from @napi-rs/canvas so that
+    // context.fill(path) receives compatible Path2D objects.
+    const pdfjsRequire = Module.createRequire(path.join(pdfjsPkgDir, "package.json"));
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createCanvas: createNodeCanvas } = require("canvas");
-    class NodeCanvasFactory {
+    const napiCanvas = pdfjsRequire("@napi-rs/canvas");
+
+    class NapiCanvasFactory {
       create(width: number, height: number): CanvasAndContext {
-        const canvas = createNodeCanvas(width, height);
+        const canvas = napiCanvas.createCanvas(width, height);
         const context = canvas.getContext("2d");
         return { canvas, context };
       }
@@ -56,9 +62,6 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
       destroy(canvasAndContext: CanvasAndContext) {
         canvasAndContext.canvas.width = 0;
         canvasAndContext.canvas.height = 0;
-        // Clear references for garbage collection
-        (canvasAndContext as { canvas: unknown; context: unknown }).canvas = null;
-        (canvasAndContext as { canvas: unknown; context: unknown }).context = null;
       }
     }
 
@@ -69,7 +72,7 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
       cMapUrl,
       cMapPacked: true,
       standardFontDataUrl,
-      canvasFactory: new NodeCanvasFactory(),
+      canvasFactory: new NapiCanvasFactory(),
       isEvalSupported: false,
       disableWorker: true,
     }).promise;
@@ -81,13 +84,13 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
     const page = await pdfDoc.getPage(1);
     const viewport = page.getViewport({ scale: 150 / 72 }); // 150 DPI
 
-    const canvasFactory = new NodeCanvasFactory();
+    const canvasFactory = new NapiCanvasFactory();
     const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
 
     await page.render({ canvasContext: context, viewport }).promise;
 
     const coverPath = path.join(coversDir, `${bookId}.jpg`);
-    const jpegBuffer = canvas.toBuffer("image/jpeg", { quality: 0.9 });
+    const jpegBuffer = canvas.toBuffer("image/jpeg");
     fs.writeFileSync(coverPath, jpegBuffer);
 
     return coverPath;
