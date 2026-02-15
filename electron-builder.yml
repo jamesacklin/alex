@@ -27,20 +27,15 @@ asarUnpack:
 mac:
   icon: macos/icon.icns
   target:
-    - target: dmg
+    - target: zip
       arch:
         - arm64
   category: public.app-category.productivity
-  hardenedRuntime: true
+  hardenedRuntime: false
   gatekeeperAssess: false
   entitlements: null
   entitlementsInherit: null
-
-dmg:
-  title: Alex
-  window:
-    width: 540
-    height: 380
+  identity: null
 
 win:
   icon: windows/icon.ico

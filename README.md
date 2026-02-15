@@ -43,6 +43,37 @@ Any collection can be shared by generating a share link from the collection deta
 
 ## Getting Started
 
+### Desktop App
+
+Download the latest release for your platform from the [Releases page](https://github.com/jamesacklin/book-app/releases).
+
+**Available platforms:**
+- macOS (Apple Silicon)
+- Windows (x64)
+- Linux (AppImage, .deb)
+
+#### Installation Notes
+
+Since this app isn't signed with paid code-signing certificates, you may see security warnings on first launch:
+
+**macOS:**
+1. Download the `.zip` file
+2. Extract it and drag Alex to your Applications folder
+3. Right-click the app → **Open** (don't double-click)
+4. Click **Open** in the security dialog
+5. Subsequent launches work normally
+
+**Windows:**
+1. Download and run the `.exe` installer
+2. Windows SmartScreen will show a warning
+3. Click **More info** → **Run anyway**
+4. Complete the installation
+5. The warning only appears once
+
+**Linux:**
+- **AppImage:** Make executable (`chmod +x`) and run
+- **.deb:** Install with `sudo dpkg -i alex*.deb`
+
 ### Docker Hub (quickest)
 
 Pull and run the pre-built image:

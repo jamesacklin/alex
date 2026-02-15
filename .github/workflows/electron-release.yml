@@ -67,13 +67,13 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
-      - name: Upload DMG files to release
+      - name: Upload macOS package to release
         if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
-            dist/*.dmg
+            dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -85,10 +85,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Built Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          ls -1 dist/*.dmg 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No DMG files found" >> $GITHUB_STEP_SUMMARY
+          ls -1 dist/*.zip 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No ZIP files found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All DMG files have been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
+          echo "macOS ZIP package has been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
 
   build-windows:
     runs-on: windows-latest
