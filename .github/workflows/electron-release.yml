@@ -122,6 +122,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build native modules
+        # Canvas build fails on Windows without GTK, but we don't need it since we have poppler
+        continue-on-error: true
         run: pnpm build:native
 
       - name: Build Next.js app
