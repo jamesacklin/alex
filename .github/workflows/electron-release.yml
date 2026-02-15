@@ -31,6 +31,9 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
+      - name: Install poppler for PDF cover generation
+        run: brew install poppler
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -111,6 +114,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
+
+      - name: Install poppler for PDF cover generation
+        run: choco install poppler -y
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -193,6 +199,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
+
+      - name: Install poppler for PDF cover generation
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
