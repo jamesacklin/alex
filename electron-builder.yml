@@ -5,6 +5,9 @@ copyright: Copyright © 2025
 # Don't auto-publish to GitHub - we manually upload via workflow
 publish: null
 
+# Ad-hoc sign macOS builds to prevent "damaged" errors
+afterPack: electron/sign-macos.js
+
 directories:
   output: dist
   buildResources: electron/icons
@@ -35,9 +38,8 @@ mac:
   gatekeeperAssess: false
   entitlements: null
   entitlementsInherit: null
-  # Use ad-hoc signing (free, no certificate needed)
-  # This prevents "damaged" errors on unsigned builds
-  identity: "-"
+  # Don't sign during build - we handle ad-hoc signing via afterPack hook
+  identity: null
 
 win:
   icon: windows/icon.ico
