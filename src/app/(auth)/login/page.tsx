@@ -40,19 +40,12 @@ export default function LoginPage() {
     defaultValues: { email: "", password: "" },
   });
 
-  // Desktop mode bypass: auto-login as admin@localhost and redirect
+  // Desktop mode bypass: redirect immediately without signing in
+  // The server-side authSession() handles the synthetic session
   useEffect(() => {
-    async function autoLogin() {
-      if (process.env.NEXT_PUBLIC_ALEX_DESKTOP === 'true') {
-        await signIn("credentials", {
-          email: "admin@localhost",
-          password: "admin123",
-          redirect: false,
-        });
-        router.replace('/library');
-      }
+    if (process.env.NEXT_PUBLIC_ALEX_DESKTOP === 'true') {
+      router.replace('/library');
     }
-    autoLogin();
   }, [router]);
 
   async function onSubmit({ email, password }: LoginValues) {
