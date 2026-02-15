@@ -88,7 +88,7 @@ sequenceDiagram
     participant EPUB as epub parser
     participant CoverGen as Cover Generator
     participant DB as Database
-    participant Poppler as pdftoppm
+    participant PdfJs as pdfjs-dist
     participant Canvas as node-canvas
 
     FS->>Chokidar: File added: book.pdf
@@ -108,13 +108,13 @@ sequenceDiagram
         alt PDF file
             Handler->>PDF: Extract metadata
             PDF-->>Handler: { title, author, pageCount }
-            Handler->>Poppler: pdftoppm (first page)
+            Handler->>PdfJs: Render page 1 via pdfjs-dist + node-canvas
             alt Success
-                Poppler-->>Handler: PNG buffer
+                PdfJs-->>Handler: JPEG buffer
             else Fallback
-                Poppler--xHandler: Error
+                PdfJs--xHandler: Error
                 Handler->>Canvas: Render synthetic cover
-                Canvas-->>Handler: PNG buffer
+                Canvas-->>Handler: JPEG buffer
             end
         else EPUB file
             Handler->>EPUB: Parse OPF manifest
@@ -138,7 +138,7 @@ sequenceDiagram
 2. **Write Stabilization**: Waits 2 seconds to ensure file is fully written
 3. **Duplicate Check**: SHA-256 hash prevents duplicate entries
 4. **Metadata Extraction**: Format-specific parsers extract title, author, etc.
-5. **Cover Generation**: Primary method (pdftoppm) with canvas fallback
+5. **Cover Generation**: pdfjs-dist + node-canvas with synthetic fallback
 6. **Database Insert**: Atomic insert of book record
 7. **Version Bump**: Triggers real-time update to all clients
 
@@ -417,38 +417,33 @@ sequenceDiagram
 sequenceDiagram
     participant Handler as handleAdd
     participant FS as File System
-    participant Poppler as pdftoppm
+    participant PdfJs as pdfjs-dist
     participant Canvas as node-canvas
-    participant Sharp as sharp
 
     alt PDF Cover
-        Handler->>Poppler: pdftoppm -png -f 1 -l 1 -scale-to 400
+        Handler->>PdfJs: Render page 1 via pdfjs-dist + node-canvas
         alt Success
-            Poppler->>FS: Read temporary PNG
-            FS-->>Poppler: Raw PNG data
-            Poppler-->>Handler: PNG buffer
-        else Poppler not available
-            Poppler--xHandler: Command failed
+            PdfJs-->>Handler: JPEG buffer
+        else pdfjs-dist render failed
+            PdfJs--xHandler: Error
             Handler->>Canvas: Create 400x600 canvas
-            Canvas->>Canvas: Fill background (#f5f5f5)
+            Canvas->>Canvas: Fill gradient background
             Canvas->>Canvas: Draw title text
             Canvas->>Canvas: Draw author text
-            Canvas-->>Handler: Synthetic PNG buffer
+            Canvas-->>Handler: Synthetic JPEG buffer
         end
     else EPUB Cover
         Handler->>Handler: Parse EPUB manifest
         alt Cover in manifest
-            Handler->>FS: Extract cover.jpg from EPUB
+            Handler->>FS: Extract cover image from EPUB
             FS-->>Handler: Image buffer
-            Handler->>Sharp: Resize to 400x600
-            Sharp-->>Handler: Resized PNG
         else No cover found
             Handler->>Canvas: Create synthetic cover
-            Canvas-->>Handler: PNG buffer
+            Canvas-->>Handler: JPEG buffer
         end
     end
 
-    Handler->>FS: Write to data/covers/[uuid].png
+    Handler->>FS: Write to data/covers/[uuid].jpg
     FS-->>Handler: Success
 ```
 
@@ -539,9 +534,8 @@ sequenceDiagram
 
 ### Cover Generation Strategy
 
-1. **Primary (PDFs)**: Use `pdftoppm` from poppler-utils (highest quality)
+1. **Primary (PDFs)**: Render page 1 via `pdfjs-dist` + `node-canvas` (no system dependencies)
 2. **Fallback (PDFs)**: Synthetic cover with title/author via node-canvas
 3. **Primary (EPUBs)**: Extract embedded cover from manifest
 4. **Fallback (EPUBs)**: Generate synthetic cover
-5. **Standardization**: All covers resized to 400x600px PNG
-6. **Storage**: Covers stored with UUID filename for uniqueness
+5. **Storage**: Covers stored as JPEG with UUID filename for uniqueness

@@ -49,7 +49,7 @@ graph TB
         HandleChange[handleChange]
         HandleDelete[handleDelete]
         Extract[Metadata Extractors<br/>PDF/EPUB]
-        CoverGen[Cover Generator<br/>pdftoppm/canvas]
+        CoverGen[Cover Generator<br/>pdfjs-dist/canvas]
     end
 
     %% User Interactions
@@ -276,9 +276,8 @@ Public (no auth):
 - Fallback to filename parsing if metadata unavailable
 
 **Cover Generator**
-- Primary: `pdftoppm` (poppler-utils) for high-quality PDF covers
+- Primary: `pdfjs-dist` + `node-canvas` for PDF cover rendering (no system dependencies)
 - Fallback: `node-canvas` for synthetic cover rendering
-- Generates 400x600px PNG thumbnails
 - Handles both PDF and EPUB formats
 
 ## Data Flow
@@ -372,6 +371,6 @@ Public (no auth):
 | File Watching | chokidar |
 | PDF Rendering | PDF.js (browser), pdf-parse (server) |
 | EPUB Rendering | epub.js, react-reader |
-| Cover Generation | poppler-utils (pdftoppm), node-canvas |
+| Cover Generation | pdfjs-dist, node-canvas |
 | Real-time | Server-Sent Events (SSE) |
 | Deployment | Docker, Node.js 22 |

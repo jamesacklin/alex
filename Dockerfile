@@ -40,8 +40,7 @@ RUN pnpm build
 FROM node:22-bookworm-slim
 
 # Runtime libraries only:
-#   poppler-utils       – provides pdftoppm for PDF cover extraction
-#   libcairo2           – canvas fallback cover rendering
+#   libcairo2           – canvas cover rendering (pdfjs-dist + node-canvas)
 #   libpango1.0-0       – text layout for canvas
 #   libjpeg62-turbo     – JPEG encoding for canvas
 #   libpng16-16         – PNG support for canvas
@@ -49,7 +48,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends \
-    poppler-utils \
     libcairo2 \
     libpango1.0-0 \
     libjpeg62-turbo \

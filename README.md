@@ -38,7 +38,7 @@ Any collection can be shared by generating a share link from the collection deta
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
 | Database | SQLite via [better-sqlite3](https://github.com/JoshuaWise/better-sqlite3) + [Drizzle ORM](https://orm.drizzle.team) |
 | Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs), [pdf-parse](https://www.npmjs.com/package/pdf-parse) (metadata) |
-| Cover generation | [poppler-utils](https://poppler.freedesktop.org/) (`pdftoppm`) with a [node-canvas](https://github.com/Automattic/node-canvas) synthetic fallback |
+| Cover generation | [pdfjs-dist](https://mozilla.github.io/pdf.js/) + [node-canvas](https://github.com/Automattic/node-canvas) |
 | File watching | [chokidar](https://github.com/paulmillr/chokidar) |
 
 ## Getting Started
