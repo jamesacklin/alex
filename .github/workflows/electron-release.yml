@@ -84,153 +84,152 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "macOS ZIP package has been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
 
-  build-windows:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+  # TODO: Re-enable when ready
+  # build-windows:
+  #   runs-on: windows-latest
+  #   permissions:
+  #     contents: write
+  #
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup pnpm
+  #       uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 9
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'pnpm'
+  #
+  #     - name: Install poppler for PDF cover generation
+  #       run: choco install poppler -y
+  #
+  #     - name: Install dependencies
+  #       run: pnpm install --frozen-lockfile
+  #
+  #     - name: Build Electron app
+  #       continue-on-error: true
+  #       run: pnpm electron:build:win
+  #       env:
+  #         ALEX_DESKTOP: 'true'
+  #         CSC_IDENTITY_AUTO_DISCOVERY: false
+  #
+  #     - name: List built files
+  #       run: |
+  #         echo "Built files in dist/:"
+  #         dir dist
+  #
+  #     - name: Extract version
+  #       id: version
+  #       shell: bash
+  #       run: |
+  #         if [ "${{ github.event_name }}" == "release" ]; then
+  #           VERSION=${GITHUB_REF_NAME#v}
+  #         else
+  #           VERSION=$(node -p "require('./package.json').version")
+  #         fi
+  #         echo "version=$VERSION" >> $GITHUB_OUTPUT
+  #         echo "Building version: $VERSION"
+  #
+  #     - name: Upload Windows installers to release
+  #       if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
+  #         files: |
+  #           dist/*.exe
+  #         fail_on_unmatched_files: true
+  #         overwrite: true
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #
+  #     - name: Build summary
+  #       shell: bash
+  #       run: |
+  #         echo "## Windows Electron App Built :window:" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "### Built Artifacts" >> $GITHUB_STEP_SUMMARY
+  #         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+  #         ls -1 dist/*.exe 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No EXE files found" >> $GITHUB_STEP_SUMMARY
+  #         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "All Windows installers have been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install poppler for PDF cover generation
-        run: choco install poppler -y
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Electron app
-        # continue-on-error: canvas build fails on Windows without GTK
-        # but we don't need it since we have poppler for PDF covers
-        continue-on-error: true
-        run: pnpm electron:build:win
-        env:
-          ALEX_DESKTOP: 'true'
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: List built files
-        run: |
-          echo "Built files in dist/:"
-          dir dist
-
-      - name: Extract version
-        id: version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" == "release" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
-          else
-            VERSION=$(node -p "require('./package.json').version")
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
-
-      - name: Upload Windows installers to release
-        if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
-          files: |
-            dist/*.exe
-          fail_on_unmatched_files: true
-          overwrite: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build summary
-        shell: bash
-        run: |
-          echo "## Windows Electron App Built :window:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Built Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          ls -1 dist/*.exe 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No EXE files found" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All Windows installers have been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
-
-  build-linux:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install poppler for PDF cover generation
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Electron app
-        run: pnpm electron:build:linux
-        env:
-          ALEX_DESKTOP: 'true'
-
-      - name: List built files
-        run: |
-          echo "Built files in dist/:"
-          ls -lh dist/
-
-      - name: Extract version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "release" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
-          else
-            VERSION=$(node -p "require('./package.json').version")
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
-
-      - name: Upload Linux packages to release
-        if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
-          files: |
-            dist/*.AppImage
-            dist/*.deb
-          fail_on_unmatched_files: true
-          overwrite: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build summary
-        run: |
-          echo "## Linux Electron App Built :penguin:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Built Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          ls -1 dist/*.{AppImage,deb} 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No package files found" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All Linux packages have been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
+  # build-linux:
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup pnpm
+  #       uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 9
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'pnpm'
+  #
+  #     - name: Install poppler for PDF cover generation
+  #       run: sudo apt-get update && sudo apt-get install -y poppler-utils
+  #
+  #     - name: Install dependencies
+  #       run: pnpm install --frozen-lockfile
+  #
+  #     - name: Build Electron app
+  #       run: pnpm electron:build:linux
+  #       env:
+  #         ALEX_DESKTOP: 'true'
+  #
+  #     - name: List built files
+  #       run: |
+  #         echo "Built files in dist/:"
+  #         ls -lh dist/
+  #
+  #     - name: Extract version
+  #       id: version
+  #       run: |
+  #         if [ "${{ github.event_name }}" == "release" ]; then
+  #           VERSION=${GITHUB_REF_NAME#v}
+  #         else
+  #           VERSION=$(node -p "require('./package.json').version")
+  #         fi
+  #         echo "version=$VERSION" >> $GITHUB_OUTPUT
+  #         echo "Building version: $VERSION"
+  #
+  #     - name: Upload Linux packages to release
+  #       if: github.event_name == 'release' || github.event.inputs.upload_to_release != ''
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
+  #         files: |
+  #           dist/*.AppImage
+  #           dist/*.deb
+  #         fail_on_unmatched_files: true
+  #         overwrite: true
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #
+  #     - name: Build summary
+  #       run: |
+  #         echo "## Linux Electron App Built :penguin:" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "### Built Artifacts" >> $GITHUB_STEP_SUMMARY
+  #         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+  #         ls -1 dist/*.{AppImage,deb} 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No package files found" >> $GITHUB_STEP_SUMMARY
+  #         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "All Linux packages have been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
