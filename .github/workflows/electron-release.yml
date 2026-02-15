@@ -74,6 +74,8 @@ jobs:
           tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
             dist/*.zip
+          fail_on_unmatched_files: true
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -153,6 +155,8 @@ jobs:
           tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
             dist/*.exe
+          fail_on_unmatched_files: true
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -231,6 +235,8 @@ jobs:
           files: |
             dist/*.AppImage
             dist/*.deb
+          fail_on_unmatched_files: true
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
