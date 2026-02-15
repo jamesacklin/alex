@@ -74,6 +74,10 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
       disableWorker: true,
     }).promise;
 
+    if (!pdfDoc) {
+      throw new Error("Failed to load PDF document");
+    }
+
     const page = await pdfDoc.getPage(1);
     const viewport = page.getViewport({ scale: 150 / 72 }); // 150 DPI
 
