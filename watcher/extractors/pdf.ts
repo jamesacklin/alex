@@ -1,8 +1,7 @@
 import path from "path";
 import fs from "fs";
-import Module from "module";
 import { PDFParse } from "pdf-parse";
-import { createCanvas } from "canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import type { BookMetadata } from "../types";
 
 interface PDFDocument {
@@ -42,16 +41,11 @@ async function renderWithPdfjs(filePath: string, bookId: string, coversDir: stri
     const cMapUrl = path.join(pdfjsPkgDir, "cmaps") + path.sep;
     const standardFontDataUrl = path.join(pdfjsPkgDir, "standard_fonts") + path.sep;
 
-    // pdfjs-dist v5 polyfills Path2D using @napi-rs/canvas (a transitive dep).
-    // The render canvas must also come from @napi-rs/canvas so that
-    // context.fill(path) receives compatible Path2D objects.
-    const pdfjsRequire = Module.createRequire(path.join(pdfjsPkgDir, "package.json"));
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const napiCanvas = pdfjsRequire("@napi-rs/canvas");
-
+    // pdfjs-dist v5 polyfills Path2D using @napi-rs/canvas. The render canvas
+    // must also come from @napi-rs/canvas so context.fill(path) is compatible.
     class NapiCanvasFactory {
       create(width: number, height: number): CanvasAndContext {
-        const canvas = napiCanvas.createCanvas(width, height);
+        const canvas = createCanvas(width, height);
         const context = canvas.getContext("2d");
         return { canvas, context };
       }
@@ -164,7 +158,7 @@ function renderSynthetic(bookId: string, title: string, author: string | undefin
     }
 
     const coverPath = path.join(coversDir, `${bookId}.jpg`);
-    fs.writeFileSync(coverPath, canvas.toBuffer("image/jpeg", { quality: 0.9 }));
+    fs.writeFileSync(coverPath, canvas.toBuffer("image/jpeg", 90));
     return coverPath;
   } catch {
     return undefined;

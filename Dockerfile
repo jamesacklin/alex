@@ -3,18 +3,14 @@
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm AS builder
 
-# Build tools and native dependencies for canvas and better-sqlite3
+# Build tools and native dependencies for better-sqlite3
 # Use cache mount for apt to speed up repeated builds
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
-    g++ \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libjpeg-dev \
-    libpng-dev
+    g++
 
 RUN corepack enable pnpm
 
@@ -25,10 +21,8 @@ COPY package.json pnpm-lock.yaml .pnpm-build-approval.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-# Build native modules in parallel (better-sqlite3 and canvas)
-RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release & \
-    cd node_modules/.pnpm/canvas@3.2.1/node_modules/canvas && npm run install & \
-    wait
+# Build native module (better-sqlite3)
+RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release
 
 # Copy source and build Next.js
 COPY . .
@@ -38,20 +32,6 @@ RUN pnpm build
 # Stage 2 – Runtime: minimal image with only what's needed to run
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm-slim
-
-# Runtime libraries only:
-#   libcairo2           – canvas cover rendering (pdfjs-dist + node-canvas)
-#   libpango1.0-0       – text layout for canvas
-#   libjpeg62-turbo     – JPEG encoding for canvas
-#   libpng16-16         – PNG support for canvas
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    libcairo2 \
-    libpango1.0-0 \
-    libjpeg62-turbo \
-    libpng16-16
 
 RUN corepack enable pnpm
 
