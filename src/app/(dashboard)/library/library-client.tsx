@@ -9,6 +9,24 @@ import { BookCard, type Book } from "@/components/library/BookCard";
 import { BookFilters } from "@/components/library/BookFilters";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 
+interface CachedLibraryQueryResult {
+  books: Book[];
+  total: number;
+  hasMore: boolean;
+}
+
+const libraryQueryCache = new Map<string, CachedLibraryQueryResult>();
+let nowReadingCache: Book[] = [];
+
+function createLibraryCacheKey(
+  q: string,
+  type: string,
+  status: string,
+  sort: string,
+) {
+  return JSON.stringify({ q, type, status, sort });
+}
+
 export default function LibraryClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -20,14 +38,18 @@ export default function LibraryClient() {
   const status = searchParams.get("status") || "all";
   const sort = searchParams.get("sort") || "added";
   const initialPage = Number(searchParams.get("page")) || 1;
+  const libraryCacheKey = createLibraryCacheKey(q, type, status, sort);
+  const cachedLibraryState = libraryQueryCache.get(libraryCacheKey);
 
   // Fetched data
-  const [books, setBooks] = useState<Book[]>([]);
-  const [nowReadingBooks, setNowReadingBooks] = useState<Book[]>([]);
-  const [total, setTotal] = useState(0);
+  const [books, setBooks] = useState<Book[]>(cachedLibraryState?.books ?? []);
+  const [nowReadingBooks, setNowReadingBooks] = useState<Book[]>(
+    nowReadingCache,
+  );
+  const [total, setTotal] = useState(cachedLibraryState?.total ?? 0);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(cachedLibraryState?.hasMore ?? true);
+  const [loading, setLoading] = useState(!cachedLibraryState);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -40,16 +62,24 @@ export default function LibraryClient() {
 
   // Fetch "Now Reading" books separately
   useEffect(() => {
+    let isCancelled = false;
+
     fetch("/api/books/now-reading")
       .then((r) => r.json())
       .then((data) => {
+        if (isCancelled) return;
         if (data.books) {
+          nowReadingCache = data.books;
           setNowReadingBooks(data.books);
         }
       })
       .catch((err) => {
         console.error("Failed to fetch now reading books:", err);
       });
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   // Fetch initial page or when filters change
@@ -62,8 +92,16 @@ export default function LibraryClient() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const fetchInitialBooks = async () => {
+    const cachedResult = libraryQueryCache.get(libraryCacheKey);
+    if (cachedResult) {
+      setBooks(cachedResult.books);
+      setTotal(cachedResult.total);
+      setHasMore(cachedResult.hasMore);
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+    const fetchInitialBooks = async () => {
       setCurrentPage(1);
 
       try {
@@ -79,6 +117,11 @@ export default function LibraryClient() {
         setTotal(data.total);
         setHasMore(data.hasMore);
         setLoading(false);
+        libraryQueryCache.set(libraryCacheKey, {
+          books: data.books ?? [],
+          total: data.total ?? 0,
+          hasMore: Boolean(data.hasMore),
+        });
       } catch (error) {
         if (error instanceof Error && error.name !== "AbortError") {
           setLoading(false);
@@ -93,7 +136,7 @@ export default function LibraryClient() {
     };
     // Only re-fetch when filter params change, not page
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, type, status, sort]);
+  }, [q, type, status, sort, libraryCacheKey]);
 
   // Real-time updates: listen to watcher events via SSE
   useEffect(() => {
@@ -124,6 +167,11 @@ export default function LibraryClient() {
               setTotal(d.total);
               setHasMore(d.hasMore);
               setLoading(false);
+              libraryQueryCache.set(libraryCacheKey, {
+                books: d.books ?? [],
+                total: d.total ?? 0,
+                hasMore: Boolean(d.hasMore),
+              });
             })
             .catch(() => setLoading(false));
 
@@ -132,6 +180,7 @@ export default function LibraryClient() {
             .then((r) => r.json())
             .then((data) => {
               if (data.books) {
+                nowReadingCache = data.books;
                 setNowReadingBooks(data.books);
               }
             })
@@ -151,7 +200,7 @@ export default function LibraryClient() {
     return () => {
       eventSource.close();
     };
-  }, [searchParams]);
+  }, [libraryCacheKey, searchParams]);
 
 
   // Push a new set of search-param updates to the URL
@@ -195,13 +244,29 @@ export default function LibraryClient() {
 
       // Only update if we got new books
       if (data.books && data.books.length > 0) {
-        setBooks((prev) => [...prev, ...data.books]);
+        setBooks((prev) => {
+          const nextBooks = [...prev, ...data.books];
+          libraryQueryCache.set(libraryCacheKey, {
+            books: nextBooks,
+            total: data.total ?? 0,
+            hasMore: Boolean(data.hasMore),
+          });
+          return nextBooks;
+        });
         setCurrentPage(nextPage);
         setHasMore(data.hasMore);
         setTotal(data.total);
       } else {
         // No more books to load
         setHasMore(false);
+        setBooks((prev) => {
+          libraryQueryCache.set(libraryCacheKey, {
+            books: prev,
+            total,
+            hasMore: false,
+          });
+          return prev;
+        });
       }
     } catch (error) {
       console.error("Failed to load more books:", error);
