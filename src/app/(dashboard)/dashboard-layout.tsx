@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { signOut } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { AppLogo } from "@/components/branding/AppLogo";
 import { FloatingTabBar } from "@/components/navigation/FloatingTabBar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -97,6 +98,8 @@ export default function DashboardLayout({
   user: User;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const transitionScopeKey = pathname.startsWith("/admin") ? "/admin" : pathname;
   const navItems =
     user.role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
   const floatingNavItems = navItems.filter((item) => !item.comingSoon);
@@ -185,7 +188,9 @@ export default function DashboardLayout({
       </header>
 
       <main className="flex-1 overflow-auto p-6 md:p-8 pb-28 md:pb-32">
-        {children}
+        <div key={transitionScopeKey} className="dashboard-screen-fade">
+          {children}
+        </div>
       </main>
 
       <FloatingTabBar items={floatingNavItems} />
