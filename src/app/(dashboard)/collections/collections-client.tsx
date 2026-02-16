@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Link2 } from "lucide-react";
+import { CollectionFilters } from "@/components/library/CollectionFilters";
 
 interface CollectionSummary {
   id: string;
@@ -41,6 +42,7 @@ export default function CollectionsClient() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("all");
 
   const form = useForm<CreateCollectionValues>({
     resolver: zodResolver(createCollectionSchema),
@@ -70,6 +72,13 @@ export default function CollectionsClient() {
   useEffect(() => {
     loadCollections();
   }, [loadCollections]);
+
+  const filteredCollections = useMemo(() => {
+    if (filter === "all") return collections;
+    if (filter === "private") return collections.filter((c) => !c.shareToken);
+    if (filter === "shared") return collections.filter((c) => c.shareToken);
+    return collections;
+  }, [collections, filter]);
 
   async function onCreateSubmit(values: CreateCollectionValues) {
     setSubmitError(null);
@@ -111,14 +120,13 @@ export default function CollectionsClient() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-medium tracking-tight">Collections</h1>
+        <CollectionFilters filter={filter} onFilterChange={setFilter} />
         <Button
           type="button"
-          variant="link"
+          variant="default"
           size="sm"
-          className="px-0 text-sm"
           onClick={() => setCreateOpen(true)}
         >
           New Collection
@@ -207,7 +215,7 @@ export default function CollectionsClient() {
         <div className="border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
-      ) : collections.length === 0 ? (
+      ) : filteredCollections.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <svg
             className="h-10 w-10 text-muted-foreground mb-4"
@@ -222,14 +230,20 @@ export default function CollectionsClient() {
             <polyline points="2 17 12 22 22 17" />
             <polyline points="2 12 12 17 22 12" />
           </svg>
-          <p className="text-muted-foreground font-medium">You haven&apos;t created any collections yet</p>
+          <p className="text-muted-foreground font-medium">
+            {collections.length === 0
+              ? "You haven't created any collections yet"
+              : `No ${filter} collections found`}
+          </p>
           <p className="text-sm text-muted-foreground mt-1">
-            Create a collection to start organizing your library.
+            {collections.length === 0
+              ? "Create a collection to start organizing your library."
+              : "Try a different filter."}
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {collections.map((collection) => (
+          {filteredCollections.map((collection) => (
             <Link key={collection.id} href={`/collections/${collection.id}`} className="group">
               <Card className="h-full">
                 <CardHeader className="pb-1">

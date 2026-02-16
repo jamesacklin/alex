@@ -21,16 +21,10 @@ export default async function UsersPage() {
     .orderBy(asc(users.createdAt));
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-medium tracking-tight">User Management</h1>
-        <div id="users-table-actions" />
-      </div>
-      <UsersTable
-        users={allUsers}
-        currentUserId={session?.user?.id ?? ""}
-        actionsContainerId="users-table-actions"
-      />
-    </div>
+    <UsersTable
+      users={allUsers}
+      currentUserId={session?.user?.id ?? ""}
+      actionsContainerId="settings-actions"
+    />
   );
 }
