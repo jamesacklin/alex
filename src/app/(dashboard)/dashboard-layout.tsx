@@ -1,20 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { AppLogo } from "@/components/branding/AppLogo";
 import { FloatingTabBar } from "@/components/navigation/FloatingTabBar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AppLogo } from "@/components/branding/AppLogo";
+import { getScreenTitle } from "@/lib/screen-title";
 
 interface User {
   id: string;
@@ -70,9 +60,9 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-const ADMIN_NAV_ITEM: NavItem = {
-  label: "Admin",
-  href: "/admin/users",
+const SETTINGS_NAV_ITEM: NavItem = {
+  label: "Settings",
+  href: "/admin/general",
   icon: (
     <svg
       className="h-4 w-4"
@@ -83,16 +73,13 @@ const ADMIN_NAV_ITEM: NavItem = {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   ),
 };
 
 export default function DashboardLayout({
-  user,
   children,
 }: {
   user: User;
@@ -100,8 +87,9 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const transitionScopeKey = pathname.startsWith("/admin") ? "/admin" : pathname;
-  const navItems =
-    user.role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+  const screenTitle = getScreenTitle(pathname);
+
+  const navItems = [...NAV_ITEMS, SETTINGS_NAV_ITEM];
   const floatingNavItems = navItems.filter((item) => !item.comingSoon);
 
   useEffect(() => {
@@ -116,79 +104,18 @@ export default function DashboardLayout({
     };
   }, []);
 
-  const initials = user.displayName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="flex h-14 shrink-0 items-center border-b border-border bg-sidebar text-sidebar-foreground px-5">
-        <div className="flex items-center gap-3 min-w-[180px]">
-          <AppLogo className="shrink-0 text-sidebar-foreground" />
-          <span className="text-sm font-medium tracking-wide">Alex</span>
-        </div>
-
-        <div className="flex-1" />
-
-        <div className="flex items-center justify-end min-w-[180px]">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild suppressHydrationWarning>
-              <Button
-                variant="link"
-                className="gap-2 px-2 text-sidebar-foreground"
-              >
-                <Avatar className="h-7 w-7">
-                  <AvatarFallback className="text-sm bg-sidebar-foreground text-sidebar">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm hidden sm:inline">
-                  {user.displayName}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div className="font-medium text-sm">{user.displayName}</div>
-                <div className="text-sm text-muted-foreground">
-                  {user.email}
-                </div>
-              </DropdownMenuLabel>
-              {process.env.NEXT_PUBLIC_ALEX_DESKTOP !== 'true' && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => signOut({ redirectTo: "/login" })}
-                    className="text-destructive focus:text-destructive cursor-pointer"
-                  >
-                    <svg
-                      className="h-4 w-4 mr-2"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                      <polyline points="16 17 21 12 16 7" />
-                      <line x1="21" y1="12" x2="9" y2="12" />
-                    </svg>
-                    Log out
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
-
       <main className="flex-1 overflow-auto p-6 md:p-8 pb-28 md:pb-32">
         <div key={transitionScopeKey} className="dashboard-screen-fade">
+          {/* Screen Title */}
+          <div className="mb-6 flex items-center gap-3">
+            <AppLogo className="h-8 w-8" />
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {screenTitle}
+            </h1>
+          </div>
+
           {children}
         </div>
       </main>

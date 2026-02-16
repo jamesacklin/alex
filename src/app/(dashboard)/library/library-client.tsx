@@ -295,12 +295,9 @@ export default function LibraryClient() {
   };
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-lg font-medium tracking-tight">Library</h1>
-
-      {/* Filter row */}
-      <div className="flex flex-wrap gap-2 items-end">
-        <BookFilters
+    <div className="space-y-6">
+      {/* Filter pills */}
+      <BookFilters
           type={type}
           status={status}
           sort={sort}
@@ -319,7 +316,6 @@ export default function LibraryClient() {
           }}
           onClearFilters={clearFilters}
         />
-      </div>
 
       {/* Grid / Skeleton / Empty */}
       {loading ? (

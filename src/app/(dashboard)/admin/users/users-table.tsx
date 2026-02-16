@@ -127,9 +127,8 @@ export default function UsersTable({
 
   const addUserButton = (
     <Button
-      variant="link"
+      variant="default"
       size="sm"
-      className="px-0 text-sm"
       onClick={() => setAddOpen(true)}
     >
       Add User

@@ -1,10 +1,4 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface BookFiltersProps {
   type: string;
@@ -17,6 +11,31 @@ interface BookFiltersProps {
   onClearFilters: () => void;
 }
 
+interface PillOption {
+  value: string;
+  label: string;
+}
+
+const TYPE_OPTIONS: PillOption[] = [
+  { value: "all", label: "All Types" },
+  { value: "pdf", label: "PDF" },
+  { value: "epub", label: "ePub" },
+];
+
+const STATUS_OPTIONS: PillOption[] = [
+  { value: "all", label: "All" },
+  { value: "not_started", label: "Not Started" },
+  { value: "reading", label: "Reading" },
+  { value: "completed", label: "Completed" },
+];
+
+const SORT_OPTIONS: PillOption[] = [
+  { value: "added", label: "Recent" },
+  { value: "read", label: "Last Read" },
+  { value: "title", label: "Title" },
+  { value: "author", label: "Author" },
+];
+
 export function BookFilters({
   type,
   status,
@@ -28,64 +47,75 @@ export function BookFilters({
   onClearFilters,
 }: BookFiltersProps) {
   return (
-    <>
-      {/* Type */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-foreground">Type:</span>
-        <Select value={type} onValueChange={onTypeChange}>
-          <SelectTrigger size="sm" className="w-36 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="pdf">PDF</SelectItem>
-            <SelectItem value="epub">ePub</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* Type pills */}
+      {TYPE_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onTypeChange(option.value)}
+          className={cn(
+            "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer",
+            type === option.value
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
 
-      {/* Status */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-foreground">Status:</span>
-        <Select value={status} onValueChange={onStatusChange}>
-          <SelectTrigger size="sm" className="w-40 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="not_started">Not Started</SelectItem>
-            <SelectItem value="reading">Reading</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <div className="w-px h-6 bg-border mx-1" />
 
-      {/* Sort */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-foreground">Sort by:</span>
-        <Select value={sort} onValueChange={onSortChange}>
-          <SelectTrigger size="sm" className="w-44 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="added">Recently Added</SelectItem>
-            <SelectItem value="read">Recently Read</SelectItem>
-            <SelectItem value="title">Title A–Z</SelectItem>
-            <SelectItem value="author">Author A–Z</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Status pills */}
+      {STATUS_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onStatusChange(option.value)}
+          className={cn(
+            "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer",
+            status === option.value
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+
+      <div className="w-px h-6 bg-border mx-1" />
+
+      {/* Sort pills */}
+      {SORT_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onSortChange(option.value)}
+          className={cn(
+            "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer",
+            sort === option.value
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
 
       {/* Clear filters */}
       {hasFilters && (
-        <button
-          type="button"
-          onClick={onClearFilters}
-          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        >
-          Clear filters
-        </button>
+        <>
+          <div className="w-px h-6 bg-border mx-1" />
+          <button
+            type="button"
+            onClick={onClearFilters}
+            className="rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-200 cursor-pointer border border-border"
+          >
+            Clear
+          </button>
+        </>
       )}
-    </>
+    </div>
   );
 }
