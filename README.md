@@ -9,13 +9,13 @@ A self-hosted personal library for your ebook collection. Drop PDFs or EPUBs int
 ## Features
 
 - **Zero-effort ingestion.** A background watcher monitors a folder on disk. Add a PDF or EPUB and it appears in your library automatically, complete with title, author, and a cover pulled from the first page.
-- **Read in the browser.** Full-featured readers for both PDFs and EPUBs:
+- **Read in the browser.** Full-featured readers for both PDFs and EPUBs, with a modern floating tab bar interface:
   - **PDF:** Page navigation, continuous zoom, fit-to-width rendering, and full-text search
   - **EPUB:** Table of contents navigation, chapter skipping, continuous vertical scrolling, customizable font sizes, an `80ch` reading column, and themed typography using IBM Plex Serif
 - **Reading progress.** Every page turn and location change is saved. Books move through *not started → reading → completed* on their own. Progress appears on book cards and in the EPUB reader header with a precise percentage meter.
 - **Now Reading sections.** Library and collection views each show a dedicated *Now Reading* shelf, powered by reading-progress status and recency. Books shown there are excluded from the corresponding *All Books* grids to avoid duplicates.
 - **Public collections.** Share a collection with anyone via a link — no account required. Recipients can browse the book list and read PDFs and EPUBs directly in the browser. Share links use unguessable tokens and can be revoked at any time.
-- **Search and filter.** Find books by title or author. Filter by format and reading status, sort by what matters to you.
+- **Search and filter.** Find books by title or author with pill-style filter UI. Filter by format and reading status, sort by what matters to you.
 - **Multi-user.** Built-in user management with admin and user roles. Each reader keeps their own progress; admins can add or remove accounts.
 - **Docker-ready.** Ships as a single container with everything it needs. Mount your book folder, set one secret, and it runs.
 
@@ -38,7 +38,7 @@ Any collection can be shared by generating a share link from the collection deta
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
 | Database | SQLite via [better-sqlite3](https://github.com/JoshuaWise/better-sqlite3) + [Drizzle ORM](https://orm.drizzle.team) |
 | Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs), [pdf-parse](https://www.npmjs.com/package/pdf-parse) (metadata) |
-| Cover generation | [pdfjs-dist](https://mozilla.github.io/pdf.js/) + [node-canvas](https://github.com/Automattic/node-canvas) |
+| Cover generation | [pdfjs-dist](https://mozilla.github.io/pdf.js/) + [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) |
 | File watching | [chokidar](https://github.com/paulmillr/chokidar) |
 
 ## Getting Started
@@ -185,7 +185,7 @@ pnpm electron:dev:external
 ```
 
 Native module ABI notes:
-- `pnpm build:native` compiles `better-sqlite3`/`canvas` for your local Node runtime (used by web/Next dev).
+- `pnpm build:native` compiles `better-sqlite3`/`@napi-rs/canvas` for your local Node runtime (used by web/Next dev).
 - `pnpm electron:rebuild` compiles those modules for Electron's Node ABI (used for packaged Electron builds).
 - `pnpm electron:build` now restores Node-native modules at the end so regular web dev keeps working.
 
@@ -194,7 +194,7 @@ Native module ABI notes:
 | Script | What it does |
 |---|---|
 | `pnpm setup` | Complete initial setup (install, build native deps, create schema, seed admin) |
-| `pnpm build:native` | Build native dependencies (better-sqlite3, canvas) for your platform |
+| `pnpm build:native` | Build native dependencies (better-sqlite3, @napi-rs/canvas) for your platform |
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |

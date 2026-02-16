@@ -115,7 +115,7 @@ Stores book metadata and file information for all books in the library.
 | file_type | TEXT | NOT NULL | File format: 'pdf' or 'epub' |
 | file_path | TEXT | NOT NULL, UNIQUE | Absolute path to file in library folder |
 | file_size | INTEGER | NOT NULL | File size in bytes |
-| file_hash | TEXT | NOT NULL | SHA-256 hash of file contents (for duplicate detection) |
+| file_hash | TEXT | NOT NULL, UNIQUE | SHA-256 hash of file contents (for duplicate detection) |
 | cover_path | TEXT | NULL | Absolute path to cover image (400x600 PNG) |
 | page_count | INTEGER | NULL | Number of pages (PDF only) |
 | added_at | INTEGER | NOT NULL | Unix timestamp when book was added |
@@ -124,9 +124,9 @@ Stores book metadata and file information for all books in the library.
 **Indexes:**
 - Primary key on `id`
 - Unique index on `file_path` (prevents duplicate file tracking)
-- Index on `file_hash` (for duplicate detection queries)
-- Index on `title` (for search performance)
-- Index on `author` (for search performance)
+- Unique index on `file_hash` (prevents duplicate content)
+- Index on `title` (for search performance, created by Drizzle ORM as needed)
+- Index on `author` (for search performance, created by Drizzle ORM as needed)
 
 **Cascade Behavior:**
 - When a book is deleted, all associated `reading_progress` and `collection_books` records are automatically deleted (ON DELETE CASCADE)

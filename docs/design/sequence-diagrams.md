@@ -85,11 +85,11 @@ sequenceDiagram
     participant Chokidar
     participant Handler as handleAdd
     participant PDF as pdf-parse
-    participant EPUB as epub parser
+    participant EPUB as epub2 parser
     participant CoverGen as Cover Generator
     participant DB as Database
     participant PdfJs as pdfjs-dist
-    participant Canvas as node-canvas
+    participant Canvas as @napi-rs/canvas
 
     FS->>Chokidar: File added: book.pdf
     Chokidar->>Chokidar: Wait for write finish (2s)
@@ -108,7 +108,7 @@ sequenceDiagram
         alt PDF file
             Handler->>PDF: Extract metadata
             PDF-->>Handler: { title, author, pageCount }
-            Handler->>PdfJs: Render page 1 via pdfjs-dist + node-canvas
+            Handler->>PdfJs: Render page 1 via pdfjs-dist + @napi-rs/canvas
             alt Success
                 PdfJs-->>Handler: JPEG buffer
             else Fallback
@@ -138,7 +138,7 @@ sequenceDiagram
 2. **Write Stabilization**: Waits 2 seconds to ensure file is fully written
 3. **Duplicate Check**: SHA-256 hash prevents duplicate entries
 4. **Metadata Extraction**: Format-specific parsers extract title, author, etc.
-5. **Cover Generation**: pdfjs-dist + node-canvas with synthetic fallback
+5. **Cover Generation**: pdfjs-dist + @napi-rs/canvas with synthetic fallback
 6. **Database Insert**: Atomic insert of book record
 7. **Version Bump**: Triggers real-time update to all clients
 
@@ -418,10 +418,10 @@ sequenceDiagram
     participant Handler as handleAdd
     participant FS as File System
     participant PdfJs as pdfjs-dist
-    participant Canvas as node-canvas
+    participant Canvas as @napi-rs/canvas
 
     alt PDF Cover
-        Handler->>PdfJs: Render page 1 via pdfjs-dist + node-canvas
+        Handler->>PdfJs: Render page 1 via pdfjs-dist + @napi-rs/canvas
         alt Success
             PdfJs-->>Handler: JPEG buffer
         else pdfjs-dist render failed
@@ -534,8 +534,77 @@ sequenceDiagram
 
 ### Cover Generation Strategy
 
-1. **Primary (PDFs)**: Render page 1 via `pdfjs-dist` + `node-canvas` (no system dependencies)
-2. **Fallback (PDFs)**: Synthetic cover with title/author via node-canvas
+1. **Primary (PDFs)**: Render page 1 via `pdfjs-dist` + `@napi-rs/canvas` (no system dependencies)
+2. **Fallback (PDFs)**: Synthetic cover with title/author via @napi-rs/canvas
 3. **Primary (EPUBs)**: Extract embedded cover from manifest
 4. **Fallback (EPUBs)**: Generate synthetic cover
 5. **Storage**: Covers stored as JPEG with UUID filename for uniqueness
+
+---
+
+## Electron Desktop App Flow
+
+This diagram shows how the Electron desktop app initializes and manages the embedded Next.js server.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Electron as Electron Main Process
+    participant Next as Next.js Server
+    participant Watcher as File Watcher
+    participant DB as SQLite Database
+    participant Browser as BrowserWindow
+
+    User->>Electron: Launch app
+    Electron->>Electron: Check for existing database
+
+    alt First run (no database)
+        Electron->>Browser: Show /setup route
+        User->>Browser: Create admin account
+        Browser->>Next: POST admin credentials
+        Next->>DB: Insert admin user
+        DB-->>Next: Success
+        Next-->>Browser: Redirect to /library
+    else Existing database
+        Electron->>Next: Start embedded server on :3210
+        Next->>DB: Run db:push (idempotent)
+        Next->>DB: Run db:seed (idempotent)
+        Next->>Watcher: Start file watcher
+        Watcher->>DB: getLibraryPath()
+        Watcher->>Watcher: Monitor library folder
+        Next-->>Electron: Server ready
+        Electron->>Browser: Create window → http://localhost:3210
+        Browser->>Next: GET /library
+        Next->>DB: Fetch books
+        DB-->>Next: Book data
+        Next-->>Browser: Render library
+    end
+
+    Note over User,DB: User adds book to library
+    User->>Watcher: Drop book.pdf in library folder
+    Watcher->>Watcher: Process file (same as web)
+    Watcher->>DB: Insert book + increment version
+    DB->>Next: SSE detects update
+    Next-->>Browser: Push library-update event
+    Browser->>Browser: Show refresh banner
+
+    Note over Electron,Browser: App lifecycle
+    User->>Browser: Close window
+    Browser->>Electron: window-all-closed event
+    Electron->>Watcher: Graceful shutdown
+    Electron->>Next: Stop server
+    Electron->>Electron: Exit app
+```
+
+### Electron Architecture Notes
+
+1. **Embedded Server**: Next.js runs as a child process managed by Electron
+2. **Port 3210**: Fixed port for internal communication (no conflicts - local only)
+3. **Single Instance**: Electron ensures only one app instance runs at a time
+4. **Data Location**: SQLite database and library stored in platform-specific app data:
+   - macOS: `~/Library/Application Support/alex`
+   - Windows: `%APPDATA%/alex`
+   - Linux: `~/.config/alex`
+5. **Native Modules**: better-sqlite3 and @napi-rs/canvas compiled for Electron's Node ABI
+6. **Auto-updates**: Electron-builder provides update checking and installation
+7. **First-run Setup**: Setup route creates initial admin account before library access

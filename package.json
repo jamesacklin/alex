@@ -1,6 +1,6 @@
 {
   "name": "alex",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "main": "electron/dist/main.js",
   "private": true,
   "author": {

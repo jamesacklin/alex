@@ -163,6 +163,9 @@ graph TB
 - Tailwind CSS v4 for styling
 - shadcn/ui component library
 - Responsive design for mobile and desktop
+- Floating tab bar navigation for primary routes (Library, Collections, Admin)
+- Pill-style filters for library and collection browsing
+- Sliding underline tabs for admin panel sections
 
 **EventSource SSE Client**
 - Maintains persistent connection to `/api/library/events`
@@ -193,8 +196,12 @@ graph TB
 - `/read/[bookId]` - Book reader (PDF or EPUB)
 - `/shared/[token]` - Public collection view (no auth required)
 - `/shared/[token]/read/[bookId]` - Public book reader (no auth required)
+- `/admin/general` - General admin settings (admin only)
 - `/admin/users` - User management (admin only)
+- `/admin/library` - Library management and bulk operations (admin only)
 - `/login` - Authentication page
+- `/onboarding` - First-run setup flow
+- `/setup` - Initial admin account setup
 
 **API Routes**
 
@@ -272,13 +279,14 @@ Public (no auth):
 
 **Metadata Extractors**
 - PDF: `pdf-parse` for text content, metadata extraction
-- EPUB: `epub` npm package for parsing OPF manifest, extracting title/author
+- EPUB: `epub2` npm package for parsing OPF manifest, extracting title/author
 - Fallback to filename parsing if metadata unavailable
 
 **Cover Generator**
-- Primary: `pdfjs-dist` + `node-canvas` for PDF cover rendering (no system dependencies)
-- Fallback: `node-canvas` for synthetic cover rendering
+- Primary: `pdfjs-dist` + `@napi-rs/canvas` for PDF cover rendering
+- Fallback: `@napi-rs/canvas` for synthetic cover rendering
 - Handles both PDF and EPUB formats
+- Uses @napi-rs/canvas for better cross-platform compatibility and reliability
 
 ## Data Flow
 
@@ -360,6 +368,19 @@ Public (no auth):
 - Persistent Docker volume for `/app/data`
 - Environment variables for configuration
 
+### Desktop (Electron)
+- Cross-platform desktop application for macOS, Windows, and Linux
+- Embedded Next.js server running on localhost:3210
+- Watcher process integrated into main Electron process
+- SQLite database and library stored in app data directory
+- Auto-updater support for seamless updates
+- Platform-specific builds:
+  - macOS: .app bundle (Apple Silicon)
+  - Windows: .exe installer (x64)
+  - Linux: AppImage and .deb packages
+- First-run setup flow for admin account creation
+- Native file system access for library management
+
 ## Technology Stack
 
 | Layer | Technology |
@@ -371,6 +392,6 @@ Public (no auth):
 | File Watching | chokidar |
 | PDF Rendering | PDF.js (browser), pdf-parse (server) |
 | EPUB Rendering | epub.js, react-reader |
-| Cover Generation | pdfjs-dist, node-canvas |
+| Cover Generation | pdfjs-dist, @napi-rs/canvas |
 | Real-time | Server-Sent Events (SSE) |
-| Deployment | Docker, Node.js 22 |
+| Deployment | Docker, Electron, Node.js 22 |
