@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import Link from "next/link";
+import { useEffect } from "react";
 import { signOut } from "next-auth/react";
 import { AppLogo } from "@/components/branding/AppLogo";
 import { FloatingTabBar } from "@/components/navigation/FloatingTabBar";
@@ -16,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 interface User {
   id: string;
@@ -100,17 +97,6 @@ export default function DashboardLayout({
   user: User;
   children: React.ReactNode;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const pathname = usePathname();
-  const showFloatingTabBar =
-    pathname === "/library" ||
-    pathname.startsWith("/library/") ||
-    pathname === "/collections" ||
-    pathname.startsWith("/collections/") ||
-    pathname === "/admin" ||
-    pathname.startsWith("/admin/");
-  const showSidebar = !showFloatingTabBar;
-
   const navItems =
     user.role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
   const floatingNavItems = navItems.filter((item) => !item.comingSoon);
@@ -127,12 +113,6 @@ export default function DashboardLayout({
     };
   }, []);
 
-  useEffect(() => {
-    if (!showSidebar) {
-      setSidebarOpen(false);
-    }
-  }, [showSidebar]);
-
   const initials = user.displayName
     .split(" ")
     .map((n) => n[0])
@@ -142,38 +122,9 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Mobile overlay */}
-      {showSidebar && sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
       {/* Header */}
       <header className="flex h-14 shrink-0 items-center border-b border-border bg-sidebar text-sidebar-foreground px-5">
         <div className="flex items-center gap-3 min-w-[180px]">
-          {showSidebar && (
-            <button
-              className="md:hidden text-sidebar-foreground"
-              aria-label="Open sidebar"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-          )}
           <AppLogo className="shrink-0 text-sidebar-foreground" />
           <span className="text-sm font-medium tracking-wide">Alex</span>
         </div>
@@ -233,100 +184,11 @@ export default function DashboardLayout({
         </div>
       </header>
 
-      <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
-        {showSidebar && (
-          <aside
-            className={[
-              "fixed top-14 bottom-0 left-0 z-50 w-56 bg-sidebar border-r border-sidebar-border flex flex-col",
-              sidebarOpen ? "translate-x-0" : "-translate-x-full",
-              "md:relative md:translate-x-0 md:inset-y-0",
-            ].join(" ")}
-          >
-            <div className="md:hidden flex h-14 shrink-0 items-center justify-end px-5 border-b border-sidebar-border">
-              <button
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Close sidebar"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
+      <main className="flex-1 overflow-auto p-6 md:p-8 pb-28 md:pb-32">
+        {children}
+      </main>
 
-            {/* Nav links */}
-            <nav className="flex-1 overflow-y-auto">
-              <div>
-                {navItems.map((item) => {
-                  const itemBase = `/${item.href.split("/").filter(Boolean)[0] ?? ""}`;
-                  const isActive =
-                    pathname === item.href ||
-                    (itemBase !== "/" &&
-                      (pathname === itemBase ||
-                        pathname.startsWith(`${itemBase}/`)));
-
-                  if (item.comingSoon) {
-                    return (
-                      <div
-                        key={item.href}
-                        className="flex items-center gap-3 px-5 py-3 text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed border-l-2 border-transparent"
-                      >
-                        {item.icon}
-                        <span className="flex-1">{item.label}</span>
-                        <span className="px-1.5 py-0.5 text-sm font-semibold bg-muted text-muted-foreground border border-border">
-                          SOON
-                        </span>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={[
-                        "flex items-center gap-3 px-5 py-3 text-sm font-medium border-l-2",
-                        isActive
-                          ? "border-primary bg-muted font-medium text-foreground"
-                          : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-                      ].join(" ")}
-                    >
-                      {item.icon}
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </nav>
-          </aside>
-        )}
-
-        {/* Main area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Page content */}
-          <main
-            className={cn(
-              "flex-1 overflow-auto p-6 md:p-8",
-              showFloatingTabBar && "pb-28 md:pb-32",
-            )}
-          >
-            {children}
-          </main>
-        </div>
-      </div>
-
-      {showFloatingTabBar && <FloatingTabBar items={floatingNavItems} />}
+      <FloatingTabBar items={floatingNavItems} />
     </div>
   );
 }
