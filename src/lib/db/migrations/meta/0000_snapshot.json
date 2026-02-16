@@ -92,7 +92,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "books_file_path_unique": {
+          "name": "books_file_path_unique",
+          "columns": [
+            "file_path"
+          ],
+          "isUnique": true
+        },
+        "books_file_hash_unique": {
+          "name": "books_file_hash_unique",
+          "columns": [
+            "file_hash"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

@@ -13,6 +13,8 @@ CREATE TABLE `books` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `books_file_path_unique` ON `books` (`file_path`);--> statement-breakpoint
+CREATE UNIQUE INDEX `books_file_hash_unique` ON `books` (`file_hash`);--> statement-breakpoint
 CREATE TABLE `collection_books` (
 	`collection_id` text NOT NULL,
 	`book_id` text NOT NULL,

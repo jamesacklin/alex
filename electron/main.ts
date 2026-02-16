@@ -110,6 +110,43 @@ function runDbSetup(libraryPath: string) {
           console.log('[Electron] Database schema initialized for packaged build');
         }
 
+        // Ensure unique indexes exist on books table (fixes databases created
+        // before the indexes were added to the migration).
+        const hasFileHashIndex = db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'books_file_hash_unique' LIMIT 1")
+          .get();
+
+        if (!hasFileHashIndex) {
+          console.log('[Electron] Missing unique indexes on books table, applying fix...');
+
+          // Remove duplicate books before creating unique indexes.
+          // Keep the earliest entry (lowest added_at) for each file_hash.
+          db.exec(`
+            DELETE FROM books WHERE id IN (
+              SELECT b.id FROM books b
+              INNER JOIN (
+                SELECT file_hash, MIN(added_at) AS min_added
+                FROM books GROUP BY file_hash HAVING COUNT(*) > 1
+              ) d ON b.file_hash = d.file_hash AND b.added_at > d.min_added
+            )
+          `);
+
+          // Also deduplicate by file_path.
+          db.exec(`
+            DELETE FROM books WHERE id IN (
+              SELECT b.id FROM books b
+              INNER JOIN (
+                SELECT file_path, MIN(added_at) AS min_added
+                FROM books GROUP BY file_path HAVING COUNT(*) > 1
+              ) d ON b.file_path = d.file_path AND b.added_at > d.min_added
+            )
+          `);
+
+          db.exec('CREATE UNIQUE INDEX IF NOT EXISTS `books_file_path_unique` ON `books` (`file_path`)');
+          db.exec('CREATE UNIQUE INDEX IF NOT EXISTS `books_file_hash_unique` ON `books` (`file_hash`)');
+          console.log('[Electron] Unique indexes created and duplicates cleaned up');
+        }
+
         const adminEmail = 'admin@localhost';
         const existingAdmin = db.prepare('SELECT 1 FROM users WHERE email = ? LIMIT 1').get(adminEmail);
         if (!existingAdmin) {

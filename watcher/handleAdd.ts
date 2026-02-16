@@ -40,7 +40,7 @@ export async function handleAdd(filePath: string) {
 
     const now = Math.floor(Date.now() / 1000);
 
-    await db.insert(books).values({
+    const result = await db.insert(books).values({
       id: bookId,
       title: metadata.title,
       author: metadata.author ?? null,
@@ -53,7 +53,12 @@ export async function handleAdd(filePath: string) {
       pageCount: metadata.pageCount ?? null,
       addedAt: now,
       updatedAt: now,
-    });
+    }).onConflictDoNothing();
+
+    if (result.changes === 0) {
+      log(`[SKIP] Already exists: ${filePath}`);
+      return;
+    }
 
     log(`[OK] Added "${metadata.title}" (${fileType})`);
 
