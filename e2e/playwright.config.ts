@@ -4,7 +4,7 @@ const isElectron = process.env.E2E_PLATFORM === 'electron';
 
 export default defineConfig({
   testDir: './specs',
-  timeout: 60_000,
+  timeout: isElectron ? 120_000 : 60_000, // Electron needs more time for server startup
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Serial execution for SQLite (single-writer)
   use: {
