@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { resetDatabase, seedDatabase } from './helpers/db';
 
 export default async function globalSetup() {
   console.log('[E2E] Running global setup...');
@@ -22,8 +23,13 @@ export default async function globalSetup() {
     console.log('[E2E] Running database migration...');
     execSync('pnpm db:push', { stdio: 'inherit' });
 
-    console.log('[E2E] Running database seed...');
-    execSync('pnpm db:seed', { stdio: 'inherit' });
+    // Reset and seed test database
+    console.log('[E2E] Resetting database...');
+    await resetDatabase();
+
+    console.log('[E2E] Seeding database...');
+    await seedDatabase();
+    console.log('[E2E] Database reset and seeded');
 
     console.log('[E2E] Global setup complete');
   } catch (error) {
