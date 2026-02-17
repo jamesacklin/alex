@@ -57,7 +57,7 @@ export class LibraryPage {
   // Methods
   async goto(): Promise<void> {
     await this.page.goto('/library');
-    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForLoadState('domcontentloaded');
   }
 
   async getBookCount(): Promise<number> {
@@ -66,20 +66,20 @@ export class LibraryPage {
 
   async filterByType(type: 'all' | 'pdf' | 'epub'): Promise<void> {
     await this.typeFilterButton(type).click();
-    // Wait for the filter to apply and network to settle
-    await this.page.waitForLoadState('networkidle');
+    // Wait for skeletons to disappear (filter applied)
+    await this.waitForBooksToLoad();
   }
 
   async filterByStatus(status: 'all' | 'not_started' | 'reading' | 'completed'): Promise<void> {
     await this.statusFilterButton(status).click();
-    // Wait for the filter to apply and network to settle
-    await this.page.waitForLoadState('networkidle');
+    // Wait for skeletons to disappear (filter applied)
+    await this.waitForBooksToLoad();
   }
 
   async sortBy(sort: 'added' | 'read' | 'title' | 'author'): Promise<void> {
     await this.sortButton(sort).click();
-    // Wait for the sort to apply and network to settle
-    await this.page.waitForLoadState('networkidle');
+    // Wait for skeletons to disappear (sort applied)
+    await this.waitForBooksToLoad();
   }
 
   async clickBook(title: string): Promise<void> {
@@ -87,9 +87,13 @@ export class LibraryPage {
   }
 
   async clickLoadMore(): Promise<void> {
+    const currentCount = await this.getBookCount();
     await this.loadMoreButton.click();
-    // Wait for new books to load
-    await this.page.waitForLoadState('networkidle');
+    // Wait for new books to appear
+    await this.page.waitForFunction((count) => {
+      const cards = document.querySelectorAll('a[href^="/read/"]');
+      return cards.length > count;
+    }, currentCount, { timeout: 10000 });
   }
 
   async getLoadingState(): Promise<boolean> {
@@ -115,6 +119,7 @@ export class LibraryPage {
     await this.page.waitForSelector('.animate-pulse', { state: 'detached', timeout: 10000 }).catch(() => {
       // If no skeleton loaders, that's fine
     });
-    await this.page.waitForLoadState('networkidle');
+    // Give a small delay for rendering to complete
+    await this.page.waitForTimeout(500);
   }
 }
