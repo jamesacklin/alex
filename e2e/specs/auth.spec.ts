@@ -19,4 +19,19 @@ test.describe('Authentication', () => {
     const heading = appPage.getByRole('heading', { name: /alex|library/i });
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
+
+  test('should show error with invalid credentials', async ({ appPage }) => {
+    // Navigate to login page
+    await appPage.goto('/login');
+
+    // Create login page object and attempt login with invalid credentials
+    const loginPage = new LoginPage(appPage);
+    await loginPage.login('wrong@example.com', 'wrongpassword');
+
+    // Verify error message appears
+    await expect(loginPage.errorMessage).toBeVisible({ timeout: 5000 });
+
+    // Verify user remains on /login page
+    await expect(appPage).toHaveURL(/\/login/);
+  });
 });
