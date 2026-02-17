@@ -10,7 +10,14 @@ type AuthFixture = {
 
 export const test = base.extend<AuthFixture>({
   authenticatedPage: async ({ appPage }, use) => {
-    // Navigate to login page
+    // In Electron desktop mode, app is already authenticated
+    if (process.env.E2E_PLATFORM === 'electron') {
+      // Desktop mode has synthetic auth, already on /library
+      await use(appPage);
+      return;
+    }
+
+    // Web mode: perform login
     await appPage.goto('/login');
 
     // Use LoginPage to perform login

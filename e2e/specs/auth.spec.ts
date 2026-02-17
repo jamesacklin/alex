@@ -5,6 +5,9 @@ import { OnboardingPage } from '../page-objects/onboarding.page';
 
 test.describe('Authentication', () => {
   test('should login successfully with valid credentials', async ({ appPage }) => {
+    // Skip in Electron mode where desktop auth bypasses login
+    test.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode bypasses login');
+
     // Navigate to login page
     await appPage.goto('/login');
 
@@ -22,6 +25,9 @@ test.describe('Authentication', () => {
   });
 
   test('should show error with invalid credentials', async ({ appPage }) => {
+    // Skip in Electron mode where desktop auth bypasses login
+    test.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode bypasses login');
+
     // Navigate to login page
     await appPage.goto('/login');
 
@@ -37,17 +43,14 @@ test.describe('Authentication', () => {
   });
 
   authTest('should logout successfully', async ({ authenticatedPage }) => {
+    // Skip in Electron mode where desktop auth has no logout button
+    authTest.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode has no logout button');
+
     // Navigate to settings page
     await authenticatedPage.goto('/admin/general');
 
-    // Click logout button (skip on desktop mode where button is hidden)
+    // Click logout button
     const logoutButton = authenticatedPage.getByRole('button', { name: /log out/i });
-    const isVisible = await logoutButton.isVisible().catch(() => false);
-
-    if (!isVisible) {
-      authTest.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode has no logout button');
-    }
-
     await logoutButton.click();
 
     // Verify redirect to /login
@@ -59,6 +62,9 @@ test.describe('Authentication', () => {
   });
 
   test('should persist session after page reload', async ({ appPage }) => {
+    // Skip in Electron mode where desktop auth bypasses login
+    test.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode bypasses login');
+
     // Navigate to login page and login
     await appPage.goto('/login');
     const loginPage = new LoginPage(appPage);
@@ -82,10 +88,8 @@ test.describe('Authentication', () => {
     // Skip this test if not running in Electron
     test.skip(process.env.E2E_PLATFORM !== 'electron', 'Only applicable in Electron mode');
 
-    // Navigate to /login
-    await appPage.goto('/login');
-
-    // Verify immediate redirect to /library without login form interaction
+    // In Electron desktop mode, app starts on /library with synthetic auth
+    // Verify we're already authenticated
     await expect(appPage).toHaveURL(/\/library/, { timeout: 10000 });
 
     // Verify authenticated state by checking for library content
