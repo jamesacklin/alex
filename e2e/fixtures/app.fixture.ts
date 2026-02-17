@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/rules-of-hooks */
+// Playwright's fixture `use()` function is not a React hook
 import { test as base, type Page } from '@playwright/test';
 import { _electron as electron } from 'playwright';
 import * as path from 'path';
