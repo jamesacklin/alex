@@ -34,11 +34,12 @@ export const test = base.extend<AppFixture>({
       const app = await electron.launch({
         args: [
           `--user-data-dir=${testUserDataDir}`,
+          '--disable-dev-tools', // Prevent DevTools from interfering with tests
           'electron/dist/main.js',
         ],
         env: {
           ...process.env,
-          NODE_ENV: 'test',
+          NODE_ENV: 'production', // Use production mode to prevent DevTools auto-open
           DATABASE_PATH: path.join(process.cwd(), 'data/library.db'),
           LIBRARY_PATH: testLibraryPath,
         },
