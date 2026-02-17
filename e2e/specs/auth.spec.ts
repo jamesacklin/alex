@@ -10,7 +10,7 @@ test.describe('Authentication', () => {
 
     // Create login page object and login
     const loginPage = new LoginPage(appPage);
-    await loginPage.login('admin@localhost', 'password');
+    await loginPage.login('admin@localhost', 'admin123');
 
     // Verify redirect to /library
     await expect(appPage).toHaveURL(/\/library/);
@@ -62,7 +62,7 @@ test.describe('Authentication', () => {
     // Navigate to login page and login
     await appPage.goto('/login');
     const loginPage = new LoginPage(appPage);
-    await loginPage.login('admin@localhost', 'password');
+    await loginPage.login('admin@localhost', 'admin123');
 
     // Verify redirect to /library
     await expect(appPage).toHaveURL(/\/library/);

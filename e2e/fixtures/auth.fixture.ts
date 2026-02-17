@@ -15,7 +15,7 @@ export const test = base.extend<AuthFixture>({
 
     // Use LoginPage to perform login
     const loginPage = new LoginPage(appPage);
-    await loginPage.login('admin@localhost', 'password');
+    await loginPage.login('admin@localhost', 'admin123');
 
     // Verify successful login by checking redirect to /library
     await appPage.waitForURL('**/library', { timeout: 10000 });
