@@ -13,6 +13,10 @@ export const test = base.extend<AppFixture>({
       const testUserDataDir = path.join(process.cwd(), '.e2e-user-data');
       const testLibraryPath = path.join(process.cwd(), '.e2e-library');
 
+      console.log('[Fixture] Setting up Electron test environment');
+      console.log('[Fixture] User data dir:', testUserDataDir);
+      console.log('[Fixture] Library path:', testLibraryPath);
+
       // Ensure test directories exist
       fs.mkdirSync(testUserDataDir, { recursive: true });
       fs.mkdirSync(testLibraryPath, { recursive: true });
@@ -24,21 +28,30 @@ export const test = base.extend<AppFixture>({
         nextauthSecret: crypto.randomBytes(32).toString('hex'),
       };
       fs.writeFileSync(configPath, JSON.stringify(storeConfig, null, 2), 'utf8');
+      console.log('[Fixture] Created Electron store config');
 
+      console.log('[Fixture] Launching Electron app...');
       const app = await electron.launch({
-        args: ['electron/dist/main.js'],
+        args: [
+          `--user-data-dir=${testUserDataDir}`,
+          'electron/dist/main.js',
+        ],
         env: {
           ...process.env,
           NODE_ENV: 'test',
-          ELECTRON_USER_DATA: testUserDataDir,
           DATABASE_PATH: path.join(process.cwd(), 'data/library.db'),
           LIBRARY_PATH: testLibraryPath,
         },
-        timeout: 60000, // Give more time for Next.js server to start
+        timeout: 60000,
       });
 
+      console.log('[Fixture] Waiting for first window...');
       const window = await app.firstWindow({ timeout: 60000 });
+      console.log('[Fixture] Window opened successfully');
+
       await use(window);
+
+      console.log('[Fixture] Closing Electron app...');
       await app.close();
 
       // Clean up test directories
