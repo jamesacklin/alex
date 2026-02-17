@@ -56,7 +56,11 @@ export class LibraryPage {
 
   // Methods
   async goto(): Promise<void> {
-    await this.page.goto('/library');
+    // Check if we're already on the library page (Electron starts here)
+    const currentUrl = this.page.url();
+    if (!currentUrl.includes('/library')) {
+      await this.page.goto('/library');
+    }
     await this.page.waitForLoadState('domcontentloaded');
   }
 
@@ -115,11 +119,21 @@ export class LibraryPage {
   }
 
   async waitForBooksToLoad(): Promise<void> {
-    // Wait for skeleton loaders to disappear
-    await this.page.waitForSelector('.animate-pulse', { state: 'detached', timeout: 10000 }).catch(() => {
-      // If no skeleton loaders, that's fine
-    });
-    // Give a small delay for rendering to complete
-    await this.page.waitForTimeout(500);
+    // Wait for either book cards or empty state to appear, with longer timeout for Electron
+    await this.page.waitForFunction(
+      () => {
+        const bookCards = document.querySelectorAll('a[href^="/read/"]');
+        const emptyStateText = document.body.textContent || '';
+        const hasEmptyState = emptyStateText.includes('No books found');
+        const skeletons = document.querySelectorAll('.animate-pulse');
+
+        // Books loaded or empty state shown, and no skeletons visible
+        return (bookCards.length > 0 || hasEmptyState) && skeletons.length === 0;
+      },
+      { timeout: 20000 }
+    );
+
+    // Give a small delay for any final rendering
+    await this.page.waitForTimeout(300);
   }
 }
