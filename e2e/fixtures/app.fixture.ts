@@ -52,12 +52,21 @@ export const test = base.extend<AppFixture>({
 
       // Wait for the page to actually load content
       console.log('[Fixture] Waiting for page to load...');
+      console.log('[Fixture] Current URL:', window.url());
+
       try {
         await window.waitForLoadState('domcontentloaded', { timeout: 30000 });
         console.log('[Fixture] Page loaded');
+        console.log('[Fixture] Final URL:', window.url());
+        console.log('[Fixture] Page title:', await window.title());
+
+        // Log page content for debugging
+        const bodyText = await window.locator('body').textContent();
+        console.log('[Fixture] Body text (first 200 chars):', bodyText?.slice(0, 200));
       } catch (error) {
         console.error('[Fixture] Page failed to load:', error);
         console.log('[Fixture] Current URL:', window.url());
+        console.log('[Fixture] Page title:', await window.title().catch(() => 'unknown'));
         throw error;
       }
 
