@@ -49,6 +49,17 @@ export const test = base.extend<AppFixture>({
       const window = await app.firstWindow({ timeout: 60000 });
       console.log('[Fixture] Window opened successfully');
 
+      // Wait for the page to actually load content
+      console.log('[Fixture] Waiting for page to load...');
+      try {
+        await window.waitForLoadState('domcontentloaded', { timeout: 30000 });
+        console.log('[Fixture] Page loaded');
+      } catch (error) {
+        console.error('[Fixture] Page failed to load:', error);
+        console.log('[Fixture] Current URL:', window.url());
+        throw error;
+      }
+
       await use(window);
 
       console.log('[Fixture] Closing Electron app...');
