@@ -34,4 +34,26 @@ test.describe('Authentication', () => {
     // Verify user remains on /login page
     await expect(appPage).toHaveURL(/\/login/);
   });
+
+  authTest('should logout successfully', async ({ authenticatedPage }) => {
+    // Navigate to settings page
+    await authenticatedPage.goto('/admin/general');
+
+    // Click logout button (skip on desktop mode where button is hidden)
+    const logoutButton = authenticatedPage.getByRole('button', { name: /log out/i });
+    const isVisible = await logoutButton.isVisible().catch(() => false);
+
+    if (!isVisible) {
+      authTest.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode has no logout button');
+    }
+
+    await logoutButton.click();
+
+    // Verify redirect to /login
+    await expect(authenticatedPage).toHaveURL(/\/login/, { timeout: 10000 });
+
+    // Verify attempting to access /library redirects back to /login
+    await authenticatedPage.goto('/library');
+    await expect(authenticatedPage).toHaveURL(/\/login/, { timeout: 10000 });
+  });
 });
