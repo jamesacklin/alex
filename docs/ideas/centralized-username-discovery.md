@@ -18,13 +18,13 @@ This is a **phonebook** — a simple, centralized key-value mapping service. All
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                   Discovery Service                           │
+│                   Discovery Service                          │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  names table                                           │  │
 │  │                                                        │  │
-│  │  username     TEXT PRIMARY KEY                          │  │
-│  │  public_key   TEXT (z32-encoded, 52 chars)              │  │
+│  │  username     TEXT PRIMARY KEY                         │  │
+│  │  public_key   TEXT (z32-encoded, 52 chars)             │  │
 │  │  created_at   TIMESTAMP                                │  │
 │  │  updated_at   TIMESTAMP                                │  │
 │  └────────────────────────────────────────────────────────┘  │
@@ -144,12 +144,12 @@ The server verifies the signature against the key currently on file (`previousKe
 
 The service is small enough to deploy anywhere:
 
-| Option                       | Pros                                    | Cons                            |
-| ---------------------------- | --------------------------------------- | ------------------------------- |
-| **Cloudflare Worker + D1**   | Edge-deployed, free tier, SQLite-native | Vendor lock-in                  |
-| **Fly.io + SQLite**          | Simple, global distribution             | Needs persistent volume         |
-| **Standalone Node.js + SQLite** | Self-hostable, no vendor dependency  | Needs a server                  |
-| **Next.js API route**        | Lives inside Alex itself                | Ties discovery to one instance  |
+| Option                          | Pros                                    | Cons                           |
+| ------------------------------- | --------------------------------------- | ------------------------------ |
+| **Cloudflare Worker + D1**      | Edge-deployed, free tier, SQLite-native | Vendor lock-in                 |
+| **Fly.io + SQLite**             | Simple, global distribution             | Needs persistent volume        |
+| **Standalone Node.js + SQLite** | Self-hostable, no vendor dependency     | Needs a server                 |
+| **Next.js API route**           | Lives inside Alex itself                | Ties discovery to one instance |
 
 The recommended approach is a **standalone service** (Cloudflare Worker + D1 or Fly.io) so that:
 
@@ -185,7 +185,7 @@ To prevent namespace squatting:
 - **Not a relay.** No book data, metadata, or Hypercore traffic flows through it. It only maps names to keys.
 - **Not required.** The P2P system works perfectly with raw z32 keys. The discovery service is purely a convenience layer. If it's down, users can still share keys out-of-band (QR code, copy-paste, etc.).
 - **Not a session or auth provider.** Alex instances authenticate each other via the Noise protocol handshake on the Hyperswarm connection. The discovery service cannot man-in-the-middle that, even if compromised.
-- **Not a single point of failure.** If it goes down, existing peer relationships (cached locally) keep working. Only *new* peer discovery by username is affected.
+- **Not a single point of failure.** If it goes down, existing peer relationships (cached locally) keep working. Only _new_ peer discovery by username is affected.
 
 ### Worst-Case Compromise
 
