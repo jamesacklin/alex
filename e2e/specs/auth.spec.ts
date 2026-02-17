@@ -76,4 +76,19 @@ test.describe('Authentication', () => {
     const heading = appPage.getByRole('heading', { name: /alex|library/i });
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
+
+  test('should bypass login in Electron desktop mode', async ({ appPage }) => {
+    // Skip this test if not running in Electron
+    test.skip(process.env.E2E_PLATFORM !== 'electron', 'Only applicable in Electron mode');
+
+    // Navigate to /login
+    await appPage.goto('/login');
+
+    // Verify immediate redirect to /library without login form interaction
+    await expect(appPage).toHaveURL(/\/library/, { timeout: 10000 });
+
+    // Verify authenticated state by checking for library content
+    const heading = appPage.getByRole('heading', { name: /alex|library/i });
+    await expect(heading.first()).toBeVisible({ timeout: 10000 });
+  });
 });
