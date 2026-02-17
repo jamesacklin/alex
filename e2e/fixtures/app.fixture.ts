@@ -46,9 +46,21 @@ export const test = base.extend<AppFixture>({
         timeout: 60000,
       });
 
-      console.log('[Fixture] Waiting for first window...');
-      const window = await app.firstWindow({ timeout: 60000 });
-      console.log('[Fixture] Window opened successfully');
+      console.log('[Fixture] Waiting for application window...');
+
+      // Wait for a window that's NOT DevTools
+      let window = await app.firstWindow({ timeout: 60000 });
+
+      // If the first window is DevTools, wait for the actual app window
+      if (window.url().startsWith('devtools://')) {
+        console.log('[Fixture] First window is DevTools, waiting for main app window...');
+        window = await app.waitForEvent('window', {
+          predicate: (w) => !w.url().startsWith('devtools://'),
+          timeout: 60000,
+        });
+      }
+
+      console.log('[Fixture] App window opened successfully');
 
       // Wait for the page to actually load content
       console.log('[Fixture] Waiting for page to load...');
