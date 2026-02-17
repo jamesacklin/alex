@@ -1,2 +1,4 @@
-// Placeholder - will be implemented in US-005
-export default async function globalSetup() {}
+export default async function globalSetup() {
+  console.log('Global setup complete');
+  // Future phases will add database reset/seed here
+}
