@@ -56,4 +56,24 @@ test.describe('Authentication', () => {
     await authenticatedPage.goto('/library');
     await expect(authenticatedPage).toHaveURL(/\/login/, { timeout: 10000 });
   });
+
+  test('should persist session after page reload', async ({ appPage }) => {
+    // Navigate to login page and login
+    await appPage.goto('/login');
+    const loginPage = new LoginPage(appPage);
+    await loginPage.login('admin@localhost', 'password');
+
+    // Verify redirect to /library
+    await expect(appPage).toHaveURL(/\/library/);
+
+    // Perform hard refresh
+    await appPage.reload();
+
+    // Verify still on /library without redirect to /login
+    await expect(appPage).toHaveURL(/\/library/);
+
+    // Verify user menu/session indicator still shows logged-in state
+    const heading = appPage.getByRole('heading', { name: /alex|library/i });
+    await expect(heading.first()).toBeVisible({ timeout: 10000 });
+  });
 });
