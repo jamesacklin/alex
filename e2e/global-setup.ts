@@ -1,6 +1,34 @@
 import { execSync } from 'child_process';
 import { resetDatabase, seedDatabase } from './helpers/db';
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForWebRouteReady(url: string, timeoutMs = 300_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = null;
+
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const requestTimeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(url, { method: 'GET', signal: controller.signal });
+      if (response.status >= 200 && response.status < 500) {
+        return;
+      }
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(requestTimeout);
+    }
+
+    await sleep(1000);
+  }
+
+  throw new Error(`Timed out waiting for ${url} to become ready. Last error: ${String(lastError)}`);
+}
+
 export default async function globalSetup() {
   console.log('[E2E] Running global setup...');
 
@@ -24,6 +52,8 @@ export default async function globalSetup() {
     execSync('pnpm db:push', { stdio: 'inherit' });
 
     if (process.env.E2E_PLATFORM === 'electron') {
+      console.log('[E2E] Building Next.js app for Electron e2e runtime...');
+      execSync('pnpm build', { stdio: 'inherit' });
       console.log('[E2E] Compiling Electron main process...');
       execSync('pnpm electron:compile', { stdio: 'inherit' });
     }
@@ -35,6 +65,12 @@ export default async function globalSetup() {
     console.log('[E2E] Seeding database...');
     await seedDatabase();
     console.log('[E2E] Database reset and seeded');
+
+    if (process.env.E2E_PLATFORM === 'web') {
+      console.log('[E2E] Warming up /login route for web tests...');
+      await waitForWebRouteReady('http://127.0.0.1:3000/login');
+      console.log('[E2E] /login route is ready');
+    }
 
     console.log('[E2E] Global setup complete');
   } catch (error) {

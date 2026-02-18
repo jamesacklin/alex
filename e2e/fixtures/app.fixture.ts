@@ -12,6 +12,54 @@ type AppFixture = {
   electronApp: ElectronApplication | null;
 };
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForRouteReady(url: string, timeoutMs = 60000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = null;
+
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const requestTimeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(url, { method: 'GET', signal: controller.signal });
+      if (response.status >= 200 && response.status < 500) {
+        return;
+      }
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(requestTimeout);
+    }
+
+    await sleep(500);
+  }
+
+  throw new Error(`Timed out waiting ${timeoutMs}ms for ${url}. Last error: ${String(lastError)}`);
+}
+
+async function waitForElectronWindow(electronApp: ElectronApplication, timeoutMs = 30000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const windowCount = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+    if (windowCount > 0) {
+      return;
+    }
+
+    const electronProcess = electronApp.process();
+    if (electronProcess.exitCode !== null) {
+      throw new Error(`Electron process exited before creating a window (exit code ${electronProcess.exitCode})`);
+    }
+
+    await sleep(250);
+  }
+
+  throw new Error(`Timed out waiting ${timeoutMs}ms for Electron window creation`);
+}
+
 export const test = base.extend<AppFixture>({
   electronApp: async ({ context }, use) => {
     void context;
@@ -56,13 +104,39 @@ export const test = base.extend<AppFixture>({
       timeout: 60000,
     });
 
-    await use(app);
+    const electronProcess = app.process();
+    const logElectronProcess = process.env.E2E_DEBUG_ELECTRON === '1';
+    const onStdout = (chunk: Buffer) => process.stdout.write(`[Electron stdout] ${chunk.toString()}`);
+    const onStderr = (chunk: Buffer) => process.stderr.write(`[Electron stderr] ${chunk.toString()}`);
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      console.log(`[Fixture] Electron process exited (code=${code}, signal=${signal})`);
+    };
 
-    console.log('[Fixture] Closing Electron app...');
-    await app.close();
+    if (logElectronProcess) {
+      electronProcess.stdout?.on('data', onStdout);
+      electronProcess.stderr?.on('data', onStderr);
+    }
+    electronProcess.on('exit', onExit);
 
-    fs.rmSync(testUserDataDir, { recursive: true, force: true });
-    fs.rmSync(testLibraryPath, { recursive: true, force: true });
+    try {
+      await use(app);
+    } finally {
+      if (logElectronProcess) {
+        electronProcess.stdout?.off('data', onStdout);
+        electronProcess.stderr?.off('data', onStderr);
+      }
+      electronProcess.off('exit', onExit);
+
+      console.log('[Fixture] Closing Electron app...');
+      try {
+        await app.close();
+      } catch (error) {
+        console.warn('[Fixture] Electron app was already closed:', error);
+      }
+
+      fs.rmSync(testUserDataDir, { recursive: true, force: true });
+      fs.rmSync(testLibraryPath, { recursive: true, force: true });
+    }
   },
 
   appPage: async ({ page, electronApp }, use) => {
@@ -71,26 +145,38 @@ export const test = base.extend<AppFixture>({
         throw new Error('electronApp fixture was not initialized');
       }
 
-      const existingAppWindow = electronApp.windows().find((window) => !window.url().startsWith('devtools://'));
-      let appWindow = existingAppWindow;
-
-      if (!appWindow) {
-        const firstWindow = await electronApp.firstWindow({ timeout: 120000 });
-        appWindow = firstWindow;
-
-        if (firstWindow.url().startsWith('devtools://')) {
-          appWindow = await electronApp.waitForEvent('window', {
-            predicate: (window) => !window.url().startsWith('devtools://'),
-            timeout: 120000,
-          });
-        }
+      const baseUrl = process.env.BASE_URL ?? 'http://127.0.0.1:3210';
+      // The default Playwright page is a separate Chromium client and can race
+      // the real Electron window; close it in desktop mode.
+      try {
+        await page.close();
+      } catch {
+        // Ignore if already closed.
       }
 
-      await appWindow.waitForLoadState('domcontentloaded', { timeout: 120000 });
-      await use(appWindow);
+      console.log('[Fixture] Waiting for Electron BrowserWindow...');
+      await waitForElectronWindow(electronApp);
+      const electronPage = await electronApp.firstWindow();
+      await electronPage.bringToFront();
+      console.log('[Fixture] Electron window found, waiting for route readiness...');
+      await waitForRouteReady(`${baseUrl}/login`);
+      console.log('[Fixture] Route ready, navigating appPage to stable desktop route...');
+      await electronPage.goto(`${baseUrl}/library`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 120000,
+      });
+      await electronPage.waitForURL(
+        (url) => url.pathname === '/library' || url.pathname === '/onboarding',
+        { timeout: 30000 },
+      );
+      await use(electronPage);
       return;
     }
 
+    await page.goto((process.env.BASE_URL ?? 'http://localhost:3000') + '/login', {
+      waitUntil: 'domcontentloaded',
+      timeout: 120000,
+    });
     await use(page);
   },
 });

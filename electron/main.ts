@@ -51,7 +51,7 @@ function getEnvVars(libraryPath: string) {
     PORT: PORT.toString(),
     ALEX_DESKTOP: 'true',
     NEXTAUTH_SECRET: nextauthSecret,
-    NEXTAUTH_URL: `http://localhost:${PORT}`,
+    NEXTAUTH_URL: `http://127.0.0.1:${PORT}`,
   };
 }
 
@@ -197,6 +197,7 @@ function runDbSetup(libraryPath: string) {
 
 function startServer(libraryPath: string) {
   const env = getEnvVars(libraryPath);
+  const runProdLikeServerForE2E = isDev && isE2E;
   const packagedBootstrapScript = [
     "const Module=require('node:module')",
     "const path=require('node:path')",
@@ -213,13 +214,15 @@ function startServer(libraryPath: string) {
   const command = isDev
     ? (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
     : getPackagedNodeCommand();
-  const args = isDev
-    ? ['next', 'dev', '--webpack', '-p', PORT.toString(), '-H', '127.0.0.1']
-    : [
-        '-e',
-        packagedBootstrapScript,
-        app.getAppPath(),
-      ];
+  const args = runProdLikeServerForE2E
+    ? ['start', '-p', PORT.toString(), '-H', '127.0.0.1']
+    : isDev
+      ? ['next', 'dev', '-p', PORT.toString(), '-H', '127.0.0.1']
+      : [
+          '-e',
+          packagedBootstrapScript,
+          app.getAppPath(),
+        ];
   const serverEnv = isDev
     ? env
     : {
@@ -228,7 +231,11 @@ function startServer(libraryPath: string) {
       };
   const workingDir = isDev ? app.getAppPath() : process.resourcesPath;
 
-  console.log('[Electron] Starting Next.js server...');
+  if (runProdLikeServerForE2E) {
+    console.log('[Electron] E2E mode: starting production Next.js server');
+  } else {
+    console.log('[Electron] Starting Next.js server...');
+  }
   try {
     serverProcess = spawn(command, args, {
       env: serverEnv,
@@ -297,6 +304,11 @@ async function waitForServerReady(timeoutMs = isE2E ? 120000 : 30000) {
 }
 
 function startWatcher(libraryPath: string) {
+  if (isE2E) {
+    console.log('[Electron] E2E mode: skipping file watcher startup');
+    return;
+  }
+
   const env = getEnvVars(libraryPath);
   const command = isDev ? 'npx' : getPackagedNodeCommand();
   const args = isDev ? ['tsx', 'watcher/index.ts'] : [path.join(app.getAppPath(), 'watcher/dist/watcher/index.js')];
@@ -365,7 +377,7 @@ async function clearBooksTable(): Promise<boolean> {
   console.log('[Electron] Clearing books via API...');
 
   try {
-    const response = await fetch(`http://localhost:${PORT}/api/electron/clear-books`, {
+    const response = await fetch(`http://127.0.0.1:${PORT}/api/electron/clear-books`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -467,8 +479,8 @@ function createWindow() {
   console.log('[Electron] Window created, loading URL...');
 
   const startUrl = isFirstRun
-    ? `http://localhost:${PORT}/onboarding`
-    : `http://localhost:${PORT}`;
+    ? `http://127.0.0.1:${PORT}/onboarding`
+    : `http://127.0.0.1:${PORT}`;
   mainWindow.loadURL(startUrl);
 
   if (isDev && !isE2E) {
