@@ -1,0 +1,111 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: ['*']
+  push:
+    branches: [main]
+
+# Shared environment variables for all jobs.
+# DATABASE_PATH must point at the test database to avoid conflicts with
+# the default library.db used during normal development.
+env:
+  DATABASE_PATH: ./data/test.db
+
+jobs:
+  e2e-web:
+    name: E2E (Web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # Native image-processing libraries required by @napi-rs/canvas
+      - run: sudo apt-get update && sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+      - run: pnpm build:native
+      - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
+        env:
+          E2E_PLATFORM: web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-web-report
+          path: playwright-report/
+
+  e2e-electron-linux:
+    name: E2E (Electron / Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Native image-processing libraries required by @napi-rs/canvas
+      - run: sudo apt-get update && sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+      - run: pnpm build:native
+      - run: pnpm build
+      - run: npx tsc -p electron/tsconfig.json
+      - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      # xvfb-run provides a virtual framebuffer on Linux, which has no
+      # display server. Electron requires a display to launch windows.
+      - run: xvfb-run --auto-servernum pnpm exec playwright test --config=e2e/playwright.config.ts
+        env:
+          E2E_PLATFORM: electron
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-linux-report
+          path: playwright-report/
+
+  e2e-electron-macos:
+    name: E2E (Electron / macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # macOS has a native display server (Aqua), so no xvfb-run needed.
+      # No native apt dependencies needed; macOS provides them via Homebrew/system.
+      - run: pnpm build:native
+      - run: pnpm build
+      - run: npx tsc -p electron/tsconfig.json
+      - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
+        env:
+          E2E_PLATFORM: electron
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-macos-report
+          path: playwright-report/
+
+  e2e-electron-windows:
+    name: E2E (Electron / Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Windows has a native display server (DWM), so no xvfb-run needed.
+      - run: pnpm build:native
+      - run: pnpm build
+      - run: npx tsc -p electron/tsconfig.json
+      - run: if not exist data mkdir data && pnpm db:push && pnpm db:seed
+        shell: cmd
+      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
+        env:
+          E2E_PLATFORM: electron
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-windows-report
+          path: playwright-report/
