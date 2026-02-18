@@ -251,4 +251,30 @@ test.describe('Collections', () => {
     await authenticatedPage.goto(shareUrl);
     await expect(authenticatedPage.getByRole('heading', { name: /Collection Not Found/i })).toBeVisible();
   });
+
+  test('filters collections by all/private/shared status (US-011)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const privateCollectionName = `Private Collection ${Date.now()}`;
+    const sharedCollectionName = `Shared Collection ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, privateCollectionName, 'Private collection');
+    await createCollection(collectionsPage, sharedCollectionName, 'Shared collection');
+
+    await collectionsPage.clickCollection(sharedCollectionName);
+    await shareCollectionAndGetLink(authenticatedPage);
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+
+    await collectionsPage.filterBy('shared');
+    await expect(collectionsPage.collectionCardByName(sharedCollectionName)).toBeVisible();
+    await expect(collectionsPage.collectionCardByName(privateCollectionName)).toHaveCount(0);
+
+    await collectionsPage.filterBy('private');
+    await expect(collectionsPage.collectionCardByName(privateCollectionName)).toBeVisible();
+    await expect(collectionsPage.collectionCardByName(sharedCollectionName)).toHaveCount(0);
+
+    await collectionsPage.filterBy('all');
+    await expect(collectionsPage.collectionCardByName(privateCollectionName)).toBeVisible();
+    await expect(collectionsPage.collectionCardByName(sharedCollectionName)).toBeVisible();
+  });
 });
