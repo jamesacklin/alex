@@ -2,6 +2,7 @@ import { type Page } from '@playwright/test';
 import { test, expect } from '../fixtures/auth.fixture';
 import { CollectionsPage } from '../page-objects/collections.page';
 import { LibraryPage } from '../page-objects/library.page';
+import { CollectionDetailPage } from '../page-objects/collection-detail.page';
 
 function appUrl(page: Page, path: string): string {
   return new URL(page.url()).origin + path;
@@ -18,6 +19,26 @@ async function createCollection(
   await collectionsPage.collectionDescriptionInput.fill(description);
   await collectionsPage.saveCollectionButton.click();
   await expect(collectionsPage.collectionCardByName(name)).toBeVisible();
+}
+
+async function addBookToCollectionFromLibrary(
+  page: Page,
+  bookTitle: string,
+  collectionName: string,
+): Promise<void> {
+  const targetCard = page.locator('a[href^="/read/"]').filter({
+    has: page.locator('h3', { hasText: bookTitle }),
+  }).first();
+
+  await expect(targetCard).toBeVisible();
+  await targetCard.getByRole('button', { name: /add to collection/i }).click();
+
+  const dialog = page.getByRole('dialog', { name: /add to collection/i });
+  const option = dialog.getByRole('checkbox', { name: collectionName });
+  await option.click();
+  await expect(option).toHaveAttribute('aria-checked', 'true');
+  await dialog.getByRole('button', { name: /^Done$/ }).click();
+  await expect(dialog).toBeHidden();
 }
 
 test.describe('Collections', () => {
@@ -79,5 +100,25 @@ test.describe('Collections', () => {
     await libraryPage.waitForBooksToLoad();
     await expect(libraryPage.bookCardByTitle('Sample PDF Book')).toBeVisible();
     expect(await libraryPage.getBookCount()).toBeGreaterThanOrEqual(initialBookCount);
+  });
+
+  test('adds books to a collection (US-006)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const collectionDetailPage = new CollectionDetailPage(authenticatedPage);
+    const collectionName = `Add Books ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, collectionName, 'Collection for adding books');
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample EPUB Book', collectionName);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await collectionsPage.clickCollection(collectionName);
+
+    await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample PDF Book' })).toHaveCount(1);
+    await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample EPUB Book' })).toHaveCount(1);
+    await expect(authenticatedPage.getByText(/Showing 2 of 2 books/)).toBeVisible();
   });
 });
