@@ -121,4 +121,31 @@ test.describe('Collections', () => {
     await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample EPUB Book' })).toHaveCount(1);
     await expect(authenticatedPage.getByText(/Showing 2 of 2 books/)).toBeVisible();
   });
+
+  test('removes a book from a collection without deleting it from library (US-007)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const collectionDetailPage = new CollectionDetailPage(authenticatedPage);
+    const libraryPage = new LibraryPage(authenticatedPage);
+    const collectionName = `Remove Books ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, collectionName, 'Collection for removing books');
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample EPUB Book', collectionName);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await collectionsPage.clickCollection(collectionName);
+    await expect(authenticatedPage.getByText(/Showing 2 of 2 books/)).toBeVisible();
+
+    await collectionDetailPage.removeBookFromCollection('Sample EPUB Book');
+    await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample EPUB Book' })).toHaveCount(0);
+    await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample PDF Book' })).toHaveCount(1);
+    await expect(authenticatedPage.getByText(/Showing 1 of 1 book/)).toBeVisible();
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await libraryPage.waitForBooksToLoad();
+    await expect(libraryPage.bookCardByTitle('Sample EPUB Book')).toBeVisible();
+  });
 });
