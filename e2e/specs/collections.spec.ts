@@ -184,4 +184,40 @@ test.describe('Collections', () => {
       collectionsPage.collectionCardByName(collectionName).locator('[title="This collection is publicly shared"]'),
     ).toBeVisible();
   });
+
+  test('opens shared collection without authentication in read-only mode (US-009)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const collectionName = `Public Collection ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, collectionName, 'Publicly visible collection');
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await collectionsPage.clickCollection(collectionName);
+    const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
+
+    const browser = authenticatedPage.context().browser();
+    if (browser) {
+      const unauthContext = await browser.newContext();
+      const unauthPage = await unauthContext.newPage();
+
+      await unauthPage.goto(shareUrl);
+      await expect(unauthPage).toHaveURL(/\/shared\/[^/]+$/);
+      await expect(unauthPage.getByRole('heading', { level: 1, name: collectionName })).toBeVisible();
+      await expect(unauthPage.getByText('Sample PDF Book')).toBeVisible();
+      await expect(unauthPage.getByRole('button', { name: /remove from collection|edit|delete/i })).toHaveCount(0);
+
+      await unauthContext.close();
+      return;
+    }
+
+    await authenticatedPage.goto(shareUrl);
+    await expect(authenticatedPage).toHaveURL(/\/shared\/[^/]+$/);
+    await expect(authenticatedPage.getByRole('heading', { level: 1, name: collectionName })).toBeVisible();
+    await expect(authenticatedPage.getByText('Sample PDF Book')).toBeVisible();
+    await expect(authenticatedPage.getByRole('button', { name: /remove from collection|edit|delete/i })).toHaveCount(0);
+  });
 });
