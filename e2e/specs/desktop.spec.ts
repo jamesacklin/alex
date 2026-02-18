@@ -129,3 +129,36 @@ test('electron rescan action triggers watcher restart IPC (US-012)', async ({ ap
     { timeout: 10000 },
   ).toBe(1);
 });
+
+test('electron close action hides window and keeps app running (US-013)', async ({ electronApp }) => {
+  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
+  ensureElectronApp(electronApp);
+
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.close();
+  });
+
+  let windowState: { isReady: boolean; windowCount: number; isVisible: boolean } = {
+    isReady: false,
+    windowCount: 0,
+    isVisible: true,
+  };
+
+  await expect.poll(
+    async () => {
+      windowState = await electronApp.evaluate(({ app, BrowserWindow }) => {
+        const windows = BrowserWindow.getAllWindows();
+        return {
+          isReady: app.isReady(),
+          windowCount: windows.length,
+          isVisible: windows[0]?.isVisible() ?? false,
+        };
+      });
+      const hiddenToTray = windowState.windowCount === 0 || !windowState.isVisible;
+      return windowState.isReady && hiddenToTray;
+    },
+    { timeout: 15000 },
+  ).toBe(true);
+
+  expect(windowState.isReady).toBe(true);
+});
