@@ -7,12 +7,13 @@ on:
     branches: [main]
 
 # Shared environment variables for all jobs.
-# DATABASE_PATH must point at the test database to avoid conflicts with
-# the default library.db used during normal development.
+# DATABASE_PATH uses the default library.db path so that the Electron
+# test fixture (which hardcodes data/library.db) reads from the same
+# database the setup steps populate.
 # NEXTAUTH_SECRET is required by NextAuth.js at runtime; any stable
 # value works for testing.
 env:
-  DATABASE_PATH: ./data/test.db
+  DATABASE_PATH: ./data/library.db
   NEXTAUTH_SECRET: e2e-test-secret-do-not-use-in-production
 
 jobs:

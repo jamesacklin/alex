@@ -93,8 +93,14 @@ export const test = base.extend<AppFixture>({
     fs.writeFileSync(configPath, JSON.stringify(storeConfig, null, 2), 'utf8');
     console.log('[Fixture] Created Electron store config');
 
+    // CI runners (Linux) lack the SUID sandbox binary; disable it there.
+    const launchArgs = [electronEntry, `--user-data-dir=${testUserDataDir}`];
+    if (process.env.CI) {
+      launchArgs.push('--no-sandbox');
+    }
+
     const app = await electron.launch({
-      args: [electronEntry, `--user-data-dir=${testUserDataDir}`],
+      args: launchArgs,
       env: {
         ...process.env,
         ALEX_E2E: 'true',
