@@ -1,6 +1,7 @@
 import { type Page } from '@playwright/test';
 import { test, expect } from '../fixtures/auth.fixture';
 import { CollectionsPage } from '../page-objects/collections.page';
+import { LibraryPage } from '../page-objects/library.page';
 
 function appUrl(page: Page, path: string): string {
   return new URL(page.url()).origin + path;
@@ -51,5 +52,32 @@ test.describe('Collections', () => {
 
     await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
     await expect(collectionsPage.collectionCardByName(updatedName)).toBeVisible();
+  });
+
+  test('deletes a collection without deleting books (US-005)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const libraryPage = new LibraryPage(authenticatedPage);
+    const collectionName = `Delete Me ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await libraryPage.waitForBooksToLoad();
+    const initialBookCount = await libraryPage.getBookCount();
+    await expect(libraryPage.bookCardByTitle('Sample PDF Book')).toBeVisible();
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, collectionName, 'Temporary collection');
+    await collectionsPage.clickCollection(collectionName);
+
+    await authenticatedPage.getByRole('button', { name: /^Delete$/ }).click();
+    await authenticatedPage.getByRole('dialog', { name: /^Delete collection\\?$/ }).waitFor({ state: 'visible' });
+    await authenticatedPage.getByRole('dialog', { name: /^Delete collection\\?$/ }).getByRole('button', { name: /^Delete$/ }).click();
+
+    await authenticatedPage.waitForURL(/\/collections$/, { timeout: 10000 });
+    await expect(collectionsPage.collectionCardByName(collectionName)).toHaveCount(0);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await libraryPage.waitForBooksToLoad();
+    await expect(libraryPage.bookCardByTitle('Sample PDF Book')).toBeVisible();
+    expect(await libraryPage.getBookCount()).toBeGreaterThanOrEqual(initialBookCount);
   });
 });
