@@ -57,7 +57,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { createUser, deleteUser } from "./actions";
+import { createUser, deleteUser, updateUser } from "./actions";
 
 type UserRow = {
   id: string;
@@ -76,6 +76,13 @@ const createUserSchema = z.object({
 
 type CreateUserValues = z.infer<typeof createUserSchema>;
 
+const editUserSchema = z.object({
+  displayName: z.string().min(1, "Display name is required"),
+  role: z.enum(["admin", "user"]),
+});
+
+type EditUserValues = z.infer<typeof editUserSchema>;
+
 export default function UsersTable({
   users,
   currentUserId,
@@ -87,6 +94,9 @@ export default function UsersTable({
 }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUserId, setEditUserId] = useState<string | null>(null);
+  const [editUserEmail, setEditUserEmail] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteEmail, setDeleteEmail] = useState("");
   const [actionsContainer, setActionsContainer] = useState<HTMLElement | null>(null);
@@ -96,9 +106,14 @@ export default function UsersTable({
     setActionsContainer(document.getElementById(actionsContainerId));
   }, [actionsContainerId]);
 
-  const form = useForm<CreateUserValues>({
+  const createForm = useForm<CreateUserValues>({
     resolver: zodResolver(createUserSchema),
     defaultValues: { email: "", displayName: "", password: "", role: "user" },
+  });
+
+  const editForm = useForm<EditUserValues>({
+    resolver: zodResolver(editUserSchema),
+    defaultValues: { displayName: "", role: "user" },
   });
 
   async function onCreateSubmit(data: CreateUserValues) {
@@ -108,8 +123,23 @@ export default function UsersTable({
       return;
     }
     toast.success("User created");
-    form.reset();
+    createForm.reset();
     setAddOpen(false);
+    router.refresh();
+  }
+
+  async function onEditSubmit(data: EditUserValues) {
+    if (!editUserId) return;
+    const result = await updateUser(editUserId, data);
+    if ("error" in result) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("User updated");
+    setEditOpen(false);
+    setEditUserId(null);
+    setEditUserEmail("");
+    editForm.reset();
     router.refresh();
   }
 
@@ -123,6 +153,16 @@ export default function UsersTable({
       router.refresh();
     }
     setDeleteId(null);
+  }
+
+  function openEditDialog(user: UserRow) {
+    setEditUserId(user.id);
+    setEditUserEmail(user.email);
+    editForm.reset({
+      displayName: user.displayName,
+      role: user.role === "admin" ? "admin" : "user",
+    });
+    setEditOpen(true);
   }
 
   const addUserButton = (
@@ -173,31 +213,40 @@ export default function UsersTable({
                   {new Date(user.createdAt * 1000).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="text-right">
-                  {isOwn ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>
-                          <Button variant="destructive" size="sm" disabled>
-                            Delete
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Cannot delete your own account
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
+                  <div className="flex justify-end gap-2">
                     <Button
-                      variant="destructive"
+                      variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setDeleteId(user.id);
-                        setDeleteEmail(user.email);
-                      }}
+                      onClick={() => openEditDialog(user)}
                     >
-                      Delete
+                      Edit
                     </Button>
-                  )}
+                    {isOwn ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <Button variant="destructive" size="sm" disabled>
+                              Delete
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Cannot delete your own account
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setDeleteId(user.id);
+                          setDeleteEmail(user.email);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -213,10 +262,10 @@ export default function UsersTable({
               Create a new user account
             </DialogDescription>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onCreateSubmit)} className="space-y-4">
+          <Form {...createForm}>
+            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
               <FormField
-                control={form.control}
+                control={createForm.control}
                 name="email"
                 render={({ field }) => (
                   <FormItem>
@@ -229,7 +278,7 @@ export default function UsersTable({
                 )}
               />
               <FormField
-                control={form.control}
+                control={createForm.control}
                 name="displayName"
                 render={({ field }) => (
                   <FormItem>
@@ -242,7 +291,7 @@ export default function UsersTable({
                 )}
               />
               <FormField
-                control={form.control}
+                control={createForm.control}
                 name="password"
                 render={({ field }) => (
                   <FormItem>
@@ -255,7 +304,7 @@ export default function UsersTable({
                 )}
               />
               <FormField
-                control={form.control}
+                control={createForm.control}
                 name="role"
                 render={({ field }) => (
                   <FormItem>
@@ -278,9 +327,75 @@ export default function UsersTable({
               <Button
                 type="submit"
                 className="w-full"
-                disabled={form.formState.isSubmitting}
+                disabled={createForm.formState.isSubmitting}
               >
-                {form.formState.isSubmitting ? "Creating…" : "Create User"}
+                {createForm.formState.isSubmitting ? "Creating…" : "Create User"}
+              </Button>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) {
+            setEditUserId(null);
+            setEditUserEmail("");
+            editForm.reset();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update role and display name for {editUserEmail || "this user"}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="displayName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Display name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Jane Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <FormControl>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={editForm.formState.isSubmitting}
+              >
+                {editForm.formState.isSubmitting ? "Saving…" : "Save Changes"}
               </Button>
             </form>
           </Form>

@@ -56,3 +56,41 @@ export async function deleteUser(id: string) {
 
   return { success: true };
 }
+
+export async function updateUser(
+  id: string,
+  data: { displayName: string; role: string },
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { error: "Forbidden" };
+  }
+
+  if (!data.displayName?.trim()) {
+    return { error: "Display name is required" };
+  }
+
+  if (!["admin", "user"].includes(data.role)) {
+    return { error: "Role must be admin or user" };
+  }
+
+  if (session.user.id === id && data.role !== "admin") {
+    return { error: "Cannot remove your own admin role" };
+  }
+
+  const [existing] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  if (!existing) {
+    return { error: "User not found" };
+  }
+
+  await db
+    .update(users)
+    .set({
+      displayName: data.displayName.trim(),
+      role: data.role,
+      updatedAt: Math.floor(Date.now() / 1000),
+    })
+    .where(eq(users.id, id));
+
+  return { success: true };
+}
