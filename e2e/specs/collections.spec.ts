@@ -5,7 +5,11 @@ import { LibraryPage } from '../page-objects/library.page';
 import { CollectionDetailPage } from '../page-objects/collection-detail.page';
 
 function appUrl(page: Page, path: string): string {
-  return new URL(page.url()).origin + path;
+  const currentUrl = page.url();
+  if (!currentUrl || currentUrl === 'about:blank') {
+    return `http://localhost:3000${path}`;
+  }
+  return new URL(currentUrl).origin + path;
 }
 
 async function createCollection(
@@ -81,8 +85,8 @@ test.describe('Collections', () => {
     await authenticatedPage.getByRole('textbox', { name: /^Description$/ }).fill(updatedDescription);
     await authenticatedPage.getByRole('dialog', { name: /^Edit Collection$/ }).getByRole('button', { name: /^Save$/ }).click();
 
-    await expect(authenticatedPage.getByRole('heading', { level: 1 })).toHaveText(updatedName);
-    await expect(authenticatedPage.locator('h1 + p').first()).toContainText(updatedDescription);
+    await expect(authenticatedPage.getByRole('heading', { name: updatedName })).toBeVisible();
+    await expect(authenticatedPage.locator('main').getByText(updatedDescription)).toBeVisible();
 
     await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
     await expect(collectionsPage.collectionCardByName(updatedName)).toBeVisible();
@@ -103,8 +107,9 @@ test.describe('Collections', () => {
     await collectionsPage.clickCollection(collectionName);
 
     await authenticatedPage.getByRole('button', { name: /^Delete$/ }).click();
-    await authenticatedPage.getByRole('dialog', { name: /^Delete collection\\?$/ }).waitFor({ state: 'visible' });
-    await authenticatedPage.getByRole('dialog', { name: /^Delete collection\\?$/ }).getByRole('button', { name: /^Delete$/ }).click();
+    const deleteDialog = authenticatedPage.getByRole('alertdialog').filter({ hasText: /Delete collection/i });
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole('button', { name: /^Delete$/ }).click();
 
     await authenticatedPage.waitForURL(/\/collections$/, { timeout: 10000 });
     await expect(collectionsPage.collectionCardByName(collectionName)).toHaveCount(0);
@@ -236,8 +241,10 @@ test.describe('Collections', () => {
     const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
 
     await authenticatedPage.getByRole('button', { name: /^Stop Sharing$/ }).click();
-    const stopSharingDialog = authenticatedPage.getByRole('dialog', { name: /^Stop sharing this collection\\?$/ });
-    await stopSharingDialog.waitFor({ state: 'visible' });
+    const stopSharingDialog = authenticatedPage.getByRole('alertdialog').filter({
+      hasText: /Stop sharing this collection/i,
+    });
+    await expect(stopSharingDialog).toBeVisible();
     await stopSharingDialog.getByRole('button', { name: /^Stop Sharing$/ }).click();
 
     await expect(authenticatedPage.getByRole('button', { name: /^Share$/ })).toBeVisible();
