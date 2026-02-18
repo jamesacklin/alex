@@ -186,3 +186,19 @@ test('electron onboarding flow completes with mocked IPC (US-014)', async ({ app
   await appPage.getByRole('button', { name: /get started/i }).click();
   await expect(appPage).toHaveURL(/\/library/, { timeout: 10000 });
 });
+
+test('electron reset app returns user to onboarding (US-015)', async ({ appPage, electronApp }) => {
+  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
+  ensureElectronApp(electronApp);
+
+  await electronApp.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('reset-app');
+    ipcMain.handle('reset-app', async () => ({ success: true }));
+  });
+
+  await appPage.goto(appUrl(appPage, '/admin/library'));
+  await appPage.getByRole('button', { name: /^reset app$/i }).click();
+  await appPage.getByRole('alertdialog').getByRole('button', { name: /^reset app$/i }).click();
+
+  await expect(appPage).toHaveURL(/\/onboarding/, { timeout: 15000 });
+});
