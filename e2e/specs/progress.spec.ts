@@ -141,4 +141,26 @@ test.describe('Reading Progress', () => {
     expect(progress.totalPages).toBe(totalPages);
     expect(progress.percentComplete).toBeCloseTo((targetPage / totalPages) * 100, 2);
   });
+
+  test('restores PDF progress after page reload (US-014)', async ({ authenticatedPage }) => {
+    const reader = await openPdf(authenticatedPage);
+    const totalPages = await reader.getTotalPages();
+    expect(totalPages).toBeGreaterThan(0);
+
+    const targetPage = Math.min(2, totalPages);
+    await reader.jumpToPage(targetPage);
+    await expect.poll(() => reader.getCurrentPage()).toBe(targetPage);
+    await authenticatedPage.waitForTimeout(2000);
+
+    await authenticatedPage.reload();
+    const readerAfterReload = new PdfReaderPage(authenticatedPage);
+    await readerAfterReload.waitForLoad();
+
+    expect(await readerAfterReload.getCurrentPage()).toBe(targetPage);
+    expect(await readerAfterReload.getProgressPercent()).toBeCloseTo((targetPage / totalPages) * 100, 2);
+
+    const progress = await readPdfProgressFromApi(authenticatedPage);
+    expect(progress.currentPage).toBe(targetPage);
+    expect(progress.percentComplete).toBeCloseTo((targetPage / totalPages) * 100, 2);
+  });
 });
