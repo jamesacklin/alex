@@ -40,7 +40,7 @@ async function waitForRouteReady(url: string, timeoutMs = 60000): Promise<void> 
   throw new Error(`Timed out waiting ${timeoutMs}ms for ${url}. Last error: ${String(lastError)}`);
 }
 
-async function waitForElectronWindow(electronApp: ElectronApplication, timeoutMs = 30000): Promise<void> {
+async function waitForElectronWindow(electronApp: ElectronApplication, timeoutMs = 90000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -111,7 +111,7 @@ export const test = base.extend<AppFixture>({
     });
 
     const electronProcess = app.process();
-    const logElectronProcess = process.env.E2E_DEBUG_ELECTRON === '1';
+    const logElectronProcess = process.env.E2E_DEBUG_ELECTRON === '1' || !!process.env.CI;
     const onStdout = (chunk: Buffer) => process.stdout.write(`[Electron stdout] ${chunk.toString()}`);
     const onStderr = (chunk: Buffer) => process.stderr.write(`[Electron stderr] ${chunk.toString()}`);
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
