@@ -13,7 +13,7 @@ function ensureElectronApp(
 function appUrl(page: Page, path: string): string {
   const currentUrl = page.url();
   if (!currentUrl || currentUrl === 'about:blank') {
-    return `http://localhost:3210${path}`;
+    return `http://127.0.0.1:3210${path}`;
   }
 
   try {
@@ -22,10 +22,10 @@ function appUrl(page: Page, path: string): string {
       return parsed.origin + path;
     }
   } catch {
-    return `http://localhost:3210${path}`;
+    return `http://127.0.0.1:3210${path}`;
   }
 
-  return `http://localhost:3210${path}`;
+  return `http://127.0.0.1:3210${path}`;
 }
 
 test('electron creates a system tray icon (US-009)', async ({ electronApp }) => {
@@ -192,6 +192,8 @@ test('electron reset app returns user to onboarding (US-015)', async ({ appPage,
   ensureElectronApp(electronApp);
 
   await electronApp.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('get-library-path');
+    ipcMain.handle('get-library-path', async () => '');
     ipcMain.removeHandler('reset-app');
     ipcMain.handle('reset-app', async () => ({ success: true }));
   });
@@ -201,4 +203,7 @@ test('electron reset app returns user to onboarding (US-015)', async ({ appPage,
   await appPage.getByRole('alertdialog').getByRole('button', { name: /^reset app$/i }).click();
 
   await expect(appPage).toHaveURL(/\/onboarding/, { timeout: 15000 });
+  await expect(appPage.getByRole('button', { name: /select folder|change folder/i })).toBeVisible({
+    timeout: 10000,
+  });
 });

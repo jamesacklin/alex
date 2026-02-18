@@ -56,9 +56,29 @@ test.describe('Authentication', () => {
     // Verify redirect to /login
     await expect(authenticatedPage).toHaveURL(/\/login/, { timeout: 10000 });
 
-    // Verify attempting to access /library redirects back to /login
-    await authenticatedPage.goto('/library');
-    await expect(authenticatedPage).toHaveURL(/\/login/, { timeout: 10000 });
+    // Verify session is cleared
+    await expect.poll(
+      async () => {
+        return authenticatedPage.evaluate(async () => {
+          const sessionResponse = await fetch('/api/auth/session', { credentials: 'include' });
+          if (!sessionResponse.ok) return 'request-failed';
+          const sessionData = (await sessionResponse.json()) as { user?: unknown } | null;
+          return sessionData?.user ? 'authenticated' : 'signed-out';
+        });
+      },
+      { timeout: 10000 },
+    ).toBe('signed-out');
+
+    // Verify protected API routes are no longer accessible
+    await expect.poll(
+      async () => {
+        return authenticatedPage.evaluate(async () => {
+          const booksResponse = await fetch('/api/books', { credentials: 'include' });
+          return booksResponse.status;
+        });
+      },
+      { timeout: 10000 },
+    ).toBe(401);
   });
 
   test('should persist session after page reload', async ({ appPage }) => {
