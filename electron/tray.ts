@@ -2,6 +2,23 @@ import { app, Tray, Menu, BrowserWindow, nativeImage } from 'electron';
 import * as path from 'path';
 
 let tray: Tray | null = null;
+let trayMenuLabels: string[] = [];
+
+type TrayDebugState = {
+  exists: boolean;
+  menuLabels: string[];
+};
+
+function publishTrayDebugState() {
+  (globalThis as Record<string, unknown>).__ALEX_E2E_TRAY__ = getTrayDebugState();
+}
+
+export function getTrayDebugState(): TrayDebugState {
+  return {
+    exists: tray !== null,
+    menuLabels: [...trayMenuLabels],
+  };
+}
 
 export function createTray(
   mainWindow: BrowserWindow,
@@ -21,7 +38,7 @@ export function createTray(
   tray = new Tray(icon);
   tray.setToolTip('Alex');
 
-  const contextMenu = Menu.buildFromTemplate([
+  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'Show Alex',
       click: () => {
@@ -44,9 +61,13 @@ export function createTray(
         app.quit();
       },
     },
-  ]);
+  ];
+
+  trayMenuLabels = menuTemplate.flatMap((item) => (typeof item.label === 'string' ? [item.label] : []));
+  const contextMenu = Menu.buildFromTemplate(menuTemplate);
 
   tray.setContextMenu(contextMenu);
+  publishTrayDebugState();
 
   // Click tray icon to toggle window visibility
   tray.on('click', () => {
@@ -68,4 +89,7 @@ export function destroyTray() {
     tray.destroy();
     tray = null;
   }
+
+  trayMenuLabels = [];
+  publishTrayDebugState();
 }
