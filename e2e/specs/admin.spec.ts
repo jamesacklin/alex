@@ -44,4 +44,17 @@ test.describe('Admin Settings', () => {
     await expect(adminUsersPage.userRowByEmail(email)).toContainText('Updated Name');
     await expect(adminUsersPage.userRowByEmail(email)).toContainText('admin');
   });
+
+  test('admin can delete users (US-005)', async ({ authenticatedPage }) => {
+    const adminUsersPage = new AdminUsersPage(authenticatedPage);
+    const nonce = Date.now();
+    const email = `delete-user-${nonce}@localhost`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
+    await adminUsersPage.createUser(email, 'Delete Me', 'password123', 'user');
+    await expect(adminUsersPage.userRowByEmail(email)).toBeVisible();
+
+    await adminUsersPage.deleteUser(email);
+    await expect(adminUsersPage.userRowByEmail(email)).toHaveCount(0);
+  });
 });
