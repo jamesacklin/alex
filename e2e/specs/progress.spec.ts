@@ -14,7 +14,11 @@ const USER_EMAIL = 'user@localhost';
 const USER_PASSWORD = 'user123';
 
 function appUrl(page: Page, path: string): string {
-  return new URL(page.url()).origin + path;
+  const currentUrl = page.url();
+  if (!currentUrl || currentUrl === 'about:blank') {
+    return `http://localhost:3000${path}`;
+  }
+  return new URL(currentUrl).origin + path;
 }
 
 function isElectronMode(): boolean {
@@ -27,13 +31,6 @@ async function loginAs(page: Page, email: string, password: string): Promise<voi
   await page.goto(appUrl(page, '/login'));
   await loginPage.login(email, password);
   await page.waitForURL('**/library', { timeout: 10000 });
-}
-
-async function logout(page: Page): Promise<void> {
-  if (isElectronMode()) return;
-  await page.goto(appUrl(page, '/admin/general'));
-  await page.getByRole('button', { name: /log out/i }).click();
-  await page.waitForURL('**/login', { timeout: 10000 });
 }
 
 async function openPdf(page: Page): Promise<PdfReaderPage> {
@@ -112,15 +109,19 @@ test.describe('Reading Progress', () => {
       return;
     }
 
-    await logout(authenticatedPage);
-    await loginAs(authenticatedPage, USER_EMAIL, USER_PASSWORD);
+    const browser = authenticatedPage.context().browser();
+    if (!browser) {
+      throw new Error('Expected browser context in web mode');
+    }
 
-    const readerForUser = await openPdf(authenticatedPage);
+    const userContext = await browser.newContext();
+    const userPage = await userContext.newPage();
+
+    await loginAs(userPage, USER_EMAIL, USER_PASSWORD);
+    const readerForUser = await openPdf(userPage);
     expect(await readerForUser.getCurrentPage()).toBe(1);
-    await savePdfProgressViaApi(authenticatedPage, 1, totalPages);
-
-    await logout(authenticatedPage);
-    await loginAs(authenticatedPage, ADMIN_EMAIL, ADMIN_PASSWORD);
+    await savePdfProgressViaApi(userPage, 1, totalPages);
+    await userContext.close();
 
     const readerForAdminAgain = await openPdf(authenticatedPage);
     expect(await readerForAdminAgain.getCurrentPage()).toBe(2);
