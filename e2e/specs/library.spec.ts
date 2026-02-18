@@ -111,9 +111,16 @@ test.describe('Library Page', () => {
     const titlesSorted = await libraryPage.getBookTitles();
     expect(titlesSorted.length).toBeGreaterThan(0);
 
-    // Verify alphabetical order (at least first two)
-    if (titlesSorted.length >= 2) {
-      expect(titlesSorted[0].localeCompare(titlesSorted[1])).toBeLessThanOrEqual(0);
+    // Verify alphabetical order. The library may show a "Now Reading" section at top
+    // which can duplicate books. Deduplicate and check the unique list is in order.
+    const uniqueTitles = [...new Set(titlesSorted)];
+    if (uniqueTitles.length >= 2) {
+      // Check that the unique titles are in non-descending alphabetical order
+      const isAlphabeticallySorted = uniqueTitles.every((title, i) => {
+        if (i === 0) return true;
+        return uniqueTitles[i - 1].localeCompare(title) <= 0;
+      });
+      expect(isAlphabeticallySorted).toBe(true);
     }
 
     // Sort by author
