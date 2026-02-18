@@ -220,4 +220,35 @@ test.describe('Collections', () => {
     await expect(authenticatedPage.getByText('Sample PDF Book')).toBeVisible();
     await expect(authenticatedPage.getByRole('button', { name: /remove from collection|edit|delete/i })).toHaveCount(0);
   });
+
+  test('revokes shared link access when collection is unshared (US-010)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const collectionName = `Unshare Collection ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, collectionName, 'Collection to unshare');
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await collectionsPage.clickCollection(collectionName);
+    const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
+
+    await authenticatedPage.getByRole('button', { name: /^Stop Sharing$/ }).click();
+    const stopSharingDialog = authenticatedPage.getByRole('dialog', { name: /^Stop sharing this collection\\?$/ });
+    await stopSharingDialog.waitFor({ state: 'visible' });
+    await stopSharingDialog.getByRole('button', { name: /^Stop Sharing$/ }).click();
+
+    await expect(authenticatedPage.getByRole('button', { name: /^Share$/ })).toBeVisible();
+    await expect(authenticatedPage.getByRole('textbox', { name: /^Share URL$/ })).toHaveCount(0);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await expect(
+      collectionsPage.collectionCardByName(collectionName).locator('[title="This collection is publicly shared"]'),
+    ).toHaveCount(0);
+
+    await authenticatedPage.goto(shareUrl);
+    await expect(authenticatedPage.getByRole('heading', { name: /Collection Not Found/i })).toBeVisible();
+  });
 });
