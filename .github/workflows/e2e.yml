@@ -9,8 +9,11 @@ on:
 # Shared environment variables for all jobs.
 # DATABASE_PATH must point at the test database to avoid conflicts with
 # the default library.db used during normal development.
+# NEXTAUTH_SECRET is required by NextAuth.js at runtime; any stable
+# value works for testing.
 env:
   DATABASE_PATH: ./data/test.db
+  NEXTAUTH_SECRET: e2e-test-secret-do-not-use-in-production
 
 jobs:
   e2e-web:
@@ -47,6 +50,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Playwright needs chromium even for Electron tests because the
+      # default browser context is chromium-backed.
+      - run: pnpm exec playwright install --with-deps chromium
       # Native image-processing libraries required by @napi-rs/canvas
       - run: |
           sudo apt-get update
@@ -75,8 +81,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Playwright needs chromium even for Electron tests.
+      - run: pnpm exec playwright install --with-deps chromium
       # macOS has a native display server (Aqua), so no xvfb-run needed.
-      # No native apt dependencies needed; macOS provides them via Homebrew/system.
       - run: pnpm build:native
       - run: pnpm build
       - run: npx tsc -p electron/tsconfig.json
@@ -99,6 +106,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Playwright needs chromium even for Electron tests.
+      # --with-deps installs required system libraries on Windows.
+      - run: pnpm exec playwright install --with-deps chromium
       # Windows has a native display server (DWM), so no xvfb-run needed.
       - run: pnpm build:native
       - run: pnpm build
