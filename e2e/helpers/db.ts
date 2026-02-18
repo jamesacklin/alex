@@ -61,7 +61,7 @@ export async function seedDatabase() {
 
   // Create test books
   const pdfPath = path.join(FIXTURES_DIR, 'sample.pdf');
-  const epubPath = path.join(FIXTURES_DIR, 'sample.epub');
+  const epubPath = path.join(FIXTURES_DIR, 'sample-chapters.epub');
   const pdf2Path = path.join(FIXTURES_DIR, 'sample2.pdf');
   const coverPdfPath = path.join(FIXTURES_DIR, 'cover-pdf.png');
   const coverEpubPath = path.join(FIXTURES_DIR, 'cover-epub.png');
