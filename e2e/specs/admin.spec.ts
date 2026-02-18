@@ -2,14 +2,26 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/auth.fixture';
 import { test as appTest } from '../fixtures/app.fixture';
 import { AdminUsersPage } from '../page-objects/admin-users.page';
+import { AdminLibraryPage } from '../page-objects/admin-library.page';
 import { LoginPage } from '../page-objects/login.page';
 
 function appUrl(page: Page, path: string): string {
+  const defaultOrigin = process.env.E2E_PLATFORM === 'electron'
+    ? 'http://localhost:3210'
+    : 'http://localhost:3000';
   const currentUrl = page.url();
   if (!currentUrl || currentUrl === 'about:blank') {
-    return `http://localhost:3000${path}`;
+    return `${defaultOrigin}${path}`;
   }
-  return new URL(currentUrl).origin + path;
+  try {
+    const parsed = new URL(currentUrl);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.origin + path;
+    }
+  } catch {
+    return `${defaultOrigin}${path}`;
+  }
+  return `${defaultOrigin}${path}`;
 }
 
 test.describe('Admin Settings', () => {
@@ -58,6 +70,23 @@ test.describe('Admin Settings', () => {
 
     await adminUsersPage.deleteUser(email);
     await expect(adminUsersPage.userRowByEmail(email)).toHaveCount(0);
+  });
+
+  test('admin library path setting visibility is electron-only (US-007)', async ({ authenticatedPage }) => {
+    const adminLibraryPage = new AdminLibraryPage(authenticatedPage);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/library'));
+    await expect(authenticatedPage).toHaveURL(/\/admin\/library/, { timeout: 10000 });
+
+    if (process.env.E2E_PLATFORM === 'electron') {
+      await expect(
+        authenticatedPage.getByText('Library Directory', { exact: true }).first(),
+      ).toBeVisible({ timeout: 15000 });
+      await expect(adminLibraryPage.changeLibraryPathButton).toBeVisible({ timeout: 15000 });
+    } else {
+      await expect(authenticatedPage.getByRole('heading', { name: /library directory/i })).toHaveCount(0);
+      await expect(adminLibraryPage.changeLibraryPathButton).toHaveCount(0);
+    }
   });
 });
 
