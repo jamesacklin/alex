@@ -2,6 +2,7 @@
 // Playwright's fixture `use()` function is not a React hook
 import { test as base, type Page } from '@playwright/test';
 import { _electron as electron } from 'playwright';
+import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
@@ -18,6 +19,12 @@ export const test = base.extend<AppFixture>({
       console.log('[Fixture] Setting up Electron test environment');
       console.log('[Fixture] User data dir:', testUserDataDir);
       console.log('[Fixture] Library path:', testLibraryPath);
+
+      const electronEntry = path.join(process.cwd(), 'electron', 'dist', 'main.js');
+      if (!fs.existsSync(electronEntry)) {
+        console.log('[Fixture] Electron dist missing, compiling main process...');
+        execSync('pnpm electron:compile', { stdio: 'inherit' });
+      }
 
       // Ensure test directories exist
       fs.mkdirSync(testUserDataDir, { recursive: true });
@@ -37,7 +44,7 @@ export const test = base.extend<AppFixture>({
         args: [
           `--user-data-dir=${testUserDataDir}`,
           '--disable-dev-tools', // Prevent DevTools from interfering with tests
-          'electron/dist/main.js',
+          electronEntry,
         ],
         env: {
           ...process.env,
