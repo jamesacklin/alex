@@ -46,7 +46,7 @@ export class AdminUsersPage {
   }
 
   get roleSelect(): Locator {
-    return this.page.getByRole('combobox', { name: /role/i });
+    return this.createUserDialog.locator('button[role="combobox"]').first();
   }
 
   get saveUserButton(): Locator {
