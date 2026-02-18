@@ -41,6 +41,19 @@ async function addBookToCollectionFromLibrary(
   await expect(dialog).toBeHidden();
 }
 
+async function shareCollectionAndGetLink(page: Page): Promise<string> {
+  await page.getByRole('button', { name: /^Share$/ }).click();
+  const shareDialog = page.getByRole('dialog', { name: /^Share Collection$/ });
+  await shareDialog.waitFor({ state: 'visible' });
+  await shareDialog.getByRole('button', { name: /^Enable Sharing$/ }).click();
+
+  const shareUrlInput = page.getByRole('textbox', { name: /^Share URL$/ });
+  await expect(shareUrlInput).toBeVisible();
+  const shareUrl = await shareUrlInput.inputValue();
+  expect(shareUrl).toMatch(/\/shared\/[^/]+$/);
+  return shareUrl;
+}
+
 test.describe('Collections', () => {
   test('creates a new collection (US-003)', async ({ authenticatedPage }) => {
     const collectionsPage = new CollectionsPage(authenticatedPage);
@@ -147,5 +160,28 @@ test.describe('Collections', () => {
     await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
     await libraryPage.waitForBooksToLoad();
     await expect(libraryPage.bookCardByTitle('Sample EPUB Book')).toBeVisible();
+  });
+
+  test('shares a collection and generates a public link (US-008)', async ({ authenticatedPage }) => {
+    const collectionsPage = new CollectionsPage(authenticatedPage);
+    const collectionName = `Shared Collection ${Date.now()}`;
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await createCollection(collectionsPage, collectionName, 'Collection to share');
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await collectionsPage.clickCollection(collectionName);
+
+    const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
+    await collectionsPage.copyShareLinkButton.click();
+    expect(shareUrl).toContain('/shared/');
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await expect(
+      collectionsPage.collectionCardByName(collectionName).locator('[title="This collection is publicly shared"]'),
+    ).toBeVisible();
   });
 });
