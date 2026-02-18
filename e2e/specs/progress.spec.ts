@@ -62,6 +62,19 @@ async function savePdfProgressViaApi(page: Page, currentPage: number, totalPages
   expect(response).toBe(true);
 }
 
+async function readPdfProgressFromApi(page: Page): Promise<{
+  currentPage: number;
+  totalPages: number;
+  percentComplete: number;
+}> {
+  const progress = await page.evaluate(async (bookId) => {
+    const res = await fetch(`/api/books/${bookId}/progress`);
+    return res.json();
+  }, PDF_BOOK_ID);
+
+  return progress;
+}
+
 test.describe('Reading Progress', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
     await resetDatabase();
@@ -111,5 +124,21 @@ test.describe('Reading Progress', () => {
 
     const readerForAdminAgain = await openPdf(authenticatedPage);
     expect(await readerForAdminAgain.getCurrentPage()).toBe(2);
+  });
+
+  test('persists PDF progress to the progress API (US-013)', async ({ authenticatedPage }) => {
+    const reader = await openPdf(authenticatedPage);
+    const totalPages = await reader.getTotalPages();
+    expect(totalPages).toBeGreaterThan(0);
+
+    const targetPage = Math.min(2, totalPages);
+    await reader.jumpToPage(targetPage);
+    await expect.poll(() => reader.getCurrentPage()).toBe(targetPage);
+    await authenticatedPage.waitForTimeout(2000);
+
+    const progress = await readPdfProgressFromApi(authenticatedPage);
+    expect(progress.currentPage).toBe(targetPage);
+    expect(progress.totalPages).toBe(totalPages);
+    expect(progress.percentComplete).toBeCloseTo((targetPage / totalPages) * 100, 2);
   });
 });
