@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { test } from '../fixtures/auth.fixture';
 import { PdfReaderPage } from '../page-objects/pdf-reader.page';
 import { resetDatabase, seedDatabase } from '../helpers/db';
@@ -6,9 +6,15 @@ import { resetDatabase, seedDatabase } from '../helpers/db';
 const PDF_BOOK_ID = 'book-pdf-1';
 const PDF_BOOK_TITLE = 'Sample PDF Book';
 
+// Electron does not set a baseURL, so relative URLs fail in page.goto().
+// Use the current page's origin to construct absolute URLs.
+function appUrl(page: Page, path: string): string {
+  return new URL(page.url()).origin + path;
+}
+
 test.describe('PDF Reader', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
-    await authenticatedPage.goto(`/read/${PDF_BOOK_ID}`);
+    await authenticatedPage.goto(appUrl(authenticatedPage, `/read/${PDF_BOOK_ID}`));
   });
 
   test('opens and renders first page (US-003)', async ({ authenticatedPage }) => {
@@ -138,10 +144,12 @@ test.describe('PDF Reader', () => {
     await resetDatabase();
     await seedDatabase();
 
-    // Re-authenticate by navigating to library first (session may reset after db reset)
+    const origin = new URL(authenticatedPage.url()).origin;
     const isElectron = process.env.E2E_PLATFORM === 'electron';
+
+    // Re-authenticate after db reset (web only; Electron uses synthetic auth)
     if (!isElectron) {
-      await authenticatedPage.goto('/login');
+      await authenticatedPage.goto(`${origin}/login`);
       await authenticatedPage.fill('input[type="email"]', 'admin@localhost');
       await authenticatedPage.fill('input[type="password"]', 'admin123');
       await authenticatedPage.click('button[type="submit"]');
@@ -149,7 +157,7 @@ test.describe('PDF Reader', () => {
     }
 
     // Open the PDF book
-    await authenticatedPage.goto(`/read/${PDF_BOOK_ID}`);
+    await authenticatedPage.goto(`${origin}/read/${PDF_BOOK_ID}`);
 
     const reader = new PdfReaderPage(authenticatedPage);
     await reader.waitForLoad();
@@ -176,11 +184,11 @@ test.describe('PDF Reader', () => {
     await authenticatedPage.waitForTimeout(2000);
 
     // Navigate back to library
-    await authenticatedPage.goto('/library');
+    await authenticatedPage.goto(`${origin}/library`);
     await authenticatedPage.waitForLoadState('domcontentloaded');
 
     // Reopen the same book
-    await authenticatedPage.goto(`/read/${PDF_BOOK_ID}`);
+    await authenticatedPage.goto(`${origin}/read/${PDF_BOOK_ID}`);
 
     const reader2 = new PdfReaderPage(authenticatedPage);
     await reader2.waitForLoad();

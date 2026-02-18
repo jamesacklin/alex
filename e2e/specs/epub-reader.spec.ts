@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { test } from '../fixtures/auth.fixture';
 import { EpubReaderPage } from '../page-objects/epub-reader.page';
 import { resetDatabase, seedDatabase } from '../helpers/db';
@@ -12,6 +12,12 @@ test.afterAll(async () => {
 const EPUB_BOOK_ID = 'book-epub-1';
 const EPUB_BOOK_TITLE = 'Sample EPUB Book';
 
+// Electron does not set a baseURL, so relative URLs fail in page.goto().
+// Use the current page's origin to construct absolute URLs.
+function appUrl(page: Page, path: string): string {
+  return new URL(page.url()).origin + path;
+}
+
 test.describe('EPUB Reader', () => {
   test.beforeEach(async ({ authenticatedPage }) => {
     // Clear saved EPUB progress to start each test from the beginning
@@ -19,7 +25,7 @@ test.describe('EPUB Reader', () => {
       localStorage.removeItem(`epub-progress:${bookId}`);
     }, EPUB_BOOK_ID);
 
-    await authenticatedPage.goto(`/read/${EPUB_BOOK_ID}`);
+    await authenticatedPage.goto(appUrl(authenticatedPage, `/read/${EPUB_BOOK_ID}`));
   });
 
   test('opens and renders EPUB content (US-008)', async ({ authenticatedPage }) => {
@@ -61,8 +67,8 @@ test.describe('EPUB Reader', () => {
 
     const progressAfterScroll = await reader.getProgressPercent();
 
-    // Progress should have increased or stayed the same (small EPUBs may show 0% until locations load)
-    // The key assertion is that no error occurred and the reader is still functional
+    // Progress should be a valid percentage value
+    // (small EPUBs may show 0% until locations finish generating)
     expect(progressAfterScroll).toBeGreaterThanOrEqual(0);
     expect(progressAfterScroll).toBeLessThanOrEqual(100);
 
@@ -83,22 +89,20 @@ test.describe('EPUB Reader', () => {
     const nextChapterDisabled = await reader.nextChapterButton.isDisabled();
 
     if (nextChapterDisabled) {
-      // Single-chapter EPUB: verify buttons exist in expected disabled/enabled state
+      // Single-chapter EPUB: verify buttons exist in expected disabled state
       await expect(reader.previousChapterButton).toBeDisabled();
       await expect(reader.nextChapterButton).toBeDisabled();
       return;
     }
 
     // Multi-chapter EPUB: test navigation
-    // Get initial content reference via page URL or location
     const initialUrl = authenticatedPage.url();
 
     // Navigate to next chapter
     await reader.clickNextChapter();
     await authenticatedPage.waitForTimeout(2000);
 
-    // The chapter changed - progress should reflect the new position
-    // (Even if progress is 0%, the chapter button state changes)
+    // After moving forward, previous chapter should be enabled
     await expect(reader.previousChapterButton).not.toBeDisabled();
 
     // Navigate back to previous chapter
@@ -108,7 +112,7 @@ test.describe('EPUB Reader', () => {
     // Back at beginning: previous should be disabled
     await expect(reader.previousChapterButton).toBeDisabled();
 
-    // Verify URL didn't change (reader is a single page app)
+    // Verify URL didn't change (reader is a single-page app)
     expect(authenticatedPage.url()).toBe(initialUrl);
   });
 
@@ -153,7 +157,6 @@ test.describe('EPUB Reader', () => {
 
     await reader.waitForLoad();
 
-    // Read initial background color from the app root
     const getBackgroundClass = () =>
       authenticatedPage.evaluate(() =>
         document.documentElement.classList.contains('dark'),
@@ -161,8 +164,7 @@ test.describe('EPUB Reader', () => {
 
     const initiallyDark = await getBackgroundClass();
 
-    // Toggle dark mode by adding/removing the 'dark' class on documentElement
-    // (simulates what a dark mode toggle would do)
+    // Toggle dark mode by adding the 'dark' class on documentElement
     await authenticatedPage.evaluate(() => {
       document.documentElement.classList.add('dark');
     });
@@ -171,7 +173,7 @@ test.describe('EPUB Reader', () => {
     const isDarkAfterToggle = await getBackgroundClass();
     expect(isDarkAfterToggle).toBe(true);
 
-    // Verify the reader area reflects the dark theme (background changes)
+    // Verify the reader header reflects the dark theme
     const headerBg = await authenticatedPage.evaluate(() => {
       const header = document.querySelector('header');
       if (!header) return null;
@@ -224,7 +226,7 @@ test.describe('EPUB Reader', () => {
     // Verify Large is no longer selected
     await expect(largeButton).not.toHaveClass(/bg-primary/);
 
-    // Close settings by clicking outside (the backdrop)
+    // Close settings by clicking the backdrop
     await authenticatedPage.locator('[class*="bg-black"]').last().click();
   });
 
@@ -232,15 +234,17 @@ test.describe('EPUB Reader', () => {
     await resetDatabase();
     await seedDatabase();
 
+    const origin = new URL(authenticatedPage.url()).origin;
+    const isElectron = process.env.E2E_PLATFORM === 'electron';
+
     // Clear saved progress for this book
     await authenticatedPage.evaluate((bookId: string) => {
       localStorage.removeItem(`epub-progress:${bookId}`);
     }, EPUB_BOOK_ID);
 
-    // Re-authenticate after db reset (web only)
-    const isElectron = process.env.E2E_PLATFORM === 'electron';
+    // Re-authenticate after db reset (web only; Electron uses synthetic auth)
     if (!isElectron) {
-      await authenticatedPage.goto('/login');
+      await authenticatedPage.goto(`${origin}/login`);
       await authenticatedPage.fill('input[type="email"]', 'admin@localhost');
       await authenticatedPage.fill('input[type="password"]', 'admin123');
       await authenticatedPage.click('button[type="submit"]');
@@ -248,7 +252,7 @@ test.describe('EPUB Reader', () => {
     }
 
     // Open the EPUB book
-    await authenticatedPage.goto(`/read/${EPUB_BOOK_ID}`);
+    await authenticatedPage.goto(`${origin}/read/${EPUB_BOOK_ID}`);
     const reader = new EpubReaderPage(authenticatedPage);
     await reader.waitForLoad();
 
@@ -275,10 +279,8 @@ test.describe('EPUB Reader', () => {
       }
     }, EPUB_BOOK_ID);
 
-    // If locations weren't generated yet, we can't verify CFI-based resume
-    // but we can still verify the reader is functional
+    // If locations weren't generated yet, verify the reader is functional and exit
     if (!savedProgress?.epubLocation) {
-      // Verify reader is still working
       await expect(authenticatedPage.locator('.epub-container, iframe').first()).toBeVisible();
       return;
     }
@@ -287,11 +289,11 @@ test.describe('EPUB Reader', () => {
     expect(savedCfi).toMatch(/^epubcfi\(/);
 
     // Navigate away to library
-    await authenticatedPage.goto('/library');
+    await authenticatedPage.goto(`${origin}/library`);
     await authenticatedPage.waitForLoadState('domcontentloaded');
 
     // Reopen the same EPUB
-    await authenticatedPage.goto(`/read/${EPUB_BOOK_ID}`);
+    await authenticatedPage.goto(`${origin}/read/${EPUB_BOOK_ID}`);
     const reader2 = new EpubReaderPage(authenticatedPage);
     await reader2.waitForLoad();
 
@@ -299,7 +301,7 @@ test.describe('EPUB Reader', () => {
     await authenticatedPage.waitForTimeout(3000);
 
     // Verify progress is still saved in localStorage after reload
-    // (epubjs may normalize CFIs on restore, so we only verify a valid CFI is present)
+    // (epubjs may normalize CFIs on restore, so only verify a valid CFI is present)
     const progressAfterReload = await authenticatedPage.evaluate((bookId: string) => {
       const raw = localStorage.getItem(`epub-progress:${bookId}`);
       if (!raw) return null;
