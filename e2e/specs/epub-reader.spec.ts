@@ -53,9 +53,6 @@ test.describe('EPUB Reader', () => {
     // Wait for locations to be generated (needed for percent tracking)
     await authenticatedPage.waitForTimeout(3000);
 
-    // Get the initial progress
-    const initialProgress = await reader.getProgressPercent();
-
     // Scroll down through the content
     for (let i = 0; i < 5; i++) {
       await reader.scrollDown();
