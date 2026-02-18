@@ -23,6 +23,11 @@ export default async function globalSetup() {
     console.log('[E2E] Running database migration...');
     execSync('pnpm db:push', { stdio: 'inherit' });
 
+    if (process.env.E2E_PLATFORM === 'electron') {
+      console.log('[E2E] Compiling Electron main process...');
+      execSync('pnpm electron:compile', { stdio: 'inherit' });
+    }
+
     // Reset and seed test database
     console.log('[E2E] Resetting database...');
     await resetDatabase();

@@ -4,6 +4,7 @@ import { test as appTest } from '../fixtures/app.fixture';
 import { AdminUsersPage } from '../page-objects/admin-users.page';
 import { AdminLibraryPage } from '../page-objects/admin-library.page';
 import { LoginPage } from '../page-objects/login.page';
+import { LibraryPage } from '../page-objects/library.page';
 
 function appUrl(page: Page, path: string): string {
   const defaultOrigin = process.env.E2E_PLATFORM === 'electron'
@@ -87,6 +88,20 @@ test.describe('Admin Settings', () => {
       await expect(authenticatedPage.getByRole('heading', { name: /library directory/i })).toHaveCount(0);
       await expect(adminLibraryPage.changeLibraryPathButton).toHaveCount(0);
     }
+  });
+
+  test('admin can clear the library (US-008)', async ({ authenticatedPage }) => {
+    const adminLibraryPage = new AdminLibraryPage(authenticatedPage);
+    const libraryPage = new LibraryPage(authenticatedPage);
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/library'));
+    await adminLibraryPage.clickClearLibrary();
+    await expect(authenticatedPage.getByText(/library cleared/i)).toBeVisible({ timeout: 15000 });
+
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await libraryPage.waitForBooksToLoad();
+    await expect(libraryPage.emptyStateMessage).toBeVisible({ timeout: 20000 });
+    expect(await libraryPage.getBookCount()).toBe(0);
   });
 });
 

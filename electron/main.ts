@@ -14,6 +14,7 @@ let isFirstRun = false;
 
 const PORT = 3210;
 const isDev = !app.isPackaged;
+const isE2E = process.env.ALEX_E2E === 'true';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -213,7 +214,7 @@ function startServer(libraryPath: string) {
     ? (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
     : getPackagedNodeCommand();
   const args = isDev
-    ? ['next', 'dev', '-p', PORT.toString(), '-H', '127.0.0.1']
+    ? ['next', 'dev', '--webpack', '-p', PORT.toString(), '-H', '127.0.0.1']
     : [
         '-e',
         packagedBootstrapScript,
@@ -256,7 +257,7 @@ function startServer(libraryPath: string) {
   });
 }
 
-async function waitForServerReady(timeoutMs = 30000) {
+async function waitForServerReady(timeoutMs = isE2E ? 120000 : 30000) {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown = null;
 
@@ -267,11 +268,18 @@ async function waitForServerReady(timeoutMs = 30000) {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:${PORT}/login`, {
-        method: 'GET',
-      });
-      if (response.status >= 200 && response.status < 500) {
-        return true;
+      const controller = new AbortController();
+      const requestTimeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(`http://127.0.0.1:${PORT}/favicon.ico`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        if (response.status >= 200 && response.status < 500) {
+          return true;
+        }
+      } finally {
+        clearTimeout(requestTimeout);
       }
     } catch (error) {
       lastError = error;
@@ -463,7 +471,7 @@ function createWindow() {
     : `http://localhost:${PORT}`;
   mainWindow.loadURL(startUrl);
 
-  if (isDev) {
+  if (isDev && !isE2E) {
     mainWindow.webContents.openDevTools();
   }
 
