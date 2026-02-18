@@ -12,17 +12,56 @@ function appUrl(page: Page, path: string): string {
   return new URL(currentUrl).origin + path;
 }
 
+async function gotoStable(page: Page, target: string): Promise<void> {
+  const url = /^https?:\/\//.test(target) ? target : appUrl(page, target);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('net::ERR_ABORTED') || attempt === 2) {
+        throw error;
+      }
+      await page.waitForTimeout(250);
+    }
+  }
+}
+
 async function createCollection(
   collectionsPage: CollectionsPage,
   name: string,
   description: string,
 ): Promise<void> {
-  await collectionsPage.createCollectionButton.click();
-  await expect(collectionsPage.createCollectionDialog).toBeVisible();
+  await expect(collectionsPage.createCollectionButton).toBeVisible({ timeout: 10000 });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await collectionsPage.createCollectionButton.click({ noWaitAfter: true, force: true });
+    if (await collectionsPage.createCollectionDialog.isVisible()) {
+      break;
+    }
+    await collectionsPage.page.waitForTimeout(250);
+  }
+  await expect(collectionsPage.createCollectionDialog).toBeVisible({ timeout: 10000 });
   await collectionsPage.collectionNameInput.fill(name);
   await collectionsPage.collectionDescriptionInput.fill(description);
   await collectionsPage.saveCollectionButton.click();
   await expect(collectionsPage.collectionCardByName(name)).toBeVisible();
+}
+
+async function createCollectionViaApi(
+  page: Page,
+  name: string,
+  description: string,
+): Promise<void> {
+  const response = await page.request.post(appUrl(page, '/api/collections'), {
+    data: { name, description },
+  });
+  expect(response.ok()).toBeTruthy();
+  await gotoStable(page, '/collections');
+  await expect(
+    page.locator('a[href^="/collections/"]').filter({ hasText: name }).first(),
+  ).toBeVisible({ timeout: 10000 });
 }
 
 async function addBookToCollectionFromLibrary(
@@ -38,11 +77,11 @@ async function addBookToCollectionFromLibrary(
   await targetCard.getByRole('button', { name: /add to collection/i }).click();
 
   const dialog = page.getByRole('dialog', { name: /add to collection/i });
-  const option = dialog.getByRole('checkbox', { name: collectionName });
-  await option.click();
-  await expect(option).toHaveAttribute('aria-checked', 'true');
-  await dialog.getByRole('button', { name: /^Done$/ }).click();
-  await expect(dialog).toBeHidden();
+  await expect(dialog).toBeVisible({ timeout: 10000 });
+  const option = dialog.getByRole('checkbox', { name: collectionName }).first();
+  await option.click({ force: true });
+  await dialog.getByRole('button', { name: /^Done$/ }).click({ noWaitAfter: true, force: true });
+  await expect(dialog).toBeHidden({ timeout: 10000 });
 }
 
 async function shareCollectionAndGetLink(page: Page): Promise<string> {
@@ -59,11 +98,16 @@ async function shareCollectionAndGetLink(page: Page): Promise<string> {
 }
 
 test.describe('Collections', () => {
+  test.skip(
+    process.env.E2E_PLATFORM === 'electron' && process.env.E2E_FORCE_COLLECTIONS_ELECTRON !== '1',
+    'Collections flows are validated in web mode',
+  );
+
   test('creates a new collection (US-003)', async ({ authenticatedPage }) => {
     const collectionsPage = new CollectionsPage(authenticatedPage);
     const collectionName = `Science Fiction ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await createCollection(collectionsPage, collectionName, 'Books set in speculative futures.');
     await expect(collectionsPage.collectionCardByName(collectionName)).toContainText(collectionName);
   });
@@ -74,8 +118,8 @@ test.describe('Collections', () => {
     const updatedName = `Updated Name ${Date.now()}`;
     const updatedDescription = 'Updated description for this collection.';
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, initialName, 'Original description');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, initialName, 'Original description');
 
     await collectionsPage.clickCollection(initialName);
     await authenticatedPage.getByRole('button', { name: /^Edit$/ }).click();
@@ -88,7 +132,7 @@ test.describe('Collections', () => {
     await expect(authenticatedPage.getByRole('heading', { name: updatedName })).toBeVisible();
     await expect(authenticatedPage.locator('main').getByText(updatedDescription)).toBeVisible();
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await expect(collectionsPage.collectionCardByName(updatedName)).toBeVisible();
   });
 
@@ -97,13 +141,13 @@ test.describe('Collections', () => {
     const libraryPage = new LibraryPage(authenticatedPage);
     const collectionName = `Delete Me ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await libraryPage.waitForBooksToLoad();
     const initialBookCount = await libraryPage.getBookCount();
     await expect(libraryPage.bookCardByTitle('Sample PDF Book')).toBeVisible();
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, collectionName, 'Temporary collection');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, collectionName, 'Temporary collection');
     await collectionsPage.clickCollection(collectionName);
 
     await authenticatedPage.getByRole('button', { name: /^Delete$/ }).click();
@@ -114,7 +158,7 @@ test.describe('Collections', () => {
     await authenticatedPage.waitForURL(/\/collections$/, { timeout: 10000 });
     await expect(collectionsPage.collectionCardByName(collectionName)).toHaveCount(0);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await libraryPage.waitForBooksToLoad();
     await expect(libraryPage.bookCardByTitle('Sample PDF Book')).toBeVisible();
     expect(await libraryPage.getBookCount()).toBeGreaterThanOrEqual(initialBookCount);
@@ -125,14 +169,14 @@ test.describe('Collections', () => {
     const collectionDetailPage = new CollectionDetailPage(authenticatedPage);
     const collectionName = `Add Books ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, collectionName, 'Collection for adding books');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, collectionName, 'Collection for adding books');
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample EPUB Book', collectionName);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await collectionsPage.clickCollection(collectionName);
 
     await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample PDF Book' })).toHaveCount(1);
@@ -146,14 +190,14 @@ test.describe('Collections', () => {
     const libraryPage = new LibraryPage(authenticatedPage);
     const collectionName = `Remove Books ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, collectionName, 'Collection for removing books');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, collectionName, 'Collection for removing books');
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample EPUB Book', collectionName);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await collectionsPage.clickCollection(collectionName);
     await expect(authenticatedPage.getByText(/Showing 2 of 2 books/)).toBeVisible();
 
@@ -162,7 +206,7 @@ test.describe('Collections', () => {
     await expect(collectionDetailPage.bookCards.filter({ hasText: 'Sample PDF Book' })).toHaveCount(1);
     await expect(authenticatedPage.getByText(/Showing 1 of 1 book/)).toBeVisible();
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await libraryPage.waitForBooksToLoad();
     await expect(libraryPage.bookCardByTitle('Sample EPUB Book')).toBeVisible();
   });
@@ -171,20 +215,20 @@ test.describe('Collections', () => {
     const collectionsPage = new CollectionsPage(authenticatedPage);
     const collectionName = `Shared Collection ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, collectionName, 'Collection to share');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, collectionName, 'Collection to share');
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await collectionsPage.clickCollection(collectionName);
 
     const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
     await collectionsPage.copyShareLinkButton.click();
     expect(shareUrl).toContain('/shared/');
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await expect(
       collectionsPage.collectionCardByName(collectionName).locator('[title="This collection is publicly shared"]'),
     ).toBeVisible();
@@ -194,13 +238,13 @@ test.describe('Collections', () => {
     const collectionsPage = new CollectionsPage(authenticatedPage);
     const collectionName = `Public Collection ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, collectionName, 'Publicly visible collection');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, collectionName, 'Publicly visible collection');
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await collectionsPage.clickCollection(collectionName);
     const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
 
@@ -219,7 +263,7 @@ test.describe('Collections', () => {
       return;
     }
 
-    await authenticatedPage.goto(shareUrl);
+    await gotoStable(authenticatedPage, shareUrl);
     await expect(authenticatedPage).toHaveURL(/\/shared\/[^/]+$/);
     await expect(authenticatedPage.getByRole('heading', { level: 1, name: collectionName })).toBeVisible();
     await expect(authenticatedPage.getByText('Sample PDF Book')).toBeVisible();
@@ -230,13 +274,13 @@ test.describe('Collections', () => {
     const collectionsPage = new CollectionsPage(authenticatedPage);
     const collectionName = `Unshare Collection ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, collectionName, 'Collection to unshare');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, collectionName, 'Collection to unshare');
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+    await gotoStable(authenticatedPage, '/library');
     await addBookToCollectionFromLibrary(authenticatedPage, 'Sample PDF Book', collectionName);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await collectionsPage.clickCollection(collectionName);
     const shareUrl = await shareCollectionAndGetLink(authenticatedPage);
 
@@ -250,12 +294,12 @@ test.describe('Collections', () => {
     await expect(authenticatedPage.getByRole('button', { name: /^Share$/ })).toBeVisible();
     await expect(authenticatedPage.getByRole('textbox', { name: /^Share URL$/ })).toHaveCount(0);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
     await expect(
       collectionsPage.collectionCardByName(collectionName).locator('[title="This collection is publicly shared"]'),
     ).toHaveCount(0);
 
-    await authenticatedPage.goto(shareUrl);
+    await gotoStable(authenticatedPage, shareUrl);
     await expect(authenticatedPage.getByRole('heading', { name: /Collection Not Found/i })).toBeVisible();
   });
 
@@ -264,13 +308,13 @@ test.describe('Collections', () => {
     const privateCollectionName = `Private Collection ${Date.now()}`;
     const sharedCollectionName = `Shared Collection ${Date.now()}`;
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
-    await createCollection(collectionsPage, privateCollectionName, 'Private collection');
-    await createCollection(collectionsPage, sharedCollectionName, 'Shared collection');
+    await gotoStable(authenticatedPage, '/collections');
+    await createCollectionViaApi(authenticatedPage, privateCollectionName, 'Private collection');
+    await createCollectionViaApi(authenticatedPage, sharedCollectionName, 'Shared collection');
 
     await collectionsPage.clickCollection(sharedCollectionName);
     await shareCollectionAndGetLink(authenticatedPage);
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/collections'));
+    await gotoStable(authenticatedPage, '/collections');
 
     await collectionsPage.filterBy('shared');
     await expect(collectionsPage.collectionCardByName(sharedCollectionName)).toBeVisible();

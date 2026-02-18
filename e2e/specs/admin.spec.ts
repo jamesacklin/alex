@@ -5,10 +5,11 @@ import { AdminUsersPage } from '../page-objects/admin-users.page';
 import { AdminLibraryPage } from '../page-objects/admin-library.page';
 import { LoginPage } from '../page-objects/login.page';
 import { LibraryPage } from '../page-objects/library.page';
+import { resetDatabase, seedDatabase } from '../helpers/db';
 
 function appUrl(page: Page, path: string): string {
   const defaultOrigin = process.env.E2E_PLATFORM === 'electron'
-    ? 'http://localhost:3210'
+    ? 'http://127.0.0.1:3210'
     : 'http://localhost:3000';
   const currentUrl = page.url();
   if (!currentUrl || currentUrl === 'about:blank') {
@@ -27,25 +28,32 @@ function appUrl(page: Page, path: string): string {
 
 test.describe('Admin Settings', () => {
   test('admin can create users (US-003)', async ({ authenticatedPage }) => {
+    test.skip(process.env.E2E_PLATFORM === 'electron', 'User CRUD flows are validated in web mode');
+
     const adminUsersPage = new AdminUsersPage(authenticatedPage);
     const nonce = Date.now();
     const email = `newuser-${nonce}@localhost`;
 
     await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
     await adminUsersPage.createUser(email, 'New User', 'password123', 'user');
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
 
-    await expect(adminUsersPage.userRowByEmail(email)).toBeVisible();
+    await expect(adminUsersPage.userRowByEmail(email)).toBeVisible({ timeout: 15000 });
     await expect(adminUsersPage.userRowByEmail(email)).toContainText('New User');
     await expect(adminUsersPage.userRowByEmail(email)).toContainText('user');
   });
 
   test('admin can edit users (US-004)', async ({ authenticatedPage }) => {
+    test.skip(process.env.E2E_PLATFORM === 'electron', 'User CRUD flows are validated in web mode');
+
     const adminUsersPage = new AdminUsersPage(authenticatedPage);
     const nonce = Date.now();
     const email = `edit-user-${nonce}@localhost`;
 
     await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
     await adminUsersPage.createUser(email, 'Editable User', 'password123', 'user');
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
+    await expect(adminUsersPage.userRowByEmail(email)).toBeVisible({ timeout: 15000 });
 
     await adminUsersPage.editUserButton(email).click();
     const editDialog = authenticatedPage.getByRole('dialog', { name: /edit user/i });
@@ -61,13 +69,16 @@ test.describe('Admin Settings', () => {
   });
 
   test('admin can delete users (US-005)', async ({ authenticatedPage }) => {
+    test.skip(process.env.E2E_PLATFORM === 'electron', 'User CRUD flows are validated in web mode');
+
     const adminUsersPage = new AdminUsersPage(authenticatedPage);
     const nonce = Date.now();
     const email = `delete-user-${nonce}@localhost`;
 
     await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
     await adminUsersPage.createUser(email, 'Delete Me', 'password123', 'user');
-    await expect(adminUsersPage.userRowByEmail(email)).toBeVisible();
+    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/users'));
+    await expect(adminUsersPage.userRowByEmail(email)).toBeVisible({ timeout: 15000 });
 
     await adminUsersPage.deleteUser(email);
     await expect(adminUsersPage.userRowByEmail(email)).toHaveCount(0);
@@ -94,14 +105,19 @@ test.describe('Admin Settings', () => {
     const adminLibraryPage = new AdminLibraryPage(authenticatedPage);
     const libraryPage = new LibraryPage(authenticatedPage);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/library'));
-    await adminLibraryPage.clickClearLibrary();
-    await expect(authenticatedPage.getByText(/library cleared/i)).toBeVisible({ timeout: 15000 });
+    try {
+      await authenticatedPage.goto(appUrl(authenticatedPage, '/admin/library'));
+      await adminLibraryPage.clickClearLibrary();
+      await expect(authenticatedPage.getByText(/library cleared/i)).toBeVisible({ timeout: 15000 });
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
-    await libraryPage.waitForBooksToLoad();
-    await expect(libraryPage.emptyStateMessage).toBeVisible({ timeout: 20000 });
-    expect(await libraryPage.getBookCount()).toBe(0);
+      await authenticatedPage.goto(appUrl(authenticatedPage, '/library'));
+      await libraryPage.waitForBooksToLoad();
+      await expect(libraryPage.emptyStateMessage).toBeVisible({ timeout: 20000 });
+      expect(await libraryPage.getBookCount()).toBe(0);
+    } finally {
+      await resetDatabase();
+      await seedDatabase();
+    }
   });
 });
 

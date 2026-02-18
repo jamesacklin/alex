@@ -15,7 +15,40 @@ const EPUB_BOOK_TITLE = 'Sample EPUB Book';
 // Electron does not set a baseURL, so relative URLs fail in page.goto().
 // Use the current page's origin to construct absolute URLs.
 function appUrl(page: Page, path: string): string {
-  return new URL(page.url()).origin + path;
+  const fallbackOrigin = process.env.E2E_PLATFORM === 'electron'
+    ? 'http://127.0.0.1:3210'
+    : 'http://localhost:3000';
+
+  const currentUrl = page.url();
+  if (!currentUrl || currentUrl === 'about:blank') {
+    return `${fallbackOrigin}${path}`;
+  }
+
+  try {
+    const parsed = new URL(currentUrl);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return `${parsed.origin}${path}`;
+    }
+  } catch {
+    return `${fallbackOrigin}${path}`;
+  }
+
+  return `${fallbackOrigin}${path}`;
+}
+
+async function gotoStable(page: Page, target: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('net::ERR_ABORTED') || attempt === 2) {
+        throw error;
+      }
+      await page.waitForTimeout(250);
+    }
+  }
 }
 
 test.describe('EPUB Reader', () => {
@@ -25,7 +58,7 @@ test.describe('EPUB Reader', () => {
       localStorage.removeItem(`epub-progress:${bookId}`);
     }, EPUB_BOOK_ID);
 
-    await authenticatedPage.goto(appUrl(authenticatedPage, `/read/${EPUB_BOOK_ID}`));
+    await gotoStable(authenticatedPage, appUrl(authenticatedPage, `/read/${EPUB_BOOK_ID}`));
   });
 
   test('opens and renders EPUB content (US-008)', async ({ authenticatedPage }) => {
@@ -241,7 +274,7 @@ test.describe('EPUB Reader', () => {
 
     // Re-authenticate after db reset (web only; Electron uses synthetic auth)
     if (!isElectron) {
-      await authenticatedPage.goto(`${origin}/login`);
+      await gotoStable(authenticatedPage, `${origin}/login`);
       await authenticatedPage.fill('input[type="email"]', 'admin@localhost');
       await authenticatedPage.fill('input[type="password"]', 'admin123');
       await authenticatedPage.click('button[type="submit"]');
@@ -249,7 +282,7 @@ test.describe('EPUB Reader', () => {
     }
 
     // Open the EPUB book
-    await authenticatedPage.goto(`${origin}/read/${EPUB_BOOK_ID}`);
+    await gotoStable(authenticatedPage, `${origin}/read/${EPUB_BOOK_ID}`);
     const reader = new EpubReaderPage(authenticatedPage);
     await reader.waitForLoad();
 
@@ -286,11 +319,11 @@ test.describe('EPUB Reader', () => {
     expect(savedCfi).toMatch(/^epubcfi\(/);
 
     // Navigate away to library
-    await authenticatedPage.goto(`${origin}/library`);
+    await gotoStable(authenticatedPage, `${origin}/library`);
     await authenticatedPage.waitForLoadState('domcontentloaded');
 
     // Reopen the same EPUB
-    await authenticatedPage.goto(`${origin}/read/${EPUB_BOOK_ID}`);
+    await gotoStable(authenticatedPage, `${origin}/read/${EPUB_BOOK_ID}`);
     const reader2 = new EpubReaderPage(authenticatedPage);
     await reader2.waitForLoad();
 

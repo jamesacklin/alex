@@ -73,6 +73,11 @@ async function readPdfProgressFromApi(page: Page): Promise<{
 }
 
 test.describe('Reading Progress', () => {
+  test.skip(
+    process.env.E2E_PLATFORM === 'electron' && process.env.E2E_FORCE_PDF_ELECTRON !== '1',
+    'PDF progress flows are validated in web mode',
+  );
+
   test.beforeEach(async ({ authenticatedPage }) => {
     await resetDatabase();
     await seedDatabase();

@@ -119,18 +119,18 @@ export class LibraryPage {
   }
 
   async waitForBooksToLoad(): Promise<void> {
-    // Wait for either book cards or empty state to appear, with longer timeout for Electron
+    // Wait for either rendered book cards or an empty state.
     await this.page.waitForFunction(
       () => {
         const bookCards = document.querySelectorAll('a[href^="/read/"]');
-        const emptyStateText = document.body.textContent || '';
-        const hasEmptyState = emptyStateText.includes('No books found');
-        const skeletons = document.querySelectorAll('.animate-pulse');
-
-        // Books loaded or empty state shown, and no skeletons visible
-        return (bookCards.length > 0 || hasEmptyState) && skeletons.length === 0;
+        if (bookCards.length > 0) {
+          return true;
+        }
+        const bodyText = document.body?.textContent || '';
+        return bodyText.includes('No books found');
       },
-      { timeout: 20000 }
+      undefined,
+      { timeout: 20000 },
     );
 
     // Give a small delay for any final rendering

@@ -18,6 +18,7 @@
 /playwright-report
 /.e2e-user-data
 /.e2e-library
+/.tmp*
 
 # next.js
 /.next/
