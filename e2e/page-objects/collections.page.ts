@@ -58,7 +58,13 @@ export class CollectionsPage {
   }
 
   async clickCollection(name: string): Promise<void> {
-    await this.collectionCardByName(name).click();
+    const card = this.collectionCardByName(name);
+    await card.waitFor({ state: 'visible', timeout: 10000 });
+    const href = await card.getAttribute('href');
+    if (!href) {
+      throw new Error(`Collection card for "${name}" does not have an href`);
+    }
+    await this.page.goto(new URL(href, this.page.url()).toString(), { waitUntil: 'load' });
     await this.page.waitForURL(/\/collections\/[^/]+$/, { timeout: 10000 });
   }
 

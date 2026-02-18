@@ -2,8 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const isElectron = process.env.E2E_PLATFORM === 'electron';
 const webServerCommand = process.platform === 'win32'
-  ? 'pnpm exec next dev --webpack -p 3000 -H 127.0.0.1'
-  : 'sh -c "lsof -ti:3000 | xargs kill -9 2>/dev/null || true; pnpm exec next dev --webpack -p 3000 -H 127.0.0.1"';
+  ? 'pnpm build && set PORT=3000&& set HOSTNAME=127.0.0.1&& pnpm start'
+  : 'sh -c "lsof -ti:3000 | xargs kill -9 2>/dev/null || true; pnpm build && PORT=3000 HOSTNAME=127.0.0.1 pnpm start"';
 
 export default defineConfig({
   testDir: './specs',
@@ -11,7 +11,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Serial execution for SQLite (single-writer)
   use: {
-    baseURL: isElectron ? 'http://localhost:3210' : 'http://localhost:3000',
+    baseURL: isElectron ? 'http://127.0.0.1:3210' : 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',
@@ -23,8 +23,8 @@ export default defineConfig({
     ? undefined // Electron spawns its own Next.js server
     : {
         command: webServerCommand,
-        url: 'http://127.0.0.1:3000/login',
-        timeout: 180_000,
+        port: 3000,
+        timeout: 600_000,
         reuseExistingServer: false,
       },
   globalSetup: './global-setup.ts',

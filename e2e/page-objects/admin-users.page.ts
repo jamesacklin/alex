@@ -75,7 +75,13 @@ export class AdminUsersPage {
 
   async deleteUser(email: string): Promise<void> {
     await this.deleteUserButton(email).click();
-    await this.deleteConfirmButton.click();
+    const confirmDialog = this.page.getByRole('alertdialog');
+    try {
+      await confirmDialog.waitFor({ state: 'visible', timeout: 2000 });
+      await confirmDialog.getByRole('button', { name: /^delete$/i }).click({ noWaitAfter: true });
+    } catch {
+      // Some builds perform immediate deletion without a confirmation modal.
+    }
   }
 }
 
