@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/app.fixture';
 import type { ElectronApplication } from 'playwright';
+import type { Page } from '@playwright/test';
 
 function ensureElectronApp(
   electronApp: ElectronApplication | null,
@@ -7,6 +8,24 @@ function ensureElectronApp(
   if (!electronApp) {
     throw new Error('electronApp fixture is required for desktop tests');
   }
+}
+
+function appUrl(page: Page, path: string): string {
+  const currentUrl = page.url();
+  if (!currentUrl || currentUrl === 'about:blank') {
+    return `http://localhost:3210${path}`;
+  }
+
+  try {
+    const parsed = new URL(currentUrl);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.origin + path;
+    }
+  } catch {
+    return `http://localhost:3210${path}`;
+  }
+
+  return `http://localhost:3210${path}`;
 }
 
 test('electron creates a system tray icon (US-009)', async ({ electronApp }) => {
@@ -61,4 +80,22 @@ test('electron tray menu includes expected actions (US-010)', async ({ electronA
     'Quit Alex',
   ]));
   expect(trayState.menuLabels.some((label) => label.startsWith('Change Library Folder'))).toBe(true);
+});
+
+test('electron can change library path via mocked IPC (US-011)', async ({ appPage, electronApp }) => {
+  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
+  ensureElectronApp(electronApp);
+
+  await electronApp.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('select-library-path');
+    ipcMain.handle('select-library-path', async () => '/mock/path');
+    ipcMain.removeHandler('get-library-path');
+    ipcMain.handle('get-library-path', async () => '/mock/path');
+  });
+
+  await appPage.goto(appUrl(appPage, '/admin/library'));
+  await appPage.getByRole('button', { name: /change directory/i }).click();
+
+  await expect(appPage.getByText(/library directory changed/i)).toBeVisible({ timeout: 10000 });
+  await expect(appPage.getByText('/mock/path')).toBeVisible({ timeout: 10000 });
 });
