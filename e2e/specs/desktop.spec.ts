@@ -99,3 +99,33 @@ test('electron can change library path via mocked IPC (US-011)', async ({ appPag
   await expect(appPage.getByText(/library directory changed/i)).toBeVisible({ timeout: 10000 });
   await expect(appPage.getByText('/mock/path')).toBeVisible({ timeout: 10000 });
 });
+
+test('electron rescan action triggers watcher restart IPC (US-012)', async ({ appPage, electronApp }) => {
+  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
+  ensureElectronApp(electronApp);
+
+  await electronApp.evaluate(({ ipcMain }) => {
+    const globalState = globalThis as Record<string, unknown>;
+    globalState.__ALEX_E2E_RESCAN_COUNT__ = 0;
+
+    ipcMain.removeHandler('rescan-library');
+    ipcMain.handle('rescan-library', () => {
+      const currentCount = globalState.__ALEX_E2E_RESCAN_COUNT__;
+      const nextCount = typeof currentCount === 'number' ? currentCount + 1 : 1;
+      globalState.__ALEX_E2E_RESCAN_COUNT__ = nextCount;
+      return true;
+    });
+  });
+
+  await appPage.goto(appUrl(appPage, '/admin/library'));
+  await appPage.getByRole('button', { name: /restart watcher|rescan library/i }).click();
+
+  await expect(appPage.getByText(/library rescan started/i)).toBeVisible({ timeout: 10000 });
+  await expect.poll(
+    async () => electronApp.evaluate(() => {
+      const currentCount = (globalThis as Record<string, unknown>).__ALEX_E2E_RESCAN_COUNT__;
+      return typeof currentCount === 'number' ? currentCount : 0;
+    }),
+    { timeout: 10000 },
+  ).toBe(1);
+});
