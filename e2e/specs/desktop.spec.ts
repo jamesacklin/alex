@@ -162,3 +162,27 @@ test('electron close action hides window and keeps app running (US-013)', async 
 
   expect(windowState.isReady).toBe(true);
 });
+
+test('electron onboarding flow completes with mocked IPC (US-014)', async ({ appPage, electronApp }) => {
+  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
+  ensureElectronApp(electronApp);
+
+  await electronApp.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('get-library-path');
+    ipcMain.handle('get-library-path', async () => '');
+    ipcMain.removeHandler('select-library-path-initial');
+    ipcMain.handle('select-library-path-initial', async () => '/mock/library');
+    ipcMain.removeHandler('complete-onboarding');
+    ipcMain.handle('complete-onboarding', async () => ({ success: true }));
+  });
+
+  await appPage.goto(appUrl(appPage, '/onboarding'));
+  await expect(appPage).toHaveURL(/\/onboarding/, { timeout: 10000 });
+  await expect(appPage.getByRole('button', { name: /select folder/i })).toBeVisible({ timeout: 10000 });
+
+  await appPage.getByRole('button', { name: /select folder/i }).click();
+  await expect(appPage.getByText('/mock/library')).toBeVisible({ timeout: 10000 });
+
+  await appPage.getByRole('button', { name: /get started/i }).click();
+  await expect(appPage).toHaveURL(/\/library/, { timeout: 10000 });
+});
