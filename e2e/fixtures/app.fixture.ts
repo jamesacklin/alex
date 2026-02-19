@@ -76,13 +76,14 @@ export const test = base.extend<AppFixture>({
     console.log('[Fixture] User data dir:', testUserDataDir);
     console.log('[Fixture] Library path:', testLibraryPath);
 
-    // Kill any leftover server on port 3210 from a previous test. pnpm
-    // doesn't propagate SIGTERM to the Next.js child, so SIGKILL is needed.
+    // Kill any leftover server LISTENING on port 3210 from a previous test.
+    // Use -sTCP:LISTEN to avoid killing Playwright workers that still have
+    // client connections open to that port.
     try {
       if (process.platform === 'win32') {
-        execSync('FOR /F "tokens=5" %P IN (\'netstat -a -n -o ^| findstr :3210\') DO TaskKill.exe /F /PID %P 2>nul || exit 0', { stdio: 'ignore' });
+        execSync('FOR /F "tokens=5" %P IN (\'netstat -a -n -o ^| findstr LISTENING ^| findstr :3210\') DO TaskKill.exe /F /PID %P 2>nul || exit 0', { stdio: 'ignore' });
       } else {
-        execSync('lsof -ti:3210 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+        execSync('lsof -ti:3210 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
       }
     } catch {
       // Port might not be in use; ignore.
