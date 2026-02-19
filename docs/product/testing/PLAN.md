@@ -333,17 +333,16 @@ Each step is independently shippable and testable locally before adding CI.
 
 ## PR Required Checks (Phase 8)
 
-Main branch protection is configured so that PRs cannot merge until all E2E jobs pass.
+Main branch protection is configured so that PRs cannot merge until the required web E2E check passes.
 
 ### Required checks
 
 The required status checks are:
 
 - `e2e-web`
-- `e2e-electron-linux`
-- `e2e-electron-macos`
 
 Windows E2E checks are currently disabled and are not required for merge.
+Linux and macOS Electron E2E jobs still run in CI, but they are not required checks for merge.
 
 These names are case-sensitive and must exactly match the job names in `.github/workflows/e2e.yml`.
 
@@ -367,9 +366,7 @@ gh api -X PUT repos/jamesacklin/alex/branches/main/protection --input - <<'JSON'
   "required_status_checks": {
     "strict": true,
     "contexts": [
-      "e2e-web",
-      "e2e-electron-linux",
-      "e2e-electron-macos"
+      "e2e-web"
     ]
   },
   "enforce_admins": false,
