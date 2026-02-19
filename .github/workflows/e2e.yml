@@ -18,7 +18,7 @@ env:
 
 jobs:
   e2e-web:
-    name: E2E (Web)
+    name: e2e-web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
           path: playwright-report/
 
   e2e-electron-linux:
-    name: E2E (Electron / Linux)
+    name: e2e-electron-linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +74,7 @@ jobs:
           path: playwright-report/
 
   e2e-electron-macos:
-    name: E2E (Electron / macOS)
+    name: e2e-electron-macos
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,4 +96,28 @@ jobs:
         if: failure()
         with:
           name: e2e-macos-report
+          path: playwright-report/
+
+  e2e-electron-windows:
+    name: e2e-electron-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Playwright needs chromium even for Electron tests.
+      - run: pnpm exec playwright install chromium
+      - run: pnpm build:native
+      - run: pnpm build
+      - run: npx tsc -p electron/tsconfig.json
+      - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
+        env:
+          E2E_PLATFORM: electron
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-windows-report
           path: playwright-report/
