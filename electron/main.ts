@@ -715,7 +715,11 @@ app.whenReady().then(async () => {
   if (!useExternalServer) {
     // Production mode: Electron manages all processes
     console.log('[Electron] Production mode: starting server and watcher');
-    runDbSetup(libraryPath);
+    if (isE2E) {
+      console.log('[Electron] E2E mode: skipping db setup (handled by test harness)');
+    } else {
+      runDbSetup(libraryPath);
+    }
     startServer(libraryPath);
     if (libraryPath) {
       startWatcher(libraryPath);
