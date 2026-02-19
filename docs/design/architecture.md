@@ -7,8 +7,8 @@ This document describes the overall architecture of Alex, a self-hosted personal
 Alex is built as a modern web application with the following key components:
 
 - **Next.js 16** - Full-stack React framework with App Router
-- **SQLite** - Embedded database for metadata and user data
-- **File System Watcher** - Background process monitoring the library folder
+- **SQLite** - Embedded database for metadata and user data, accessed via a Rust bridge binary (`watcher-rs`)
+- **Rust File Watcher** - Standalone Rust binary (`watcher-rs`) monitoring the library folder using the `notify` crate
 - **Real-time Updates** - Server-Sent Events (SSE) for live library updates
 - **Multi-format Readers** - PDF.js for PDFs, epub.js for EPUBs
 
@@ -43,13 +43,13 @@ graph TB
         DB[(SQLite Database<br/>library.db)]
     end
 
-    subgraph "Watcher Process"
-        Chokidar[Chokidar<br/>File Watcher]
-        HandleAdd[handleAdd]
-        HandleChange[handleChange]
-        HandleDelete[handleDelete]
-        Extract[Metadata Extractors<br/>PDF/EPUB]
-        CoverGen[Cover Generator<br/>pdfjs-dist/canvas]
+    subgraph "Rust Watcher (watcher-rs)"
+        Notify[notify crate<br/>File Watcher]
+        HandleAdd[handle_add]
+        HandleChange[handle_change]
+        HandleDelete[handle_delete]
+        Extract[Metadata Extractors<br/>lopdf / quick-xml]
+        CoverGen[Cover Generator<br/>pdfium-render / ab_glyph]
     end
 
     %% User Interactions
@@ -78,10 +78,10 @@ graph TB
     SSE -->|Show Refresh Banner| UI
 
     %% File Watching Flow
-    LibFolder -.->|File Added/Changed/Deleted| Chokidar
-    Chokidar -->|add| HandleAdd
-    Chokidar -->|change| HandleChange
-    Chokidar -->|unlink| HandleDelete
+    LibFolder -.->|File Added/Changed/Deleted| Notify
+    Notify -->|add| HandleAdd
+    Notify -->|change| HandleChange
+    Notify -->|remove| HandleDelete
 
     %% Add Book Flow
     HandleAdd -->|Read File| LibFolder
@@ -151,7 +151,7 @@ graph TB
     class PubUI,PubPDF,PubEPUB,LocalStorage client
     class Pages,API,Auth,SSEEndpoint server
     class LibFolder,Covers,DB,Users,Books,Progress,Collections,Settings storage
-    class Chokidar,HandleAdd,HandleChange,HandleDelete,Extract,CoverGen process
+    class Notify,HandleAdd,HandleChange,HandleDelete,Extract,CoverGen process
 ```
 
 ## Component Descriptions
@@ -260,48 +260,57 @@ Public (no auth):
 
 **SQLite Database**
 - Single-file database at `./data/library.db`
-- Managed by Drizzle ORM
-- Better-sqlite3 driver for synchronous access
-- Schema versioned and migrated via `drizzle-kit`
+- Accessed from Rust via `rusqlite` (statically linked SQLite)
+- Next.js accesses the database through the `watcher-rs` binary's `db` subcommand (JSON over stdin/stdout)
+- Schema applied via SQL migration files executed through the Rust bridge (`scripts/db-push.js`)
 
-### Watcher Process
+### Rust Watcher (`watcher-rs`)
 
-**Chokidar**
-- Monitors library folder for file events
-- Filters for `.pdf` and `.epub` files only
-- Uses `awaitWriteFinish` to handle large file uploads
-- Runs as background process in production
+The watcher is a standalone Rust binary that handles file monitoring, metadata extraction, cover generation, and database writes. It also exposes a `db` subcommand used by the Next.js app for all database access.
+
+**File Watcher (`notify` crate)**
+- Monitors library folder recursively for file events
+- Filters for `.pdf` and `.epub` files only (case-insensitive)
+- Custom debouncing: 500ms poll interval with 2-second stability threshold (replaces chokidar's `awaitWriteFinish`)
+- Runs as a background process in production (Docker) or as a managed child process (Electron)
 
 **Event Handlers**
-- `handleAdd` - New file detected, extract metadata, generate cover, insert DB record
-- `handleChange` - Existing file modified, re-extract metadata, update DB record
-- `handleDelete` - File removed, delete DB record and cover image
+- `handle_add` - New file detected: extract metadata, generate cover, insert DB record
+- `handle_change` - Existing file modified: re-hash, re-extract metadata, update DB record
+- `handle_delete` - File removed: delete DB record and cover image
+- Orphan cleanup on startup: removes DB entries for files that no longer exist on disk
 
 **Metadata Extractors**
-- PDF: `pdf-parse` for text content, metadata extraction
-- EPUB: `epub2` npm package for parsing OPF manifest, extracting title/author
+- PDF: `lopdf` for reading the Info dictionary (title, author, page count)
+- EPUB: `zip` + `quick-xml` for parsing `META-INF/container.xml` and the OPF package document (`dc:title`, `dc:creator`, `dc:description`)
 - Fallback to filename parsing if metadata unavailable
 
 **Cover Generator**
-- Primary: `pdfjs-dist` + `@napi-rs/canvas` for PDF cover rendering
-- Fallback: `@napi-rs/canvas` for synthetic cover rendering
-- Handles both PDF and EPUB formats
-- Uses @napi-rs/canvas for better cross-platform compatibility and reliability
+- PDF: `pdfium-render` with statically linked PDFium renders page 1 at 150 DPI as JPEG
+- EPUB: cover image extracted from the ZIP archive (re-encoded to JPEG if needed)
+- Fallback: synthetic gradient cover (400x600px) with title/author text rendered via `ab_glyph` + `imageproc`
+
+**Database Bridge**
+- The `watcher-rs db` subcommand accepts `query-all`, `query-one`, or `execute` modes
+- Receives a JSON request (`{sql, params}`) on stdin, returns JSON on stdout
+- Next.js calls this via `src/lib/db/rust.ts`, which spawns the binary as a child process
+- This replaces the previous `better-sqlite3` + Drizzle ORM setup
 
 ## Data Flow
 
 ### Book Ingestion
 1. User drops `book.pdf` into library folder
-2. Chokidar detects file addition
-3. Watcher reads file, computes SHA-256 hash
-4. Check database for duplicate hash (skip if exists)
-5. Extract metadata (title, author, page count)
-6. Generate cover image from first page
-7. Insert book record into database
-8. Increment `library_version` in settings table
-9. SSE endpoint detects version change within 2 seconds
-10. All connected clients receive update event
-11. Clients refresh their library view
+2. `notify` crate detects file addition
+3. Watcher debounces until file size is stable for 2 seconds
+4. Watcher reads file, computes SHA-256 hash via `sha2` crate
+5. Check database for duplicate hash (skip if exists)
+6. Extract metadata (title, author, page count) via `lopdf` (PDF) or `quick-xml` (EPUB)
+7. Generate cover image: `pdfium-render` for PDFs, ZIP extraction for EPUBs, synthetic fallback if both fail
+8. Insert book record into SQLite via `rusqlite`
+9. Increment `library_version` in settings table
+10. SSE endpoint detects version change within 2 seconds
+11. All connected clients receive update event
+12. Clients refresh their library view
 
 ### Reading Experience
 1. User clicks book card in library
@@ -357,22 +366,23 @@ Public (no auth):
 
 ### Development
 - Next.js dev server on port 3000
-- Watcher runs in separate terminal
+- Rust watcher (`watcher-rs`) runs in a separate terminal via `pnpm watcher`
 - SQLite database in `./data/library.db`
+- Requires a Rust toolchain (`rustup`) for building the watcher binary
 - Hot module replacement for fast iteration
 
 ### Production (Docker)
-- Single container with Node.js 22
-- Watcher runs as background process
+- Single container with Node.js 22 and the pre-compiled `watcher-rs` binary
+- Watcher runs as a backgrounded process alongside the Next.js server
 - Next.js production server (standalone mode)
 - Persistent Docker volume for `/app/data`
-- Environment variables for configuration
+- Environment variables for configuration (`DATABASE_PATH`, `LIBRARY_PATH`, `COVERS_PATH`)
 
 ### Desktop (Electron)
 - Cross-platform desktop application for macOS, Windows, and Linux
 - Embedded Next.js server running on localhost:3210
-- Watcher process integrated into main Electron process
-- SQLite database and library stored in app data directory
+- Rust watcher (`watcher-rs`) binary bundled as a resource, spawned as a child process by Electron
+- SQLite database and library stored in platform-specific app data directory
 - Auto-updater support for seamless updates
 - Platform-specific builds:
   - macOS: .app bundle (Apple Silicon)
@@ -388,10 +398,11 @@ Public (no auth):
 | Frontend | React 19, Next.js 16 |
 | Styling | Tailwind CSS v4, shadcn/ui |
 | Authentication | NextAuth.js v5 |
-| Database | SQLite, better-sqlite3, Drizzle ORM |
-| File Watching | chokidar |
-| PDF Rendering | PDF.js (browser), pdf-parse (server) |
+| Database | SQLite via Rust (`rusqlite`, statically linked); Next.js accesses DB through the `watcher-rs` binary bridge |
+| File Watching | Rust `notify` crate (via `watcher-rs` binary) |
+| PDF Rendering | PDF.js (browser) |
 | EPUB Rendering | epub.js, react-reader |
-| Cover Generation | pdfjs-dist, @napi-rs/canvas |
+| PDF/EPUB Metadata | `lopdf`, `quick-xml` + `zip` (Rust, in `watcher-rs`) |
+| Cover Generation | `pdfium-render` (statically linked PDFium), `ab_glyph` + `imageproc` fallback (Rust, in `watcher-rs`) |
 | Real-time | Server-Sent Events (SSE) |
-| Deployment | Docker, Electron, Node.js 22 |
+| Deployment | Docker, Electron, Node.js 22, Rust toolchain (build-time) |

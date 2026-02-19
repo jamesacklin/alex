@@ -10,7 +10,7 @@ This diagram shows how the system detects and propagates library changes in near
 sequenceDiagram
     participant User
     participant LibFolder as Library Folder
-    participant Watcher
+    participant Watcher as watcher-rs
     participant DB as SQLite DB
     participant SSE as SSE Endpoint
     participant Client as Browser Client
@@ -27,11 +27,11 @@ sequenceDiagram
 
     Note over User,Watcher: User Adds Book
     User->>LibFolder: Drop book.pdf
-    LibFolder-->>Watcher: File event (add)
-    Watcher->>Watcher: handleAdd()
+    LibFolder-->>Watcher: File event (notify crate)
+    Watcher->>Watcher: handle_add()
     Watcher->>LibFolder: Read file
-    Watcher->>Watcher: Extract metadata
-    Watcher->>Watcher: Generate cover
+    Watcher->>Watcher: Extract metadata (lopdf / quick-xml)
+    Watcher->>Watcher: Generate cover (pdfium-render)
     Watcher->>DB: INSERT INTO books
     Watcher->>DB: incrementLibraryVersion()
 
@@ -82,18 +82,18 @@ Detailed flow showing how a new book is processed when added to the library fold
 ```mermaid
 sequenceDiagram
     participant FS as File System
-    participant Chokidar
-    participant Handler as handleAdd
-    participant PDF as pdf-parse
-    participant EPUB as epub2 parser
+    participant Notify as notify crate
+    participant Handler as handle_add
+    participant PDF as lopdf
+    participant EPUB as quick-xml + zip
     participant CoverGen as Cover Generator
     participant DB as Database
-    participant PdfJs as pdfjs-dist
-    participant Canvas as @napi-rs/canvas
+    participant Pdfium as pdfium-render
+    participant Glyph as ab_glyph + imageproc
 
-    FS->>Chokidar: File added: book.pdf
-    Chokidar->>Chokidar: Wait for write finish (2s)
-    Chokidar->>Handler: trigger add event
+    FS->>Notify: File added: book.pdf
+    Notify->>Notify: Debounce (2s stability threshold)
+    Notify->>Handler: dispatch add event
 
     Handler->>FS: Read file
     Handler->>Handler: Compute SHA-256 hash
@@ -106,21 +106,21 @@ sequenceDiagram
         DB-->>Handler: No match
 
         alt PDF file
-            Handler->>PDF: Extract metadata
+            Handler->>PDF: Extract metadata (Info dictionary)
             PDF-->>Handler: { title, author, pageCount }
-            Handler->>PdfJs: Render page 1 via pdfjs-dist + @napi-rs/canvas
+            Handler->>Pdfium: Render page 1 at 150 DPI
             alt Success
-                PdfJs-->>Handler: JPEG buffer
+                Pdfium-->>Handler: JPEG buffer
             else Fallback
-                PdfJs--xHandler: Error
-                Handler->>Canvas: Render synthetic cover
-                Canvas-->>Handler: JPEG buffer
+                Pdfium--xHandler: Error
+                Handler->>Glyph: Render synthetic cover
+                Glyph-->>Handler: JPEG buffer
             end
         else EPUB file
-            Handler->>EPUB: Parse OPF manifest
-            EPUB-->>Handler: { title, author }
-            Handler->>EPUB: Extract cover image
-            EPUB-->>Handler: Cover buffer
+            Handler->>EPUB: Parse container.xml + OPF
+            EPUB-->>Handler: { title, author, description }
+            Handler->>EPUB: Extract cover image from ZIP
+            EPUB-->>Handler: Cover buffer (re-encoded to JPEG)
         end
 
         Handler->>FS: Write cover to data/covers/
@@ -134,12 +134,12 @@ sequenceDiagram
 
 ### Processing Steps
 
-1. **File Detection**: Chokidar watches library folder
-2. **Write Stabilization**: Waits 2 seconds to ensure file is fully written
-3. **Duplicate Check**: SHA-256 hash prevents duplicate entries
-4. **Metadata Extraction**: Format-specific parsers extract title, author, etc.
-5. **Cover Generation**: pdfjs-dist + @napi-rs/canvas with synthetic fallback
-6. **Database Insert**: Atomic insert of book record
+1. **File Detection**: `notify` crate watches library folder
+2. **Write Stabilization**: Custom debounce waits until file size is stable for 2 seconds
+3. **Duplicate Check**: SHA-256 hash (via `sha2` crate) prevents duplicate entries
+4. **Metadata Extraction**: `lopdf` for PDFs, `quick-xml` + `zip` for EPUBs
+5. **Cover Generation**: `pdfium-render` for PDFs, ZIP extraction for EPUBs, synthetic fallback via `ab_glyph`
+6. **Database Insert**: Atomic insert via `rusqlite`
 7. **Version Bump**: Triggers real-time update to all clients
 
 ---
@@ -415,31 +415,31 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Handler as handleAdd
+    participant Handler as handle_add
     participant FS as File System
-    participant PdfJs as pdfjs-dist
-    participant Canvas as @napi-rs/canvas
+    participant Pdfium as pdfium-render
+    participant Glyph as ab_glyph + imageproc
 
     alt PDF Cover
-        Handler->>PdfJs: Render page 1 via pdfjs-dist + @napi-rs/canvas
+        Handler->>Pdfium: Render page 1 at 150 DPI
         alt Success
-            PdfJs-->>Handler: JPEG buffer
-        else pdfjs-dist render failed
-            PdfJs--xHandler: Error
-            Handler->>Canvas: Create 400x600 canvas
-            Canvas->>Canvas: Fill gradient background
-            Canvas->>Canvas: Draw title text
-            Canvas->>Canvas: Draw author text
-            Canvas-->>Handler: Synthetic JPEG buffer
+            Pdfium-->>Handler: JPEG buffer
+        else pdfium render failed
+            Pdfium--xHandler: Error
+            Handler->>Glyph: Create 400x600 canvas
+            Glyph->>Glyph: Fill gradient background
+            Glyph->>Glyph: Draw title text
+            Glyph->>Glyph: Draw author text
+            Glyph-->>Handler: Synthetic JPEG buffer
         end
     else EPUB Cover
-        Handler->>Handler: Parse EPUB manifest
-        alt Cover in manifest
-            Handler->>FS: Extract cover image from EPUB
-            FS-->>Handler: Image buffer
+        Handler->>Handler: Parse container.xml + OPF for cover ref
+        alt Cover in archive
+            Handler->>FS: Extract cover image from EPUB ZIP
+            FS-->>Handler: Image buffer (re-encoded to JPEG)
         else No cover found
-            Handler->>Canvas: Create synthetic cover
-            Canvas-->>Handler: JPEG buffer
+            Handler->>Glyph: Create synthetic cover
+            Glyph-->>Handler: JPEG buffer
         end
     end
 
@@ -534,9 +534,9 @@ sequenceDiagram
 
 ### Cover Generation Strategy
 
-1. **Primary (PDFs)**: Render page 1 via `pdfjs-dist` + `@napi-rs/canvas` (no system dependencies)
-2. **Fallback (PDFs)**: Synthetic cover with title/author via @napi-rs/canvas
-3. **Primary (EPUBs)**: Extract embedded cover from manifest
+1. **Primary (PDFs)**: Render page 1 at 150 DPI via `pdfium-render` with statically linked PDFium
+2. **Fallback (PDFs)**: Synthetic gradient cover with title/author via `ab_glyph` + `imageproc`
+3. **Primary (EPUBs)**: Extract embedded cover image from the ZIP archive (re-encoded to JPEG if needed)
 4. **Fallback (EPUBs)**: Generate synthetic cover
 5. **Storage**: Covers stored as JPEG with UUID filename for uniqueness
 
@@ -605,6 +605,6 @@ sequenceDiagram
    - macOS: `~/Library/Application Support/alex`
    - Windows: `%APPDATA%/alex`
    - Linux: `~/.config/alex`
-5. **Native Modules**: better-sqlite3 and @napi-rs/canvas compiled for Electron's Node ABI
+5. **Rust Binary**: `watcher-rs` bundled at `process.resourcesPath/watcher-rs/` with PDFium library; no native Node modules required
 6. **Auto-updates**: Electron-builder provides update checking and installation
 7. **First-run Setup**: Setup route creates initial admin account before library access

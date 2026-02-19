@@ -125,8 +125,8 @@ Stores book metadata and file information for all books in the library.
 - Primary key on `id`
 - Unique index on `file_path` (prevents duplicate file tracking)
 - Unique index on `file_hash` (prevents duplicate content)
-- Index on `title` (for search performance, created by Drizzle ORM as needed)
-- Index on `author` (for search performance, created by Drizzle ORM as needed)
+- Index on `title` (for search performance)
+- Index on `author` (for search performance)
 
 **Cascade Behavior:**
 - When a book is deleted, all associated `reading_progress` and `collection_books` records are automatically deleted (ON DELETE CASCADE)
@@ -412,23 +412,20 @@ WHERE key = 'library_version';
 
 ## Database Management
 
-### ORM and Migrations
+### Database Access
 
-- **ORM**: Drizzle ORM with TypeScript types
-- **Driver**: better-sqlite3 (synchronous, fast)
-- **Migrations**: Managed via `drizzle-kit`
-- **Schema**: Defined in `src/lib/db/schema.ts`
+- **Rust side**: `rusqlite` with statically linked SQLite (bundled feature). The `watcher-rs` binary opens the database directly for file watching operations and also exposes a `db` subcommand for use by Node.js.
+- **Next.js side**: All database queries go through `src/lib/db/rust.ts`, which spawns the `watcher-rs` binary with `db <mode>` (where mode is `query-all`, `query-one`, or `execute`). Requests are sent as JSON over stdin; responses are read from stdout.
+- **Migrations**: SQL migration files in `src/lib/db/migrations/` are applied by `scripts/db-push.js`, which uses the Rust binary bridge to execute each statement.
+- **Schema**: Defined in the SQL migration files (the canonical Drizzle schema file `src/lib/db/schema.ts` still exists for reference but is no longer used at runtime by Drizzle ORM).
 
 ### Schema Updates
 
 ```bash
-# Generate migration from schema changes
-pnpm drizzle-kit generate
-
-# Apply migrations to database
+# Apply schema to the database (creates tables if missing, applies index fixes)
 pnpm db:push
 
-# Seed default admin user
+# Seed the default admin user
 pnpm db:seed
 
 # Reset database (destructive)
@@ -468,7 +465,7 @@ pnpm db:reset
 
 ### Data Validation
 
-- **Application Level**: Drizzle ORM validates types before INSERT/UPDATE
+- **Application Level**: Rust types enforce correct data shapes before INSERT/UPDATE; Next.js API routes validate input before passing to the DB bridge
 - **Database Level**: SQLite enforces constraints (NOT NULL, UNIQUE, FK)
 - **File Validation**: Watcher checks file extensions (.pdf, .epub only)
 - **Hash Validation**: SHA-256 prevents silent data corruption
@@ -491,7 +488,7 @@ All foreign keys are indexed automatically. Additional indexes:
 - **Sectioned loading**: Library/collection UIs fetch "Now Reading" and paginated "All Books" separately to prevent duplicate cards
 - **Lazy Loading**: Cover images loaded separately via API
 - **Progress Debouncing**: Frontend debounces progress updates (reduces writes)
-- **Connection Pooling**: better-sqlite3 uses single connection (SQLite limitation)
+- **Connection Model**: `rusqlite` uses a single connection per invocation (SQLite limitation); WAL mode enables concurrent reads from the Next.js bridge and the watcher process
 
 ### Scaling Considerations
 
