@@ -9,6 +9,21 @@ Alex is a hybrid app: a Next.js 16 web application wrapped in Electron 34 for de
 Playwright has first-class support for both browser-based web testing and Electron app testing (`electron.launch()`). It runs on all three OS targets. No other framework covers both web and Electron with the same API surface.
  
 ---
+
+## Phase PRDs
+
+Phase requirements now live in `docs/product/testing/`:
+
+- `docs/product/testing/prd-e2e-phase1-scaffold-fixtures.md`
+- `docs/product/testing/prd-e2e-phase2-auth-tests.md`
+- `docs/product/testing/prd-e2e-phase3-library-tests.md`
+- `docs/product/testing/prd-e2e-phase4-reader-tests.md`
+- `docs/product/testing/prd-e2e-phase5-collections-progress-tests.md`
+- `docs/product/testing/prd-e2e-phase6-admin-desktop-tests.md`
+- `docs/product/testing/prd-e2e-phase7-cicd-workflow.md`
+- `docs/product/testing/prd-e2e-phase8-pr-required-checks.md`
+
+---
  
 ## Architecture
  
@@ -86,7 +101,7 @@ export const test = base.extend<AppFixture>({
 | macOS    | `macos-latest`  | Electron + Chromium | Electron's Chromium|
 | Linux    | `ubuntu-latest` | Electron + Chromium | Electron's Chromium|
  
-All four entries run the **same spec files** (minus `desktop.spec.ts` which is skipped on web).
+All three entries run the **same spec files** (minus `desktop.spec.ts` which is skipped on web).
  
 ---
  
@@ -352,7 +367,7 @@ These names are case-sensitive and must exactly match the job names in `.github/
 - Required status checks must pass before merging
 - Branches must be up to date before merging (`strict: true`)
 - Linear history is required on `main`
-- One approval is required before merging
+- No PR approvals are required before merging (single-maintainer configuration)
 
 When any required check fails (or is missing), GitHub blocks merge in both UI and API until the check passes.
 
@@ -373,7 +388,7 @@ gh api -X PUT repos/jamesacklin/alex/branches/main/protection --input - <<'JSON'
   "required_pull_request_reviews": {
     "dismiss_stale_reviews": false,
     "require_code_owner_reviews": false,
-    "required_approving_review_count": 1
+    "required_approving_review_count": 0
   },
   "restrictions": null,
   "required_linear_history": true,
@@ -404,4 +419,4 @@ Repository auto-merge can be enabled with:
 gh api -X PATCH repos/jamesacklin/alex -f allow_auto_merge=true
 ```
 
-After this is enabled, developers can use PR auto-merge when required checks and approvals are satisfied.
+After this is enabled, developers can use PR auto-merge when required checks and any configured approval rules are satisfied.
