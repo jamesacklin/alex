@@ -241,7 +241,7 @@ function startServer(libraryPath: string) {
       env: serverEnv,
       cwd: workingDir,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
+      ...(process.platform !== 'win32' && { detached: true }),
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn server process:', error);
@@ -332,7 +332,7 @@ function startWatcher(libraryPath: string) {
       env: watcherEnv,
       cwd: workingDir,
       stdio: 'inherit',
-      detached: process.platform !== 'win32',
+      ...(process.platform !== 'win32' && { detached: true }),
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn watcher process:', error);
