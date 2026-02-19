@@ -18,11 +18,8 @@ WORKDIR /app
 
 # Install dependencies with pnpm store cache mount for faster installs
 COPY package.json pnpm-lock.yaml .pnpm-build-approval.yaml ./
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=pnpm-${TARGETPLATFORM},target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
-
-# Build native module (better-sqlite3)
-RUN cd node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3 && npm run build-release
 
 # Copy source and build Next.js
 COPY . .
