@@ -1,4 +1,5 @@
-use crate::db::{unix_now, Database, NewBook};
+use crate::covers::{default_covers_dir, generate_epub_cover, generate_pdf_cover};
+use crate::db::{Database, NewBook, unix_now};
 use crate::extractors::epub::extract_epub_metadata;
 use crate::extractors::pdf::extract_pdf_metadata;
 use crate::log::log;
@@ -16,6 +17,15 @@ pub fn compute_sha256(path: &Path) -> Result<String> {
 }
 
 pub fn handle_add(db: &Database, file_path: &Path) -> Result<()> {
+    let covers_dir = default_covers_dir();
+    handle_add_with_covers_dir(db, file_path, &covers_dir)
+}
+
+pub fn handle_add_with_covers_dir(
+    db: &Database,
+    file_path: &Path,
+    covers_dir: &Path,
+) -> Result<()> {
     let ext = file_path
         .extension()
         .and_then(|e| e.to_str())
@@ -50,6 +60,24 @@ pub fn handle_add(db: &Database, file_path: &Path) -> Result<()> {
     } else {
         extract_epub_metadata(file_path)
     };
+    let cover_path = if file_type == "pdf" {
+        generate_pdf_cover(
+            file_path,
+            &book_id,
+            &metadata.title,
+            metadata.author.as_deref(),
+            covers_dir,
+        )
+    } else {
+        generate_epub_cover(
+            file_path,
+            &book_id,
+            &metadata.title,
+            metadata.author.as_deref(),
+            covers_dir,
+        )
+    };
+    let cover_path_str = cover_path.as_ref().and_then(|p| p.to_str());
 
     let now = unix_now();
     let file_path_str = file_path.to_string_lossy();
@@ -63,7 +91,7 @@ pub fn handle_add(db: &Database, file_path: &Path) -> Result<()> {
         file_path: &file_path_str,
         file_size: meta.len() as i64,
         file_hash: &file_hash,
-        cover_path: metadata.cover_path.as_deref(),
+        cover_path: cover_path_str,
         page_count: metadata.page_count.map(|p| p as i64),
         added_at: now,
         updated_at: now,

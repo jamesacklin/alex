@@ -2,14 +2,19 @@
 name = "watcher-rs"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 anyhow = "1"
+ab_glyph = "0.2"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 ctrlc = "3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif"] }
+imageproc = "0.25"
 lopdf = "0.34"
 notify = "8"
+pdfium-render = { version = "0.8.37", default-features = false, features = ["image", "static", "pdfium_latest", "thread_safe"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
@@ -18,3 +23,8 @@ zip = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+[build-dependencies]
+flate2 = "1"
+tar = "0.4"
+ureq = { version = "3", default-features = true }

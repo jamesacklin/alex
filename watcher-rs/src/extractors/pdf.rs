@@ -74,7 +74,9 @@ fn pdf_object_to_string(obj: &lopdf::Object) -> Option<String> {
                     .chunks_exact(2)
                     .map(|c| u16::from_be_bytes([c[0], c[1]]))
                     .collect();
-                String::from_utf16(&utf16).ok().map(|s| s.trim().to_string())
+                String::from_utf16(&utf16)
+                    .ok()
+                    .map(|s| s.trim().to_string())
             } else {
                 Some(String::from_utf8_lossy(bytes).trim().to_string())
             }

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Database {
@@ -49,8 +49,8 @@ pub struct UpdateBook<'a> {
 
 impl Database {
     pub fn open(path: &str) -> Result<Self> {
-        let conn = Connection::open(path)
-            .with_context(|| format!("Failed to open database at {path}"))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("Failed to open database at {path}"))?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA foreign_keys=ON;

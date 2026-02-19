@@ -1,12 +1,22 @@
-use crate::db::{unix_now, Database, UpdateBook};
+use crate::covers::{default_covers_dir, generate_epub_cover, generate_pdf_cover};
+use crate::db::{Database, UpdateBook, unix_now};
 use crate::extractors::epub::extract_epub_metadata;
 use crate::extractors::pdf::extract_pdf_metadata;
-use crate::handlers::add::{compute_sha256, handle_add};
+use crate::handlers::add::{compute_sha256, handle_add_with_covers_dir};
 use crate::log::log;
 use anyhow::Result;
 use std::path::Path;
 
 pub fn handle_change(db: &Database, file_path: &Path) -> Result<()> {
+    let covers_dir = default_covers_dir();
+    handle_change_with_covers_dir(db, file_path, &covers_dir)
+}
+
+pub fn handle_change_with_covers_dir(
+    db: &Database,
+    file_path: &Path,
+    covers_dir: &Path,
+) -> Result<()> {
     let file_path_str = file_path.to_string_lossy();
 
     let book = match db.find_by_path(&file_path_str)? {
@@ -16,7 +26,7 @@ pub fn handle_change(db: &Database, file_path: &Path) -> Result<()> {
                 "[INFO] Change detected for untracked file; attempting add: {}",
                 file_path.display()
             ));
-            return handle_add(db, file_path);
+            return handle_add_with_covers_dir(db, file_path, covers_dir);
         }
     };
 
@@ -31,10 +41,7 @@ pub fn handle_change(db: &Database, file_path: &Path) -> Result<()> {
 
     let new_hash = compute_sha256(file_path)?;
     if new_hash == book.file_hash {
-        log(&format!(
-            "[SKIP] Hash unchanged for \"{}\"",
-            book.title
-        ));
+        log(&format!("[SKIP] Hash unchanged for \"{}\"", book.title));
         return Ok(());
     }
 
@@ -43,11 +50,33 @@ pub fn handle_change(db: &Database, file_path: &Path) -> Result<()> {
     } else {
         extract_epub_metadata(file_path)
     };
+    let cover_path = if book.file_type == "pdf" {
+        generate_pdf_cover(
+            file_path,
+            &book.id,
+            &metadata.title,
+            metadata.author.as_deref(),
+            covers_dir,
+        )
+    } else {
+        generate_epub_cover(
+            file_path,
+            &book.id,
+            &metadata.title,
+            metadata.author.as_deref(),
+            covers_dir,
+        )
+    };
+    let cover_path_str = cover_path.as_ref().and_then(|p| p.to_str());
 
-    // If old cover exists but new extraction produced none, remove stale cover file
-    if book.cover_path.is_some() && metadata.cover_path.is_none() {
-        if let Some(ref cover) = book.cover_path {
-            let _ = std::fs::remove_file(cover);
+    // If old cover exists but new generation produced none, remove stale cover file.
+    if let Some(ref old_cover) = book.cover_path {
+        let should_delete_old = match cover_path.as_ref() {
+            Some(new_cover) => new_cover.to_string_lossy() != old_cover.as_str(),
+            None => true,
+        };
+        if should_delete_old {
+            let _ = std::fs::remove_file(old_cover);
         }
     }
 
@@ -61,7 +90,7 @@ pub fn handle_change(db: &Database, file_path: &Path) -> Result<()> {
             description: metadata.description.as_deref(),
             file_size: meta.len() as i64,
             file_hash: &new_hash,
-            cover_path: metadata.cover_path.as_deref(),
+            cover_path: cover_path_str,
             page_count: metadata.page_count.map(|p| p as i64),
             updated_at: now,
         },

@@ -1,6 +1,6 @@
 use super::BookMetadata;
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::io::Read;
 use std::path::Path;
 

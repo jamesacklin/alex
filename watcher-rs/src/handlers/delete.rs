@@ -23,10 +23,7 @@ pub fn handle_delete(db: &Database, file_path: &Path) -> Result<()> {
 
     db.delete_book(&book.id)?;
 
-    log(&format!(
-        "[DELETE] Removed \"{}\" from library",
-        book.title
-    ));
+    log(&format!("[DELETE] Removed \"{}\" from library", book.title));
     db.increment_library_version()?;
     Ok(())
 }
