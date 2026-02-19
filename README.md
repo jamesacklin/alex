@@ -37,7 +37,7 @@ Any collection can be shared by generating a share link from the collection deta
 | UI | React 19, [Tailwind CSS v4](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com) |
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
 | Database | SQLite via [better-sqlite3](https://github.com/JoshuaWise/better-sqlite3) + [Drizzle ORM](https://orm.drizzle.team) |
-| Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs), [pdf-parse](https://www.npmjs.com/package/pdf-parse) (metadata) |
+| Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs) |
 | Cover generation | Rust (`watcher-rs`) via [pdfium-render](https://crates.io/crates/pdfium-render) + fallback renderer |
 | File watching | Rust (`watcher-rs`) via [`notify`](https://crates.io/crates/notify) |
 
@@ -187,7 +187,7 @@ pnpm electron:dev:external
 ```
 
 Native module ABI notes:
-- `pnpm build:native` compiles `better-sqlite3`/`@napi-rs/canvas` for your local Node runtime (used by web/Next dev).
+- `pnpm build:native` compiles `better-sqlite3` for your local Node runtime (used by web/Next dev).
 - `pnpm electron:rebuild` compiles those modules for Electron's Node ABI (used for packaged Electron builds).
 - `pnpm electron:build` now restores Node-native modules at the end so regular web dev keeps working.
 
@@ -196,12 +196,11 @@ Native module ABI notes:
 | Script | What it does |
 |---|---|
 | `pnpm setup` | Complete initial setup (install, build native deps, create schema, seed admin) |
-| `pnpm build:native` | Build native dependencies (better-sqlite3, @napi-rs/canvas) for your platform |
+| `pnpm build:native` | Build native dependencies (better-sqlite3) for your platform |
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |
 | `pnpm watcher` | Background Rust file watcher (`watcher-rs`) |
-| `pnpm watcher:ts` | Legacy TypeScript watcher (migration fallback) |
 | `pnpm electron:dev` | Electron dev mode (app-managed server on `:3210`) |
 | `pnpm electron:dev:external` | Electron dev with separately started Next dev server |
 | `pnpm db:push` | Apply schema changes to the database |

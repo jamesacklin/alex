@@ -11,21 +11,6 @@ const appConfig = createJestConfig({
   }
 });
 
-const watcherConfig = {
-  displayName: "watcher",
-  testEnvironment: "node",
-  testMatch: ["<rootDir>/watcher/**/__tests__/**/*.test.(ts|tsx)"],
-  transform: {
-    "^.+\\.(t|j)sx?$": ["@swc/jest"]
-  },
-  moduleNameMapper: {
-    "^@/(.*)$": "<rootDir>/src/$1"
-  }
-};
-
 module.exports = async () => {
-  const resolvedAppConfig = await appConfig();
-  return {
-    projects: [resolvedAppConfig, watcherConfig]
-  };
+  return appConfig();
 };
