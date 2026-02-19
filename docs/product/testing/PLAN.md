@@ -84,7 +84,6 @@ export const test = base.extend<AppFixture>({
 |----------|-----------------|---------------------|--------------------|
 | Web      | Any CI runner   | `playwright test`   | Chromium (default) |
 | macOS    | `macos-latest`  | Electron + Chromium | Electron's Chromium|
-| Windows  | `windows-latest`| Electron + Chromium | Electron's Chromium|
 | Linux    | `ubuntu-latest` | Electron + Chromium | Electron's Chromium|
  
 All four entries run the **same spec files** (minus `desktop.spec.ts` which is skipped on web).
@@ -271,33 +270,12 @@ jobs:
           name: e2e-macos-report
           path: playwright-report/
  
-  e2e-electron-windows:
-    name: e2e-electron-windows
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build:native && pnpm build
-      - run: npx tsc -p electron/tsconfig.json
-      - run: pnpm db:push && pnpm db:seed
-      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
-        env:
-          E2E_PLATFORM: electron
-          DATABASE_PATH: ./data/test.db
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: e2e-windows-report
-          path: playwright-report/
 ```
  
 ### Notes on CI
  
 - **Linux Electron needs `xvfb-run`** — there's no display server in CI. The `xvfb-run` wrapper provides a virtual framebuffer.
-- **macOS and Windows** have native display servers in GitHub Actions runners; no wrapper needed.
+- **macOS** has a native display server in GitHub Actions runners; no wrapper needed.
 - **`workers: 1`** in Playwright config — SQLite is single-writer. Parallel test workers would cause lock contention. This is acceptable because E2E suites are I/O-bound (waiting for UI), not CPU-bound.
 - **Artifacts on failure** — traces, screenshots, and videos upload automatically when tests fail, making debugging CI failures practical.
  
@@ -364,7 +342,8 @@ The required status checks are:
 - `e2e-web`
 - `e2e-electron-linux`
 - `e2e-electron-macos`
-- `e2e-electron-windows`
+
+Windows E2E checks are currently disabled and are not required for merge.
 
 These names are case-sensitive and must exactly match the job names in `.github/workflows/e2e.yml`.
 
@@ -390,8 +369,7 @@ gh api -X PUT repos/jamesacklin/alex/branches/main/protection --input - <<'JSON'
     "contexts": [
       "e2e-web",
       "e2e-electron-linux",
-      "e2e-electron-macos",
-      "e2e-electron-windows"
+      "e2e-electron-macos"
     ]
   },
   "enforce_admins": false,
