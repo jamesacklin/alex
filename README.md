@@ -33,7 +33,7 @@ Any collection can be shared by generating a share link from the collection deta
 | Layer | What |
 |---|---|
 | Framework | [Next.js 16](https://nextjs.org) with the App Router |
-| Language | TypeScript |
+| Language | TypeScript (app), Rust (watcher + DB bridge) |
 | UI | React 19, [Tailwind CSS v4](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com) |
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
 | Database | SQLite via Rust (`watcher-rs` + `rusqlite`) |
@@ -154,8 +154,7 @@ pnpm setup          # installs deps, creates schema, seeds admin
 **Or step-by-step:**
 ```sh
 pnpm install
-pnpm build:native   # no-op (kept for CI/script compatibility)
-pnpm db:push        # create the SQLite schema
+pnpm db:push        # create the SQLite schema (builds watcher-rs if needed)
 pnpm db:seed        # seed the default admin user
 ```
 
@@ -166,7 +165,7 @@ pnpm dev            # Next.js dev server → http://localhost:3000
 pnpm watcher        # Rust watcher (watches ./data/library by default)
 ```
 
-> **Rust required for local watcher/electron builds:** install a stable Rust toolchain (`rustup toolchain install stable`).
+> **Rust toolchain required:** The watcher binary and database bridge are written in Rust. Install a stable toolchain with `rustup toolchain install stable`. The binary is built automatically by `pnpm db:push` and `pnpm watcher` if not already compiled.
 
 ### Electron Development
 
@@ -184,21 +183,18 @@ If you explicitly want an externally managed Next dev server, use:
 pnpm electron:dev:external
 ```
 
-Native module note:
-- `pnpm build:native` is a compatibility no-op and can be ignored.
-
 ### Useful scripts
 
 | Script | What it does |
 |---|---|
-| `pnpm setup` | Complete initial setup (install, create schema, seed admin) |
-| `pnpm build:native` | Compatibility no-op |
+| `pnpm setup` | Complete initial setup (install, build watcher, create schema, seed admin) |
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |
-| `pnpm watcher` | Background Rust file watcher (`watcher-rs`) |
+| `pnpm watcher` | Rust file watcher (`watcher-rs`); builds the binary if not found |
+| `pnpm watcher:build` | Build the `watcher-rs` release binary |
 | `pnpm electron:dev` | Electron dev mode (app-managed server on `:3210`) |
 | `pnpm electron:dev:external` | Electron dev with separately started Next dev server |
-| `pnpm db:push` | Apply schema changes to the database |
+| `pnpm db:push` | Apply schema to the database (uses Rust bridge) |
 | `pnpm db:seed` | Seed the default admin account |
 | `pnpm db:reset` | Wipe the database and re-seed from scratch |
