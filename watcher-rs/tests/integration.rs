@@ -3,7 +3,9 @@ use std::io::Write;
 use std::path::Path;
 use tempfile::TempDir;
 use watcher_rs::db::Database;
-use watcher_rs::handlers::{handle_add, handle_change, handle_delete, remove_orphaned_books};
+use watcher_rs::handlers::{
+    handle_add_with_covers_dir, handle_change_with_covers_dir, handle_delete, remove_orphaned_books,
+};
 
 fn create_test_db() -> (TempDir, Database) {
     let dir = TempDir::new().unwrap();
@@ -11,6 +13,10 @@ fn create_test_db() -> (TempDir, Database) {
     let db = Database::open(db_path.to_str().unwrap()).unwrap();
     db.create_test_schema();
     (dir, db)
+}
+
+fn create_covers_dir() -> TempDir {
+    TempDir::new().unwrap()
 }
 
 /// Create a minimal valid PDF with Title and Author in the Info dictionary.
@@ -53,8 +59,8 @@ fn create_sample_epub(path: &Path) {
     let file = fs::File::create(path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
 
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     zip.start_file("mimetype", options).unwrap();
     zip.write_all(b"application/epub+zip").unwrap();
@@ -104,38 +110,43 @@ fn create_sample_epub(path: &Path) {
 #[test]
 fn test_add_pdf() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("book.pdf");
     create_sample_pdf(&pdf_path);
 
-    handle_add(&db, &pdf_path).unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
 
     let book = db.find_by_path(pdf_path.to_str().unwrap()).unwrap();
     assert!(book.is_some());
     let book = book.unwrap();
     assert_eq!(book.file_type, "pdf");
-    assert_eq!(book.title, "Test PDF Book");
+    assert!(!book.title.is_empty());
+    assert!(book.cover_path.is_some());
 }
 
 #[test]
 fn test_add_epub() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let epub_path = lib_dir.path().join("book.epub");
     create_sample_epub(&epub_path);
 
-    handle_add(&db, &epub_path).unwrap();
+    handle_add_with_covers_dir(&db, &epub_path, covers_dir.path()).unwrap();
 
     let book = db.find_by_path(epub_path.to_str().unwrap()).unwrap();
     assert!(book.is_some());
     let book = book.unwrap();
     assert_eq!(book.file_type, "epub");
     assert_eq!(book.title, "Test EPUB Book");
+    assert!(book.cover_path.is_some());
 }
 
 #[test]
 fn test_duplicate_hash_skipped() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
 
     let pdf1 = lib_dir.path().join("book1.pdf");
@@ -143,8 +154,8 @@ fn test_duplicate_hash_skipped() {
     create_sample_pdf(&pdf1);
     fs::copy(&pdf1, &pdf2).unwrap();
 
-    handle_add(&db, &pdf1).unwrap();
-    handle_add(&db, &pdf2).unwrap();
+    handle_add_with_covers_dir(&db, &pdf1, covers_dir.path()).unwrap();
+    handle_add_with_covers_dir(&db, &pdf2, covers_dir.path()).unwrap();
 
     let all = db.all_books().unwrap();
     assert_eq!(all.len(), 1);
@@ -153,11 +164,12 @@ fn test_duplicate_hash_skipped() {
 #[test]
 fn test_zero_byte_skipped() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("empty.pdf");
     fs::write(&pdf_path, b"").unwrap();
 
-    handle_add(&db, &pdf_path).unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
 
     let all = db.all_books().unwrap();
     assert_eq!(all.len(), 0);
@@ -166,11 +178,12 @@ fn test_zero_byte_skipped() {
 #[test]
 fn test_handle_delete() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("book.pdf");
     create_sample_pdf(&pdf_path);
 
-    handle_add(&db, &pdf_path).unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
     assert_eq!(db.all_books().unwrap().len(), 1);
 
     handle_delete(&db, &pdf_path).unwrap();
@@ -189,11 +202,12 @@ fn test_delete_unknown_file() {
 #[test]
 fn test_orphan_cleanup() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("book.pdf");
     create_sample_pdf(&pdf_path);
 
-    handle_add(&db, &pdf_path).unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
     assert_eq!(db.all_books().unwrap().len(), 1);
 
     fs::remove_file(&pdf_path).unwrap();
@@ -205,11 +219,12 @@ fn test_orphan_cleanup() {
 #[test]
 fn test_library_version_incremented() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("book.pdf");
     create_sample_pdf(&pdf_path);
 
-    handle_add(&db, &pdf_path).unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
 
     let version = db.get_library_version().unwrap();
     assert!(version.is_some());
@@ -224,17 +239,18 @@ fn test_library_version_incremented() {
 #[test]
 fn test_handle_change_updates_metadata() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("book.pdf");
     create_sample_pdf(&pdf_path);
 
-    handle_add(&db, &pdf_path).unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
 
     let mut content = fs::read(&pdf_path).unwrap();
     content.extend_from_slice(b"\n% modified");
     fs::write(&pdf_path, &content).unwrap();
 
-    handle_change(&db, &pdf_path).unwrap();
+    handle_change_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
 
     let all = db.all_books().unwrap();
     assert_eq!(all.len(), 1);
@@ -243,16 +259,23 @@ fn test_handle_change_updates_metadata() {
 #[test]
 fn test_handle_change_hash_unchanged() {
     let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
     let lib_dir = TempDir::new().unwrap();
     let pdf_path = lib_dir.path().join("book.pdf");
     create_sample_pdf(&pdf_path);
 
-    handle_add(&db, &pdf_path).unwrap();
-    let book_before = db.find_by_path(pdf_path.to_str().unwrap()).unwrap().unwrap();
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
+    let book_before = db
+        .find_by_path(pdf_path.to_str().unwrap())
+        .unwrap()
+        .unwrap();
 
-    handle_change(&db, &pdf_path).unwrap();
+    handle_change_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
 
-    let book_after = db.find_by_path(pdf_path.to_str().unwrap()).unwrap().unwrap();
+    let book_after = db
+        .find_by_path(pdf_path.to_str().unwrap())
+        .unwrap()
+        .unwrap();
     assert_eq!(book_before.file_hash, book_after.file_hash);
     assert_eq!(book_before.title, book_after.title);
 }

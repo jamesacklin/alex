@@ -1,10 +1,13 @@
 use clap::Parser;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use watcher_rs::db::Database;
 
 #[derive(Parser)]
-#[command(name = "watcher-rs", about = "Watch a library directory for PDF and EPUB files")]
+#[command(
+    name = "watcher-rs",
+    about = "Watch a library directory for PDF and EPUB files"
+)]
 struct Args {
     #[arg(long, env = "LIBRARY_PATH", default_value = "./data/library")]
     library_path: String,
@@ -21,9 +24,11 @@ fn main() -> anyhow::Result<()> {
 
     // Ensure library directory exists
     std::fs::create_dir_all(&args.library_path)?;
+    std::fs::create_dir_all(&args.covers_path)?;
 
     // Resolve to absolute path
     let library_path = std::fs::canonicalize(&args.library_path)?;
+    let covers_path = std::fs::canonicalize(&args.covers_path)?;
 
     // Open database
     let db = Database::open(&args.db_path)?;
@@ -36,7 +41,7 @@ fn main() -> anyhow::Result<()> {
     })?;
 
     // Run the watcher (blocks until shutdown)
-    watcher_rs::watcher::run(library_path, db, shutdown)?;
+    watcher_rs::watcher::run(library_path, covers_path, db, shutdown)?;
 
     Ok(())
 }

@@ -1,13 +1,15 @@
 use crate::db::Database;
-use crate::handlers::{handle_add, handle_change, handle_delete, remove_orphaned_books};
+use crate::handlers::{
+    handle_add_with_covers_dir, handle_change_with_covers_dir, handle_delete, remove_orphaned_books,
+};
 use crate::log::log;
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +59,7 @@ fn collect_target_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<(
 
 pub fn run(
     library_path: PathBuf,
+    covers_path: PathBuf,
     db: Database,
     shutdown: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
@@ -188,21 +191,17 @@ pub fn run(
                     }
 
                     let file_path_str = path.to_string_lossy();
-                    let is_existing = db
-                        .find_by_path(&file_path_str)
-                        .ok()
-                        .flatten()
-                        .is_some();
+                    let is_existing = db.find_by_path(&file_path_str).ok().flatten().is_some();
 
                     if is_existing {
-                        if let Err(e) = handle_change(&db, &path) {
+                        if let Err(e) = handle_change_with_covers_dir(&db, &path, &covers_path) {
                             log(&format!(
                                 "[ERROR] Failed to process change for {}: {}",
                                 path.display(),
                                 e
                             ));
                         }
-                    } else if let Err(e) = handle_add(&db, &path) {
+                    } else if let Err(e) = handle_add_with_covers_dir(&db, &path, &covers_path) {
                         log(&format!(
                             "[ERROR] Failed to process {}: {}",
                             path.display(),
