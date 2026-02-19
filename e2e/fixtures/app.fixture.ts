@@ -124,15 +124,19 @@ export const test = base.extend<AppFixture>({
     });
 
     const electronProcess = app.process();
-    const logElectronProcess = process.env.E2E_DEBUG_ELECTRON === '1' || !!process.env.CI;
+    const logElectronProcess = process.env.E2E_DEBUG_ELECTRON === '1';
     const onStdout = (chunk: Buffer) => process.stdout.write(`[Electron stdout] ${chunk.toString()}`);
     const onStderr = (chunk: Buffer) => process.stderr.write(`[Electron stderr] ${chunk.toString()}`);
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
       console.log(`[Fixture] Electron process exited (code=${code}, signal=${signal})`);
     };
 
+    // In CI, only capture stderr to avoid OOM from buffering verbose
+    // Next.js server stdout in the Playwright worker process.
     if (logElectronProcess) {
       electronProcess.stdout?.on('data', onStdout);
+      electronProcess.stderr?.on('data', onStderr);
+    } else if (process.env.CI) {
       electronProcess.stderr?.on('data', onStderr);
     }
     electronProcess.on('exit', onExit);
