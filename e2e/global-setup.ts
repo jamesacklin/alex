@@ -46,16 +46,21 @@ export default async function globalSetup() {
       // Ignore errors - port might not be in use
     }
 
-    // Ensure database is set up before tests run
-    // This prevents Electron from having to run slow migrations on startup
-    console.log('[E2E] Running database migration...');
-    execSync('pnpm db:push', { stdio: 'inherit' });
+    // Ensure database is set up before tests run.
+    // In CI, the workflow already ran db:push, build, and electron:compile,
+    // so skip those steps to avoid redundant (and slow) work.
+    if (!process.env.CI) {
+      console.log('[E2E] Running database migration...');
+      execSync('pnpm db:push', { stdio: 'inherit' });
 
-    if (process.env.E2E_PLATFORM === 'electron') {
-      console.log('[E2E] Building Next.js app for Electron e2e runtime...');
-      execSync('pnpm build', { stdio: 'inherit' });
-      console.log('[E2E] Compiling Electron main process...');
-      execSync('pnpm electron:compile', { stdio: 'inherit' });
+      if (process.env.E2E_PLATFORM === 'electron') {
+        console.log('[E2E] Building Next.js app for Electron e2e runtime...');
+        execSync('pnpm build', { stdio: 'inherit' });
+        console.log('[E2E] Compiling Electron main process...');
+        execSync('pnpm electron:compile', { stdio: 'inherit' });
+      }
+    } else {
+      console.log('[E2E] CI detected: skipping build/compile/migrate (handled by workflow)');
     }
 
     // Reset and seed test database
