@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { and, asc, count, desc, eq, isNull, like, or } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { books, readingProgress } from "@/lib/db/schema";
+import { SqlParam, queryAll, queryOne } from "@/lib/db/rust";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -21,96 +19,95 @@ export async function GET(req: Request) {
   const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 24));
   const offset = (page - 1) * limit;
 
-  // LEFT JOIN: only the current user's reading progress
-  const joinCond = and(
-    eq(readingProgress.bookId, books.id),
-    eq(readingProgress.userId, session.user.id),
-  );
-
-  // Accumulate WHERE predicates
-  const conditions = [];
+  const whereClauses: string[] = [];
+  const whereParams: SqlParam[] = [];
 
   if (q) {
-    conditions.push(
-      or(like(books.title, `%${q}%`), like(books.author, `%${q}%`)),
-    );
+    whereClauses.push("(b.title LIKE ? OR b.author LIKE ?)");
+    const likePattern = `%${q}%`;
+    whereParams.push(likePattern, likePattern);
   }
 
   if (type !== "all") {
-    conditions.push(eq(books.fileType, type));
+    whereClauses.push("b.file_type = ?");
+    whereParams.push(type);
   }
 
-  // Status filter — "not_started" covers both no row and explicit not_started
   if (status === "not_started") {
-    conditions.push(
-      or(isNull(readingProgress.status), eq(readingProgress.status, "not_started")),
-    );
+    whereClauses.push("(rp.status IS NULL OR rp.status = 'not_started')");
   } else if (status === "reading") {
-    conditions.push(eq(readingProgress.status, "reading"));
+    whereClauses.push("rp.status = ?");
+    whereParams.push("reading");
   } else if (status === "completed") {
-    conditions.push(eq(readingProgress.status, "completed"));
+    whereClauses.push("rp.status = ?");
+    whereParams.push("completed");
   }
 
-  // ORDER BY
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
   const orderBy = (() => {
     switch (sort) {
       case "title":
-        return asc(books.title);
+        return "b.title ASC";
       case "author":
-        return asc(books.author);
+        return "b.author ASC";
       case "read":
-        return desc(readingProgress.lastReadAt);
+        return "rp.last_read_at DESC";
       default:
-        return desc(books.addedAt);
+        return "b.added_at DESC";
     }
   })();
 
-  // Shared base: both count and data queries need the same join + where
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const countRow = await queryOne<{ total: number }>(
+    `
+      SELECT COUNT(*) AS total
+      FROM books b
+      LEFT JOIN reading_progress rp
+        ON rp.book_id = b.id
+       AND rp.user_id = ?
+      ${whereSql}
+    `,
+    [session.user.id, ...whereParams]
+  );
+  const total = Number(countRow?.total ?? 0);
 
-  // Total count (same filters, no order/limit)
-  const countQ = where
-    ? db.select({ total: count() }).from(books).leftJoin(readingProgress, joinCond).where(where)
-    : db.select({ total: count() }).from(books).leftJoin(readingProgress, joinCond);
-  const [{ total }] = await countQ;
-
-  // Paginated data
-  const dataQ = where
-    ? db
-        .select({
-          id: books.id,
-          title: books.title,
-          author: books.author,
-          coverPath: books.coverPath,
-          fileType: books.fileType,
-          pageCount: books.pageCount,
-          addedAt: books.addedAt,
-          updatedAt: books.updatedAt,
-          progressStatus: readingProgress.status,
-          progressPercent: readingProgress.percentComplete,
-          progressLastReadAt: readingProgress.lastReadAt,
-        })
-        .from(books)
-        .leftJoin(readingProgress, joinCond)
-        .where(where)
-    : db
-        .select({
-          id: books.id,
-          title: books.title,
-          author: books.author,
-          coverPath: books.coverPath,
-          fileType: books.fileType,
-          pageCount: books.pageCount,
-          addedAt: books.addedAt,
-          updatedAt: books.updatedAt,
-          progressStatus: readingProgress.status,
-          progressPercent: readingProgress.percentComplete,
-          progressLastReadAt: readingProgress.lastReadAt,
-        })
-        .from(books)
-        .leftJoin(readingProgress, joinCond);
-
-  const rows = await dataQ.orderBy(orderBy).limit(limit).offset(offset);
+  const rows = await queryAll<{
+    id: string;
+    title: string;
+    author: string | null;
+    coverPath: string | null;
+    fileType: string;
+    pageCount: number | null;
+    addedAt: number;
+    updatedAt: number;
+    progressStatus: string | null;
+    progressPercent: number | null;
+    progressLastReadAt: number | null;
+  }>(
+    `
+      SELECT
+        b.id,
+        b.title,
+        b.author,
+        b.cover_path AS coverPath,
+        b.file_type AS fileType,
+        b.page_count AS pageCount,
+        b.added_at AS addedAt,
+        b.updated_at AS updatedAt,
+        rp.status AS progressStatus,
+        rp.percent_complete AS progressPercent,
+        rp.last_read_at AS progressLastReadAt
+      FROM books b
+      LEFT JOIN reading_progress rp
+        ON rp.book_id = b.id
+       AND rp.user_id = ?
+      ${whereSql}
+      ORDER BY ${orderBy}
+      LIMIT ?
+      OFFSET ?
+    `,
+    [session.user.id, ...whereParams, limit, offset]
+  );
 
   const booksResponse = rows.map((row) => ({
     id: row.id,
@@ -120,13 +117,14 @@ export async function GET(req: Request) {
     fileType: row.fileType,
     pageCount: row.pageCount,
     updatedAt: row.updatedAt,
-    readingProgress: row.progressStatus !== null
-      ? {
-          status: row.progressStatus,
-          percentComplete: row.progressPercent,
-          lastReadAt: row.progressLastReadAt,
-        }
-      : null,
+    readingProgress:
+      row.progressStatus !== null
+        ? {
+            status: row.progressStatus,
+            percentComplete: row.progressPercent,
+            lastReadAt: row.progressLastReadAt,
+          }
+        : null,
   }));
 
   return NextResponse.json({
@@ -137,3 +135,4 @@ export async function GET(req: Request) {
     hasMore: page * limit < total,
   });
 }
+

@@ -7,7 +7,6 @@ ignoredBuiltDependencies:
 
 onlyBuiltDependencies:
   - '@swc/core'
-  - better-sqlite3
   - canvas
   - core-js
   - electron

@@ -18,7 +18,6 @@ files:
   - src/lib/db/**/*
   - electron/dist/**/*
   - package.json
-  - drizzle.config.ts
 
 extraResources:
   - from: watcher-rs/dist
@@ -29,7 +28,6 @@ extraResources:
 asar: true
 asarUnpack:
   - "**/*.node"
-  - "**/better-sqlite3/**"
   - "**/canvas/**"
 
 mac:

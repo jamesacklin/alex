@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, ChildProcess, spawnSync } from 'child_process';
 import { store } from './store';
 import { getDataPaths } from './paths';
 import { createTray, destroyTray } from './tray';
@@ -55,74 +55,166 @@ function getEnvVars(libraryPath: string) {
   };
 }
 
-function runDbSetup(libraryPath: string) {
+type WatcherDbAction = 'query-all' | 'query-one' | 'execute';
+let cachedDevWatcherDbBinary: string | null = null;
+
+function resolveDevWatcherDbBinary(): string {
+  if (cachedDevWatcherDbBinary && fs.existsSync(cachedDevWatcherDbBinary)) {
+    return cachedDevWatcherDbBinary;
+  }
+
+  const envBinary = process.env.WATCHER_RS_BIN;
+  const releaseBinary = getDevWatcherBinaryPath();
+  const distBinary = path.join(process.cwd(), 'watcher-rs', 'dist', watcherBinaryName());
+  const candidates = [envBinary, releaseBinary, distBinary].filter((candidate): candidate is string => !!candidate);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      cachedDevWatcherDbBinary = candidate;
+      return candidate;
+    }
+  }
+
+  console.log('[Electron] watcher-rs binary not found, building release binary for DB setup...');
+  const build = spawnSync(
+    'cargo',
+    ['build', '--manifest-path', path.join(process.cwd(), 'watcher-rs', 'Cargo.toml'), '--release', '--locked'],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: 'inherit',
+    },
+  );
+
+  if (build.error) {
+    throw build.error;
+  }
+  if (build.status !== 0) {
+    throw new Error(`[Electron] watcher-rs build failed with code ${build.status}`);
+  }
+
+  if (fs.existsSync(releaseBinary)) {
+    cachedDevWatcherDbBinary = releaseBinary;
+    return releaseBinary;
+  }
+
+  throw new Error(`[Electron] Unable to resolve watcher-rs DB binary. Checked: ${candidates.join(', ')}`);
+}
+
+function runWatcherDbCommand(
+  action: WatcherDbAction,
+  request: { sql: string; params?: unknown[] },
+  env: NodeJS.ProcessEnv,
+) {
+  const dbPath = env.DATABASE_PATH;
+  if (!dbPath) {
+    throw new Error('DATABASE_PATH is not set');
+  }
+
+  const input = JSON.stringify({
+    sql: request.sql,
+    params: request.params ?? [],
+  });
+
   if (!isDev) {
-    const env = getEnvVars(libraryPath);
-    const databasePath = env.DATABASE_PATH;
-    if (!databasePath) {
-      console.error('[Electron] DATABASE_PATH is not set; skipping packaged database setup');
+    const packagedBinary = getPackagedWatcherBinaryPath();
+    if (!fs.existsSync(packagedBinary)) {
+      throw new Error(`Packaged watcher binary not found: ${packagedBinary}`);
+    }
+
+    const result = spawnSync(packagedBinary, ['db', '--db-path', dbPath, action], {
+      cwd: process.resourcesPath,
+      env,
+      input,
+      encoding: 'utf8',
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(result.stderr?.trim() || `[watcher-rs] exited with code ${result.status}`);
+    }
+
+    const payload = result.stdout?.trim();
+    if (!payload) {
+      return {};
+    }
+    return JSON.parse(payload) as { row?: unknown; rows?: unknown[]; changes?: number };
+  }
+
+  const devBinary = resolveDevWatcherDbBinary();
+  const result = spawnSync(devBinary, ['db', '--db-path', dbPath, action], {
+    cwd: process.cwd(),
+    env,
+    input,
+    encoding: 'utf8',
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(result.stderr?.trim() || `[watcher-rs] exited with code ${result.status}`);
+  }
+
+  const payload = result.stdout?.trim();
+  if (!payload) {
+    return {};
+  }
+  return JSON.parse(payload) as { row?: unknown; rows?: unknown[]; changes?: number };
+}
+
+function runDbSetup(libraryPath: string) {
+  const env = getEnvVars(libraryPath);
+  const databasePath = env.DATABASE_PATH;
+  if (!databasePath) {
+    console.error('[Electron] DATABASE_PATH is not set; skipping database setup');
+    return;
+  }
+  const absoluteDatabasePath = path.resolve(databasePath);
+  const migrationPath = path.join(app.getAppPath(), 'src/lib/db/migrations/0000_wide_expediter.sql');
+
+  try {
+    if (!fs.existsSync(migrationPath)) {
+      console.error(`[Electron] Migration file not found: ${migrationPath}`);
       return;
     }
 
-    const absoluteDatabasePath = path.resolve(databasePath);
-    const migrationPath = path.join(app.getAppPath(), 'src/lib/db/migrations/0000_wide_expediter.sql');
+    fs.mkdirSync(path.dirname(absoluteDatabasePath), { recursive: true });
 
-    try {
-      if (!fs.existsSync(migrationPath)) {
-        console.error(`[Electron] Migration file not found: ${migrationPath}`);
-        return;
+    const usersTableExists = runWatcherDbCommand(
+      'query-one',
+      { sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'users' LIMIT 1" },
+      env,
+    ).row;
+
+    if (!usersTableExists) {
+      const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+      const statements = migrationSql
+        .split('--> statement-breakpoint')
+        .map((statement) => statement.trim())
+        .filter((statement) => statement.length > 0);
+
+      for (const statement of statements) {
+        runWatcherDbCommand('execute', { sql: statement }, env);
       }
+      console.log('[Electron] Database schema initialized');
+    }
 
-      fs.mkdirSync(path.dirname(absoluteDatabasePath), { recursive: true });
+    const hasFileHashIndex = runWatcherDbCommand(
+      'query-one',
+      { sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'index' AND name = 'books_file_hash_unique' LIMIT 1" },
+      env,
+    ).row;
 
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const BetterSqlite3 = require('better-sqlite3') as new (filename: string) => {
-        pragma: (sql: string) => void;
-        prepare: (sql: string) => { get: (...args: unknown[]) => unknown; run: (...args: unknown[]) => unknown };
-        exec: (sql: string) => void;
-        transaction: (fn: () => void) => () => void;
-        close: () => void;
-      };
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const bcrypt = require('bcryptjs') as { hashSync: (value: string, rounds: number) => string };
-      const db = new BetterSqlite3(absoluteDatabasePath);
+    if (!hasFileHashIndex) {
+      console.log('[Electron] Missing unique indexes on books table, applying fix...');
 
-      try {
-        db.pragma('journal_mode = WAL');
-        db.pragma('foreign_keys = ON');
-
-        const usersTableExists = db
-          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users' LIMIT 1")
-          .get();
-
-        if (!usersTableExists) {
-          const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-          const statements = migrationSql
-            .split('--> statement-breakpoint')
-            .map((statement) => statement.trim())
-            .filter((statement) => statement.length > 0);
-
-          const runMigration = db.transaction(() => {
-            for (const statement of statements) {
-              db.exec(statement);
-            }
-          });
-          runMigration();
-          console.log('[Electron] Database schema initialized for packaged build');
-        }
-
-        // Ensure unique indexes exist on books table (fixes databases created
-        // before the indexes were added to the migration).
-        const hasFileHashIndex = db
-          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'books_file_hash_unique' LIMIT 1")
-          .get();
-
-        if (!hasFileHashIndex) {
-          console.log('[Electron] Missing unique indexes on books table, applying fix...');
-
-          // Remove duplicate books before creating unique indexes.
-          // Keep the earliest entry (lowest added_at) for each file_hash.
-          db.exec(`
+      runWatcherDbCommand(
+        'execute',
+        {
+          sql: `
             DELETE FROM books WHERE id IN (
               SELECT b.id FROM books b
               INNER JOIN (
@@ -130,10 +222,15 @@ function runDbSetup(libraryPath: string) {
                 FROM books GROUP BY file_hash HAVING COUNT(*) > 1
               ) d ON b.file_hash = d.file_hash AND b.added_at > d.min_added
             )
-          `);
+          `,
+        },
+        env,
+      );
 
-          // Also deduplicate by file_path.
-          db.exec(`
+      runWatcherDbCommand(
+        'execute',
+        {
+          sql: `
             DELETE FROM books WHERE id IN (
               SELECT b.id FROM books b
               INNER JOIN (
@@ -141,57 +238,56 @@ function runDbSetup(libraryPath: string) {
                 FROM books GROUP BY file_path HAVING COUNT(*) > 1
               ) d ON b.file_path = d.file_path AND b.added_at > d.min_added
             )
-          `);
+          `,
+        },
+        env,
+      );
 
-          db.exec('CREATE UNIQUE INDEX IF NOT EXISTS `books_file_path_unique` ON `books` (`file_path`)');
-          db.exec('CREATE UNIQUE INDEX IF NOT EXISTS `books_file_hash_unique` ON `books` (`file_hash`)');
-          console.log('[Electron] Unique indexes created and duplicates cleaned up');
-        }
-
-        const adminEmail = 'admin@localhost';
-        const existingAdmin = db.prepare('SELECT 1 FROM users WHERE email = ? LIMIT 1').get(adminEmail);
-        if (!existingAdmin) {
-          const now = Math.floor(Date.now() / 1000);
-          const passwordHash = bcrypt.hashSync('admin123', 10);
-          db.prepare(
-            'INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          ).run('1', adminEmail, passwordHash, 'Admin', 'admin', now, now);
-          console.log('[Electron] Seeded default admin user for packaged build');
-        }
-      } finally {
-        db.close();
-      }
-    } catch (error) {
-      console.error('[Electron] Packaged database setup failed:', error);
+      runWatcherDbCommand(
+        'execute',
+        { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS `books_file_path_unique` ON `books` (`file_path`)' },
+        env,
+      );
+      runWatcherDbCommand(
+        'execute',
+        { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS `books_file_hash_unique` ON `books` (`file_hash`)' },
+        env,
+      );
+      console.log('[Electron] Unique indexes created and duplicates cleaned up');
     }
-    return;
-  }
 
-  const env = getEnvVars(libraryPath);
-  const workingDir = process.cwd();
-
-  console.log('[Electron] Running database migration...');
-  try {
-    execSync('pnpm exec drizzle-kit push', {
-      stdio: 'inherit',
+    const adminEmail = 'admin@localhost';
+    const existingAdmin = runWatcherDbCommand(
+      'query-one',
+      {
+        sql: 'SELECT 1 AS present FROM users WHERE email = ?1 LIMIT 1',
+        params: [adminEmail],
+      },
       env,
-      cwd: workingDir,
-    });
-    console.log('[Electron] Database migration complete');
-  } catch (error) {
-    console.error('[Electron] Database migration failed:', error);
-  }
+    ).row;
 
-  console.log('[Electron] Running database seed...');
-  try {
-    execSync('pnpm exec tsx src/lib/db/seed.ts', {
-      stdio: 'inherit',
-      env,
-      cwd: workingDir,
-    });
-    console.log('[Electron] Database seed complete');
+    if (!existingAdmin) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const bcrypt = require('bcryptjs') as { hashSync: (value: string, rounds: number) => string };
+      const now = Math.floor(Date.now() / 1000);
+      const passwordHash = bcrypt.hashSync('admin123', 10);
+      runWatcherDbCommand(
+        'execute',
+        {
+          sql: `
+            INSERT INTO users (
+              id, email, password_hash, display_name, role, created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+          `,
+          params: ['1', adminEmail, passwordHash, 'Admin', 'admin', now, now],
+        },
+        env,
+      );
+      console.log('[Electron] Seeded default admin user');
+    }
   } catch (error) {
-    console.error('[Electron] Database seed failed:', error);
+    console.error('[Electron] Database setup failed:', error);
   }
 }
 
@@ -203,7 +299,6 @@ function startServer(libraryPath: string) {
     "const path=require('node:path')",
     "const originalResolveFilename=Module._resolveFilename",
     "Module._resolveFilename=function(request,parent,isMain,options){",
-    "if(/^better-sqlite3-[a-f0-9]{8,}$/i.test(request))request='better-sqlite3'",
     "if(/^canvas-[a-f0-9]{8,}$/i.test(request))request='canvas'",
     'return originalResolveFilename.call(this,request,parent,isMain,options)',
     '}',

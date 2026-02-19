@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { collectionBooks, collections, users } from "@/lib/db/schema";
+import { execute, queryAll, queryOne } from "@/lib/db/rust";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 // GET /api/collections — list current user's collections with book counts
 export async function GET(req: Request) {
@@ -16,20 +14,30 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const bookId = url.searchParams.get("bookId")?.trim() || "";
 
-  const rows = await db
-    .select({
-      id: collections.id,
-      name: collections.name,
-      description: collections.description,
-      createdAt: collections.createdAt,
-      shareToken: collections.shareToken,
-      bookCount: count(collectionBooks.bookId),
-    })
-    .from(collections)
-    .leftJoin(collectionBooks, eq(collectionBooks.collectionId, collections.id))
-    .where(eq(collections.userId, session.user.id))
-    .groupBy(collections.id)
-    .orderBy(desc(collections.createdAt));
+  const rows = await queryAll<{
+    id: string;
+    name: string;
+    description: string | null;
+    createdAt: number;
+    shareToken: string | null;
+    bookCount: number;
+  }>(
+    `
+      SELECT
+        c.id,
+        c.name,
+        c.description,
+        c.created_at AS createdAt,
+        c.share_token AS shareToken,
+        COUNT(cb.book_id) AS bookCount
+      FROM collections c
+      LEFT JOIN collection_books cb ON cb.collection_id = c.id
+      WHERE c.user_id = ?1
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+    `,
+    [session.user.id]
+  );
 
   if (!bookId) {
     return NextResponse.json({ collections: rows });
@@ -39,18 +47,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ collections: [] });
   }
 
-  const membershipRows = await db
-    .select({ collectionId: collectionBooks.collectionId })
-    .from(collectionBooks)
-    .where(
-      and(
-        eq(collectionBooks.bookId, bookId),
-        inArray(
-          collectionBooks.collectionId,
-          rows.map((row) => row.id),
-        ),
-      ),
-    );
+  const placeholders = rows.map(() => "?").join(", ");
+  const membershipRows = await queryAll<{ collectionId: string }>(
+    `
+      SELECT collection_id AS collectionId
+      FROM collection_books
+      WHERE book_id = ?
+        AND collection_id IN (${placeholders})
+    `,
+    [bookId, ...rows.map((row) => row.id)]
+  );
 
   const membership = new Set(membershipRows.map((row) => row.collectionId));
   const collectionsWithMembership = rows.map((row) => ({
@@ -88,22 +94,28 @@ export async function POST(req: Request) {
   const id = crypto.randomUUID();
   const createdAt = Math.floor(Date.now() / 1000);
 
-  const [existingUser] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, session.user.id));
+  const existingUser = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE id = ?1
+      LIMIT 1
+    `,
+    [session.user.id]
+  );
 
   if (!existingUser) {
     return NextResponse.json({ error: "User not found, try logging in again" }, { status: 404 });
   }
 
-  await db.insert(collections).values({
-    id,
-    userId: session.user.id,
-    name,
-    description: description || null,
-    createdAt,
-  });
+  await execute(
+    `
+      INSERT INTO collections (id, user_id, name, description, created_at)
+      VALUES (?1, ?2, ?3, ?4, ?5)
+    `,
+    [id, session.user.id, name, description || null, createdAt]
+  );
 
   return NextResponse.json({ id, name, description: description || null, createdAt }, { status: 201 });
 }
+

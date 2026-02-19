@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq, count } from "drizzle-orm";
 import { getSharedCollection } from "@/lib/shared";
-import { db } from "@/lib/db";
-import { books, collectionBooks } from "@/lib/db/schema";
+import { queryAll, queryOne } from "@/lib/db/rust";
 
 export const dynamic = "force-dynamic";
 
@@ -25,29 +23,41 @@ export async function GET(
   const offset = (page - 1) * limit;
 
   // Get total count of books in collection
-  const [totalResult] = await db
-    .select({ count: count() })
-    .from(collectionBooks)
-    .where(eq(collectionBooks.collectionId, collection.id));
-
-  const total = totalResult?.count ?? 0;
+  const totalResult = await queryOne<{ count: number }>(
+    `
+      SELECT COUNT(*) AS count
+      FROM collection_books
+      WHERE collection_id = ?1
+    `,
+    [collection.id]
+  );
+  const total = Number(totalResult?.count ?? 0);
   const totalPages = Math.ceil(total / limit);
   const hasMore = page < totalPages;
 
   // Get paginated books
-  const booksList = await db
-    .select({
-      id: books.id,
-      title: books.title,
-      author: books.author,
-      fileType: books.fileType,
-      pageCount: books.pageCount,
-    })
-    .from(books)
-    .innerJoin(collectionBooks, eq(books.id, collectionBooks.bookId))
-    .where(eq(collectionBooks.collectionId, collection.id))
-    .limit(limit)
-    .offset(offset);
+  const booksList = await queryAll<{
+    id: string;
+    title: string;
+    author: string | null;
+    fileType: string;
+    pageCount: number | null;
+  }>(
+    `
+      SELECT
+        b.id,
+        b.title,
+        b.author,
+        b.file_type AS fileType,
+        b.page_count AS pageCount
+      FROM books b
+      INNER JOIN collection_books cb ON b.id = cb.book_id
+      WHERE cb.collection_id = ?1
+      LIMIT ?2
+      OFFSET ?3
+    `,
+    [collection.id, limit, offset]
+  );
 
   // Add coverUrl to each book
   const booksWithCovers = booksList.map((book) => ({

@@ -1,7 +1,5 @@
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
 import { authSession as auth } from "@/lib/auth/config";
-import { asc } from "drizzle-orm";
+import { queryAll } from "@/lib/db/rust";
 import UsersTable from "./users-table";
 
 export const dynamic = "force-dynamic";
@@ -9,16 +7,24 @@ export const dynamic = "force-dynamic";
 export default async function UsersPage() {
   const session = await auth();
 
-  const allUsers = await db
-    .select({
-      id: users.id,
-      email: users.email,
-      displayName: users.displayName,
-      role: users.role,
-      createdAt: users.createdAt,
-    })
-    .from(users)
-    .orderBy(asc(users.createdAt));
+  const allUsers = await queryAll<{
+    id: string;
+    email: string;
+    displayName: string;
+    role: string;
+    createdAt: number;
+  }>(
+    `
+      SELECT
+        id,
+        email,
+        display_name AS displayName,
+        role,
+        created_at AS createdAt
+      FROM users
+      ORDER BY created_at ASC
+    `
+  );
 
   return (
     <UsersTable

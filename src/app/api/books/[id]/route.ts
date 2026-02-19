@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { books, readingProgress } from "@/lib/db/schema";
+import { queryOne } from "@/lib/db/rust";
 
 export const dynamic = 'force-dynamic';
 
@@ -17,41 +15,59 @@ export async function GET(
 
   const { id } = await params;
 
-  const joinCond = and(
-    eq(readingProgress.bookId, books.id),
-    eq(readingProgress.userId, session.user.id),
+  const row = await queryOne<{
+    id: string;
+    title: string;
+    author: string | null;
+    description: string | null;
+    fileType: string;
+    filePath: string;
+    fileSize: number;
+    fileHash: string;
+    coverPath: string | null;
+    pageCount: number | null;
+    addedAt: number;
+    updatedAt: number;
+    progressStatus: string | null;
+    progressCurrentPage: number | null;
+    progressTotalPages: number | null;
+    progressEpubLocation: string | null;
+    progressPercent: number | null;
+    progressLastReadAt: number | null;
+  }>(
+    `
+      SELECT
+        b.id,
+        b.title,
+        b.author,
+        b.description,
+        b.file_type AS fileType,
+        b.file_path AS filePath,
+        b.file_size AS fileSize,
+        b.file_hash AS fileHash,
+        b.cover_path AS coverPath,
+        b.page_count AS pageCount,
+        b.added_at AS addedAt,
+        b.updated_at AS updatedAt,
+        rp.status AS progressStatus,
+        rp.current_page AS progressCurrentPage,
+        rp.total_pages AS progressTotalPages,
+        rp.epub_location AS progressEpubLocation,
+        rp.percent_complete AS progressPercent,
+        rp.last_read_at AS progressLastReadAt
+      FROM books b
+      LEFT JOIN reading_progress rp
+        ON rp.book_id = b.id
+       AND rp.user_id = ?1
+      WHERE b.id = ?2
+      LIMIT 1
+    `,
+    [session.user.id, id]
   );
 
-  const rows = await db
-    .select({
-      id: books.id,
-      title: books.title,
-      author: books.author,
-      description: books.description,
-      fileType: books.fileType,
-      filePath: books.filePath,
-      fileSize: books.fileSize,
-      fileHash: books.fileHash,
-      coverPath: books.coverPath,
-      pageCount: books.pageCount,
-      addedAt: books.addedAt,
-      updatedAt: books.updatedAt,
-      progressStatus: readingProgress.status,
-      progressCurrentPage: readingProgress.currentPage,
-      progressTotalPages: readingProgress.totalPages,
-      progressEpubLocation: readingProgress.epubLocation,
-      progressPercent: readingProgress.percentComplete,
-      progressLastReadAt: readingProgress.lastReadAt,
-    })
-    .from(books)
-    .leftJoin(readingProgress, joinCond)
-    .where(eq(books.id, id));
-
-  if (rows.length === 0) {
+  if (!row) {
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
   }
-
-  const row = rows[0];
 
   return NextResponse.json({
     id: row.id,

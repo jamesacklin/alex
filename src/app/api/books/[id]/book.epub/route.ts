@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { books } from "@/lib/db/schema";
+import { queryOne } from "@/lib/db/rust";
 import fs from "fs";
 
 // Prevent Next.js from attempting to statically analyze this route during build
@@ -21,10 +19,17 @@ export async function GET(
 
   const { id } = await params;
 
-  const [book] = await db
-    .select({ filePath: books.filePath, fileType: books.fileType })
-    .from(books)
-    .where(eq(books.id, id));
+  const book = await queryOne<{ filePath: string; fileType: string }>(
+    `
+      SELECT
+        file_path AS filePath,
+        file_type AS fileType
+      FROM books
+      WHERE id = ?1
+      LIMIT 1
+    `,
+    [id]
+  );
 
   if (!book) {
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
