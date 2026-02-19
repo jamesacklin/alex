@@ -38,8 +38,8 @@ Any collection can be shared by generating a share link from the collection deta
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
 | Database | SQLite via [better-sqlite3](https://github.com/JoshuaWise/better-sqlite3) + [Drizzle ORM](https://orm.drizzle.team) |
 | Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs), [pdf-parse](https://www.npmjs.com/package/pdf-parse) (metadata) |
-| Cover generation | [pdfjs-dist](https://mozilla.github.io/pdf.js/) + [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) |
-| File watching | [chokidar](https://github.com/paulmillr/chokidar) |
+| Cover generation | Rust (`watcher-rs`) via [pdfium-render](https://crates.io/crates/pdfium-render) + fallback renderer |
+| File watching | Rust (`watcher-rs`) via [`notify`](https://crates.io/crates/notify) |
 
 ## Getting Started
 
@@ -163,8 +163,10 @@ In two terminals:
 
 ```sh
 pnpm dev            # Next.js dev server → http://localhost:3000
-pnpm watcher        # file watcher (watches ./data/library by default)
+pnpm watcher        # Rust watcher (watches ./data/library by default)
 ```
+
+> **Rust required for local watcher/electron builds:** install a stable Rust toolchain (`rustup toolchain install stable`).
 
 > **Note:** If you see errors about missing `better_sqlite3.node` bindings, run `pnpm build:native` to compile the native modules for your platform.
 
@@ -198,7 +200,8 @@ Native module ABI notes:
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |
-| `pnpm watcher` | Background file watcher |
+| `pnpm watcher` | Background Rust file watcher (`watcher-rs`) |
+| `pnpm watcher:ts` | Legacy TypeScript watcher (migration fallback) |
 | `pnpm electron:dev` | Electron dev mode (app-managed server on `:3210`) |
 | `pnpm electron:dev:external` | Electron dev with separately started Next dev server |
 | `pnpm db:push` | Apply schema changes to the database |

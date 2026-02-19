@@ -5,3 +5,5 @@ data/
 .env
 .env.local
 *.log
+*/target
+*/target/*
