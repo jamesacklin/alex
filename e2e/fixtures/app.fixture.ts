@@ -77,15 +77,17 @@ export const test = base.extend<AppFixture>({
     console.log('[Fixture] Library path:', testLibraryPath);
 
     // Kill any leftover server process on port 3210 from a previous test.
+    // Use SIGTERM first (graceful), then wait briefly for the port to free.
     try {
       if (process.platform === 'win32') {
         execSync('FOR /F "tokens=5" %P IN (\'netstat -a -n -o ^| findstr :3210\') DO TaskKill.exe /F /PID %P 2>nul || exit 0', { stdio: 'ignore' });
       } else {
-        execSync('lsof -ti:3210 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+        execSync('lsof -ti:3210 | xargs kill 2>/dev/null || true', { stdio: 'ignore' });
       }
     } catch {
       // Port might not be in use; ignore.
     }
+    await sleep(1000);
 
     const electronEntry = path.join(process.cwd(), 'electron', 'dist', 'main.js');
     if (!fs.existsSync(electronEntry)) {
@@ -150,6 +152,8 @@ export const test = base.extend<AppFixture>({
       } catch (error) {
         console.warn('[Fixture] Electron app was already closed:', error);
       }
+      // Give child processes (Next.js server) time to release the port.
+      await sleep(2000);
 
       fs.rmSync(testUserDataDir, { recursive: true, force: true });
       fs.rmSync(testLibraryPath, { recursive: true, force: true });
