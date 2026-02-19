@@ -204,7 +204,7 @@ on:
  
 jobs:
   e2e-web:
-    name: E2E (Web)
+    name: e2e-web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -227,7 +227,7 @@ jobs:
           path: playwright-report/
  
   e2e-electron-linux:
-    name: E2E (Electron / Linux)
+    name: e2e-electron-linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -250,7 +250,7 @@ jobs:
           path: playwright-report/
  
   e2e-electron-macos:
-    name: E2E (Electron / macOS)
+    name: e2e-electron-macos
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -272,7 +272,7 @@ jobs:
           path: playwright-report/
  
   e2e-electron-windows:
-    name: E2E (Electron / Windows)
+    name: e2e-electron-windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -350,3 +350,83 @@ Install: `pnpm add -D @playwright/test playwright`
 8. Wire into PR required checks
  
 Each step is independently shippable and testable locally before adding CI.
+
+---
+
+## PR Required Checks (Phase 8)
+
+Main branch protection is configured so that PRs cannot merge until all E2E jobs pass.
+
+### Required checks
+
+The required status checks are:
+
+- `e2e-web`
+- `e2e-electron-linux`
+- `e2e-electron-macos`
+- `e2e-electron-windows`
+
+These names are case-sensitive and must exactly match the job names in `.github/workflows/e2e.yml`.
+
+### Branch protection behavior
+
+- Pull requests are required before merging to `main`
+- Required status checks must pass before merging
+- Branches must be up to date before merging (`strict: true`)
+- Linear history is required on `main`
+- One approval is required before merging
+
+When any required check fails (or is missing), GitHub blocks merge in both UI and API until the check passes.
+
+### Manage required checks with `gh`
+
+Apply or update the protection rule:
+
+```bash
+gh api -X PUT repos/jamesacklin/alex/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "e2e-web",
+      "e2e-electron-linux",
+      "e2e-electron-macos",
+      "e2e-electron-windows"
+    ]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 1
+  },
+  "restrictions": null,
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "required_conversation_resolution": false,
+  "lock_branch": false,
+  "allow_fork_syncing": false
+}
+JSON
+```
+
+Inspect the active protection rule:
+
+```bash
+gh api repos/jamesacklin/alex/branches/main/protection
+```
+
+### Bypass and override
+
+With `enforce_admins: false`, admins can bypass failed checks if needed for emergencies. This should be used sparingly and logged in the PR for auditability.
+
+### Auto-merge
+
+Repository auto-merge can be enabled with:
+
+```bash
+gh api -X PATCH repos/jamesacklin/alex -f allow_auto_merge=true
+```
+
+After this is enabled, developers can use PR auto-merge when required checks and approvals are satisfied.
