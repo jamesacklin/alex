@@ -41,6 +41,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
       - run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
@@ -52,4 +54,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:native
       - run: cargo test --manifest-path watcher-rs/Cargo.toml --locked
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: cargo llvm-cov --manifest-path watcher-rs/Cargo.toml --lcov --output-path watcher-rs/lcov.info --summary-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: watcher-rs-coverage-lcov
+          path: watcher-rs/lcov.info
       - run: pnpm test
