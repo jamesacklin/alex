@@ -18,6 +18,10 @@ export async function handleAdd(filePath: string) {
     const ext = path.extname(filePath).toLowerCase();
     const fileType = ext === ".pdf" ? "pdf" : "epub";
     const fileSize = fs.statSync(filePath).size;
+    if (fileSize === 0) {
+      log(`[SKIP] Zero-byte file (waiting for write): ${filePath}`);
+      return;
+    }
     const fileHash = computeHash(filePath);
 
     // Skip duplicates — same content already tracked
