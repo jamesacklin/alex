@@ -6,6 +6,7 @@ import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { createServer, type Server } from 'net';
 
 type AppFixture = {
   appPage: Page;
@@ -81,8 +82,8 @@ export const test = base.extend<AppFixture>({
     const portFreeDeadline = Date.now() + 15000;
     while (Date.now() < portFreeDeadline) {
       try {
-        const server = await new Promise<import('net').Server>((resolve, reject) => {
-          const s = require('net').createServer();
+        const server = await new Promise<Server>((resolve, reject) => {
+          const s = createServer();
           s.once('error', reject);
           s.listen(3210, '127.0.0.1', () => { s.close(() => resolve(s)); });
         });
