@@ -54,7 +54,6 @@ next-env.d.ts
 
 # electron
 /electron/dist
-/watcher/dist
 /watcher-rs/dist
 /dist
 
