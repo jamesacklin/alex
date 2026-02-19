@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { execute, queryOne } from "@/lib/db/rust";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
@@ -18,22 +16,25 @@ export async function DELETE(
   const { id } = await params;
 
   if (session.user.id === id) {
-    return NextResponse.json(
-      { error: "Cannot delete your own account" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
   }
 
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, id))
-    .limit(1);
+  const user = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE id = ?1
+      LIMIT 1
+    `,
+    [id]
+  );
+
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  await db.delete(users).where(eq(users.id, id));
+  await execute("DELETE FROM users WHERE id = ?1", [id]);
 
   return NextResponse.json({ success: true });
 }
+

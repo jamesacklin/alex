@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
-import { eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { books } from "@/lib/db/schema";
+import { queryOne } from "@/lib/db/rust";
 
 export const dynamic = 'force-dynamic';
 
@@ -35,10 +33,15 @@ export async function GET(
 
   const { id } = await params;
 
-  const [book] = await db
-    .select({ coverPath: books.coverPath })
-    .from(books)
-    .where(eq(books.id, id));
+  const book = await queryOne<{ coverPath: string | null }>(
+    `
+      SELECT cover_path AS coverPath
+      FROM books
+      WHERE id = ?1
+      LIMIT 1
+    `,
+    [id]
+  );
 
   if (!book?.coverPath || !fs.existsSync(book.coverPath)) {
     return placeholderResponse();

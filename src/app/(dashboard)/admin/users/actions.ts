@@ -1,10 +1,8 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
+import { execute, queryOne } from "@/lib/db/rust";
 
 export async function createUser(data: {
   email: string;
@@ -17,11 +15,15 @@ export async function createUser(data: {
     return { error: "Forbidden" };
   }
 
-  const [existing] = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, data.email))
-    .limit(1);
+  const existing = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE email = ?1
+      LIMIT 1
+    `,
+    [data.email]
+  );
   if (existing) {
     return { error: "Email already in use" };
   }
@@ -29,15 +31,15 @@ export async function createUser(data: {
   const passwordHash = await bcrypt.hash(data.password, 10);
   const now = Math.floor(Date.now() / 1000);
 
-  await db.insert(users).values({
-    id: crypto.randomUUID(),
-    email: data.email,
-    passwordHash,
-    displayName: data.displayName,
-    role: data.role,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await execute(
+    `
+      INSERT INTO users (
+        id, email, password_hash, display_name, role, created_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [crypto.randomUUID(), data.email, passwordHash, data.displayName, data.role, now, now]
+  );
 
   return { success: true };
 }
@@ -52,7 +54,7 @@ export async function deleteUser(id: string) {
     return { error: "Cannot delete your own account" };
   }
 
-  await db.delete(users).where(eq(users.id, id));
+  await execute("DELETE FROM users WHERE id = ?1", [id]);
 
   return { success: true };
 }
@@ -78,19 +80,29 @@ export async function updateUser(
     return { error: "Cannot remove your own admin role" };
   }
 
-  const [existing] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  const existing = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE id = ?1
+      LIMIT 1
+    `,
+    [id]
+  );
   if (!existing) {
     return { error: "User not found" };
   }
 
-  await db
-    .update(users)
-    .set({
-      displayName: data.displayName.trim(),
-      role: data.role,
-      updatedAt: Math.floor(Date.now() / 1000),
-    })
-    .where(eq(users.id, id));
+  await execute(
+    `
+      UPDATE users
+      SET display_name = ?1,
+          role = ?2,
+          updated_at = ?3
+      WHERE id = ?4
+    `,
+    [data.displayName.trim(), data.role, Math.floor(Date.now() / 1000), id]
+  );
 
   return { success: true };
 }

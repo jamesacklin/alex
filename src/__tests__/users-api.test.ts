@@ -4,7 +4,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import Database from "better-sqlite3";
+import { execute, queryOne } from "@/lib/db/rust";
 
 const testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alex-"));
 const dbFile = path.join(testDbDir, "users.db");
@@ -38,12 +38,8 @@ const regularUser: TestUser = {
   role: "user",
 };
 
-let sqlite: Database.Database;
-
-function initSchema(db: Database.Database) {
-  db.exec(`
-    PRAGMA foreign_keys = ON;
-
+async function initSchema() {
+  await execute(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -52,44 +48,42 @@ function initSchema(db: Database.Database) {
       role TEXT NOT NULL DEFAULT 'user',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
-    );
+    )
   `);
 }
 
-function resetData() {
-  sqlite.exec(`
-    DELETE FROM users;
-  `);
+async function resetData() {
+  await execute("DELETE FROM users");
 
   const now = 1700000000;
 
-  sqlite
-    .prepare(
-      `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(adminUser.id, adminUser.email, "hashed", adminUser.displayName, adminUser.role, now, now);
+  await execute(
+    `
+      INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [adminUser.id, adminUser.email, "hashed", adminUser.displayName, adminUser.role, now, now]
+  );
 
-  sqlite
-    .prepare(
-      `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(regularUser.id, regularUser.email, "hashed", regularUser.displayName, regularUser.role, now + 1, now + 1);
+  await execute(
+    `
+      INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [regularUser.id, regularUser.email, "hashed", regularUser.displayName, regularUser.role, now + 1, now + 1]
+  );
 }
 
-beforeAll(() => {
-  sqlite = new Database(dbFile);
-  sqlite.pragma("foreign_keys = ON");
-  initSchema(sqlite);
+beforeAll(async () => {
+  await initSchema();
 });
 
-beforeEach(() => {
-  resetData();
+beforeEach(async () => {
+  await resetData();
 });
 
 afterAll(() => {
-  sqlite.close();
+  fs.rmSync(testDbDir, { recursive: true, force: true });
 });
 
 describe("Users API", () => {
@@ -133,10 +127,15 @@ describe("Users API", () => {
     const body = await res.json();
     expect(body.user.email).toBe("new@example.com");
 
-    const count = sqlite
-      .prepare("SELECT COUNT(*) as total FROM users WHERE email = ?")
-      .get("new@example.com") as { total: number };
-    expect(count.total).toBe(1);
+    const count = await queryOne<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM users
+        WHERE email = ?1
+      `,
+      ["new@example.com"]
+    );
+    expect(Number(count?.total ?? 0)).toBe(1);
   });
 
   it("rejects invalid user input", async () => {
@@ -206,9 +205,15 @@ describe("Users API", () => {
     });
     expect(res.status).toBe(200);
 
-    const remaining = sqlite
-      .prepare("SELECT COUNT(*) as total FROM users WHERE id = ?")
-      .get(regularUser.id) as { total: number };
-    expect(remaining.total).toBe(0);
+    const remaining = await queryOne<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM users
+        WHERE id = ?1
+      `,
+      [regularUser.id]
+    );
+    expect(Number(remaining?.total ?? 0)).toBe(0);
   });
 });
+

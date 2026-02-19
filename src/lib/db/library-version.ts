@@ -1,8 +1,10 @@
-import { db } from "./index";
-import { settings } from "./schema";
-import { eq } from "drizzle-orm";
+import { execute, queryOne } from "@/lib/db/rust";
 
 const LIBRARY_VERSION_KEY = "library_version";
+
+type VersionRow = {
+  value: string;
+};
 
 /**
  * Increment the library version timestamp.
@@ -11,20 +13,15 @@ const LIBRARY_VERSION_KEY = "library_version";
 export async function incrementLibraryVersion(): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
 
-  await db
-    .insert(settings)
-    .values({
-      key: LIBRARY_VERSION_KEY,
-      value: String(now),
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: settings.key,
-      set: {
-        value: String(now),
-        updatedAt: now,
-      },
-    });
+  await execute(
+    `
+      INSERT INTO settings (key, value, updated_at)
+      VALUES (?1, ?2, ?3)
+      ON CONFLICT (key) DO UPDATE
+      SET value = excluded.value, updated_at = excluded.updated_at
+    `,
+    [LIBRARY_VERSION_KEY, String(now), now]
+  );
 }
 
 /**
@@ -32,38 +29,45 @@ export async function incrementLibraryVersion(): Promise<void> {
  * Used by SSE endpoint to detect changes.
  */
 export async function getLibraryVersion(): Promise<number> {
-  const existing = await db
-    .select()
-    .from(settings)
-    .where(eq(settings.key, LIBRARY_VERSION_KEY))
-    .limit(1);
+  const existing = await queryOne<VersionRow>(
+    `
+      SELECT value
+      FROM settings
+      WHERE key = ?1
+      LIMIT 1
+    `,
+    [LIBRARY_VERSION_KEY]
+  );
 
-  if (existing.length > 0) {
-    return parseInt(existing[0].value, 10);
+  if (existing?.value) {
+    return parseInt(existing.value, 10) || 0;
   }
 
   // Initialize if missing, but tolerate concurrent initializers.
   const now = Math.floor(Date.now() / 1000);
-  await db
-    .insert(settings)
-    .values({
-      key: LIBRARY_VERSION_KEY,
-      value: String(now),
-      updatedAt: now,
-    })
-    .onConflictDoNothing({
-      target: settings.key,
-    });
+  await execute(
+    `
+      INSERT INTO settings (key, value, updated_at)
+      VALUES (?1, ?2, ?3)
+      ON CONFLICT (key) DO NOTHING
+    `,
+    [LIBRARY_VERSION_KEY, String(now), now]
+  );
 
-  const persisted = await db
-    .select()
-    .from(settings)
-    .where(eq(settings.key, LIBRARY_VERSION_KEY))
-    .limit(1);
+  const persisted = await queryOne<VersionRow>(
+    `
+      SELECT value
+      FROM settings
+      WHERE key = ?1
+      LIMIT 1
+    `,
+    [LIBRARY_VERSION_KEY]
+  );
 
-  if (persisted.length === 0) {
+  if (!persisted?.value) {
     return now;
   }
 
-  return parseInt(persisted[0].value, 10);
+  return parseInt(persisted.value, 10) || 0;
 }
+

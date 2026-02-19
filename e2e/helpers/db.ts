@@ -1,5 +1,4 @@
-import { db } from '../../src/lib/db';
-import { users, books, readingProgress, collections, collectionBooks, settings } from '../../src/lib/db/schema';
+import { execute } from '../../src/lib/db/rust';
 import * as bcrypt from 'bcryptjs';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -20,12 +19,12 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures');
  */
 export async function resetDatabase() {
   // Delete in order to respect foreign key constraints
-  await db.delete(collectionBooks);
-  await db.delete(collections);
-  await db.delete(readingProgress);
-  await db.delete(books);
-  await db.delete(users);
-  await db.delete(settings);
+  await execute('DELETE FROM collection_books');
+  await execute('DELETE FROM collections');
+  await execute('DELETE FROM reading_progress');
+  await execute('DELETE FROM books');
+  await execute('DELETE FROM users');
+  await execute('DELETE FROM settings');
 }
 
 /**
@@ -38,26 +37,25 @@ export async function seedDatabase() {
   const adminPasswordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
   const userPasswordHash = await bcrypt.hash(USER_PASSWORD, 10);
 
-  await db.insert(users).values([
-    {
-      id: ADMIN_ID,
-      email: ADMIN_EMAIL,
-      passwordHash: adminPasswordHash,
-      displayName: 'Admin',
-      role: 'admin',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: USER_ID,
-      email: USER_EMAIL,
-      passwordHash: userPasswordHash,
-      displayName: 'Test User',
-      role: 'user',
-      createdAt: now,
-      updatedAt: now,
-    },
-  ]);
+  await execute(
+    `
+      INSERT INTO users (
+        id, email, password_hash, display_name, role, created_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [ADMIN_ID, ADMIN_EMAIL, adminPasswordHash, 'Admin', 'admin', now, now],
+  );
+
+  await execute(
+    `
+      INSERT INTO users (
+        id, email, password_hash, display_name, role, created_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [USER_ID, USER_EMAIL, userPasswordHash, 'Test User', 'user', now, now],
+  );
 
   // Create test books
   const pdfPath = path.join(FIXTURES_DIR, 'sample.pdf');
@@ -79,50 +77,77 @@ export async function seedDatabase() {
   const epubInfo = getFileInfo(epubPath);
   const pdf2Info = getFileInfo(pdf2Path);
 
-  await db.insert(books).values([
-    {
-      id: 'book-pdf-1',
-      title: 'Sample PDF Book',
-      author: 'Alice Author',
-      description: 'A sample PDF for testing',
-      fileType: 'pdf',
-      filePath: pdfPath,
-      fileSize: pdfInfo.fileSize,
-      fileHash: pdfInfo.fileHash,
-      coverPath: coverPdfPath,
-      pageCount: 2,
-      addedAt: now - 1000,
-      updatedAt: now - 1000,
-    },
-    {
-      id: 'book-epub-1',
-      title: 'Sample EPUB Book',
-      author: 'Bob Writer',
-      description: 'A sample EPUB for testing',
-      fileType: 'epub',
-      filePath: epubPath,
-      fileSize: epubInfo.fileSize,
-      fileHash: epubInfo.fileHash,
-      coverPath: coverEpubPath,
-      pageCount: null,
-      addedAt: now - 2000,
-      updatedAt: now - 2000,
-    },
-    {
-      id: 'book-pdf-2',
-      title: 'Another PDF Book',
-      author: 'Charlie Editor',
-      description: 'Another PDF for testing',
-      fileType: 'pdf',
-      filePath: pdf2Path,
-      fileSize: pdf2Info.fileSize,
-      fileHash: pdf2Info.fileHash,
-      coverPath: coverPdf2Path,
-      pageCount: 1,
-      addedAt: now - 3000,
-      updatedAt: now - 3000,
-    },
-  ]);
+  await execute(
+    `
+      INSERT INTO books (
+        id, title, author, description, file_type, file_path, file_size, file_hash,
+        cover_path, page_count, added_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+    `,
+    [
+      'book-pdf-1',
+      'Sample PDF Book',
+      'Alice Author',
+      'A sample PDF for testing',
+      'pdf',
+      pdfPath,
+      pdfInfo.fileSize,
+      pdfInfo.fileHash,
+      coverPdfPath,
+      2,
+      now - 1000,
+      now - 1000,
+    ],
+  );
+
+  await execute(
+    `
+      INSERT INTO books (
+        id, title, author, description, file_type, file_path, file_size, file_hash,
+        cover_path, page_count, added_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+    `,
+    [
+      'book-epub-1',
+      'Sample EPUB Book',
+      'Bob Writer',
+      'A sample EPUB for testing',
+      'epub',
+      epubPath,
+      epubInfo.fileSize,
+      epubInfo.fileHash,
+      coverEpubPath,
+      null,
+      now - 2000,
+      now - 2000,
+    ],
+  );
+
+  await execute(
+    `
+      INSERT INTO books (
+        id, title, author, description, file_type, file_path, file_size, file_hash,
+        cover_path, page_count, added_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+    `,
+    [
+      'book-pdf-2',
+      'Another PDF Book',
+      'Charlie Editor',
+      'Another PDF for testing',
+      'pdf',
+      pdf2Path,
+      pdf2Info.fileSize,
+      pdf2Info.fileHash,
+      coverPdf2Path,
+      1,
+      now - 3000,
+      now - 3000,
+    ],
+  );
 }
 
 /**
@@ -145,7 +170,6 @@ export async function seedManyBooks(count: number = 30) {
   const pdfInfo = getFileInfo(pdfPath);
   const epubInfo = getFileInfo(epubPath);
 
-  const booksToInsert = [];
   for (let i = 0; i < count; i++) {
     const isPdf = i % 2 === 0;
     const info = isPdf ? pdfInfo : epubInfo;
@@ -153,21 +177,28 @@ export async function seedManyBooks(count: number = 30) {
       .update(info.fileHash + i.toString())
       .digest('hex');
 
-    booksToInsert.push({
-      id: `book-${i}`,
-      title: `Test Book ${i.toString().padStart(2, '0')}`,
-      author: `Author ${String.fromCharCode(65 + (i % 26))}`,
-      description: `Test book number ${i}`,
-      fileType: isPdf ? 'pdf' : 'epub',
-      filePath: `${isPdf ? pdfPath : epubPath}-${i}`,
-      fileSize: info.fileSize,
-      fileHash: uniqueHash,
-      coverPath: isPdf ? coverPdfPath : coverEpubPath,
-      pageCount: isPdf ? 2 : null,
-      addedAt: now - (i * 100),
-      updatedAt: now - (i * 100),
-    });
+    await execute(
+      `
+        INSERT INTO books (
+          id, title, author, description, file_type, file_path, file_size, file_hash,
+          cover_path, page_count, added_at, updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+      `,
+      [
+        `book-${i}`,
+        `Test Book ${i.toString().padStart(2, '0')}`,
+        `Author ${String.fromCharCode(65 + (i % 26))}`,
+        `Test book number ${i}`,
+        isPdf ? 'pdf' : 'epub',
+        `${isPdf ? pdfPath : epubPath}-${i}`,
+        info.fileSize,
+        uniqueHash,
+        isPdf ? coverPdfPath : coverEpubPath,
+        isPdf ? 2 : null,
+        now - (i * 100),
+        now - (i * 100),
+      ],
+    );
   }
-
-  await db.insert(books).values(booksToInsert);
 }

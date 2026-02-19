@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authSession } from '@/lib/auth/config';
-import { db } from '@/lib/db';
-import { books } from '@/lib/db/schema';
+import { execute, queryOne } from '@/lib/db/rust';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -15,8 +14,8 @@ export async function POST() {
 
   try {
     // Get count before deletion
-    const allBooks = await db.select().from(books);
-    const bookCount = allBooks.length;
+    const countRow = await queryOne<{ total: number }>('SELECT COUNT(*) AS total FROM books');
+    const bookCount = Number(countRow?.total ?? 0);
 
     console.log(`[API] Admin clearing library: Found ${bookCount} books to delete`);
 
@@ -25,7 +24,7 @@ export async function POST() {
     }
 
     // Delete all books (cascading deletes will handle reading_progress and collection_books)
-    await db.delete(books);
+    await execute('DELETE FROM books');
     console.log(`[API] Deleted ${bookCount} books from database`);
 
     // Clear cover images

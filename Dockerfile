@@ -54,7 +54,6 @@ COPY --from=node-builder /app/public ./public
 
 COPY --from=node-builder /app/next.config.ts .
 COPY --from=node-builder /app/tsconfig.json .
-COPY --from=node-builder /app/drizzle.config.ts .
 COPY --from=node-builder /app/src/lib/db ./src/lib/db
 
 COPY --from=rust-builder /out ./watcher-rs

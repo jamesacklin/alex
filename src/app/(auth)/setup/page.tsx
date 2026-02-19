@@ -1,12 +1,17 @@
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { queryOne } from "@/lib/db/rust";
 import SetupForm from "./setup-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
-  const [existing] = await db.select().from(users).limit(1);
+  const existing = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      LIMIT 1
+    `
+  );
 
   if (existing) {
     redirect("/login");

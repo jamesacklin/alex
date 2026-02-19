@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { and, asc, count, eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { books, collectionBooks, collections, readingProgress } from "@/lib/db/schema";
+import { execute, queryAll, queryOne } from "@/lib/db/rust";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 // GET /api/collections/[id] — get collection with its books
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user) {
@@ -22,56 +20,82 @@ export async function GET(
   const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 24));
   const offset = (page - 1) * limit;
 
-  const [collection] = await db
-    .select({
-      id: collections.id,
-      name: collections.name,
-      description: collections.description,
-      createdAt: collections.createdAt,
-      shareToken: collections.shareToken,
-      sharedAt: collections.sharedAt,
-    })
-    .from(collections)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  const collection = await queryOne<{
+    id: string;
+    name: string;
+    description: string | null;
+    createdAt: number;
+    shareToken: string | null;
+    sharedAt: number | null;
+  }>(
+    `
+      SELECT
+        id,
+        name,
+        description,
+        created_at AS createdAt,
+        share_token AS shareToken,
+        shared_at AS sharedAt
+      FROM collections
+      WHERE id = ?1
+        AND user_id = ?2
+      LIMIT 1
+    `,
+    [id, session.user.id]
+  );
 
   if (!collection) {
     return NextResponse.json({ error: "Collection not found" }, { status: 404 });
   }
 
-  // Get total count of books in this collection
-  const [{ total }] = await db
-    .select({ total: count() })
-    .from(collectionBooks)
-    .where(eq(collectionBooks.collectionId, id));
-
-  // LEFT JOIN: only the current user's reading progress
-  const joinCond = and(
-    eq(readingProgress.bookId, books.id),
-    eq(readingProgress.userId, session.user.id),
+  const countRow = await queryOne<{ total: number }>(
+    `
+      SELECT COUNT(*) AS total
+      FROM collection_books
+      WHERE collection_id = ?1
+    `,
+    [id]
   );
+  const total = Number(countRow?.total ?? 0);
 
-  // Get paginated books with progress
-  const bookRows = await db
-    .select({
-      id: books.id,
-      title: books.title,
-      author: books.author,
-      coverPath: books.coverPath,
-      fileType: books.fileType,
-      pageCount: books.pageCount,
-      addedAt: books.addedAt,
-      updatedAt: books.updatedAt,
-      progressStatus: readingProgress.status,
-      progressPercent: readingProgress.percentComplete,
-      progressLastReadAt: readingProgress.lastReadAt,
-    })
-    .from(collectionBooks)
-    .innerJoin(books, eq(collectionBooks.bookId, books.id))
-    .leftJoin(readingProgress, joinCond)
-    .where(eq(collectionBooks.collectionId, id))
-    .orderBy(asc(books.title))
-    .limit(limit)
-    .offset(offset);
+  const bookRows = await queryAll<{
+    id: string;
+    title: string;
+    author: string | null;
+    coverPath: string | null;
+    fileType: string;
+    pageCount: number | null;
+    addedAt: number;
+    updatedAt: number;
+    progressStatus: string | null;
+    progressPercent: number | null;
+    progressLastReadAt: number | null;
+  }>(
+    `
+      SELECT
+        b.id,
+        b.title,
+        b.author,
+        b.cover_path AS coverPath,
+        b.file_type AS fileType,
+        b.page_count AS pageCount,
+        b.added_at AS addedAt,
+        b.updated_at AS updatedAt,
+        rp.status AS progressStatus,
+        rp.percent_complete AS progressPercent,
+        rp.last_read_at AS progressLastReadAt
+      FROM collection_books cb
+      INNER JOIN books b ON cb.book_id = b.id
+      LEFT JOIN reading_progress rp
+        ON rp.book_id = b.id
+       AND rp.user_id = ?1
+      WHERE cb.collection_id = ?2
+      ORDER BY b.title ASC
+      LIMIT ?3
+      OFFSET ?4
+    `,
+    [session.user.id, id, limit, offset]
+  );
 
   const booksResponse = bookRows.map((row) => ({
     id: row.id,
@@ -82,13 +106,14 @@ export async function GET(
     pageCount: row.pageCount,
     addedAt: row.addedAt,
     updatedAt: row.updatedAt,
-    readingProgress: row.progressStatus !== null
-      ? {
-          status: row.progressStatus,
-          percentComplete: row.progressPercent,
-          lastReadAt: row.progressLastReadAt,
-        }
-      : null,
+    readingProgress:
+      row.progressStatus !== null
+        ? {
+            status: row.progressStatus,
+            percentComplete: row.progressPercent,
+            lastReadAt: row.progressLastReadAt,
+          }
+        : null,
   }));
 
   return NextResponse.json({
@@ -104,7 +129,7 @@ export async function GET(
 // PUT /api/collections/[id] — update collection { name?, description? }
 export async function PUT(
   req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user) {
@@ -113,10 +138,16 @@ export async function PUT(
 
   const { id } = await params;
 
-  const [collection] = await db
-    .select({ id: collections.id })
-    .from(collections)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  const collection = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM collections
+      WHERE id = ?1
+        AND user_id = ?2
+      LIMIT 1
+    `,
+    [id, session.user.id]
+  );
 
   if (!collection) {
     return NextResponse.json({ error: "Collection not found" }, { status: 404 });
@@ -129,7 +160,8 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const updates: { name?: string; description?: string | null } = {};
+  const setClauses: string[] = [];
+  const setValues: Array<string | null> = [];
 
   if ("name" in body) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -139,34 +171,53 @@ export async function PUT(
     if (name.length > 100) {
       return NextResponse.json({ error: "name must be 100 characters or fewer" }, { status: 400 });
     }
-    updates.name = name;
+    setClauses.push("name = ?");
+    setValues.push(name);
   }
 
   if ("description" in body) {
     const description = typeof body.description === "string" ? body.description.trim() : "";
-    updates.description = description || null;
+    setClauses.push("description = ?");
+    setValues.push(description || null);
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (setClauses.length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  await db
-    .update(collections)
-    .set(updates)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  await execute(
+    `
+      UPDATE collections
+      SET ${setClauses.join(", ")}
+      WHERE id = ?
+        AND user_id = ?
+    `,
+    [...setValues, id, session.user.id]
+  );
 
-  const [updated] = await db
-    .select({
-      id: collections.id,
-      name: collections.name,
-      description: collections.description,
-      createdAt: collections.createdAt,
-      shareToken: collections.shareToken,
-      sharedAt: collections.sharedAt,
-    })
-    .from(collections)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  const updated = await queryOne<{
+    id: string;
+    name: string;
+    description: string | null;
+    createdAt: number;
+    shareToken: string | null;
+    sharedAt: number | null;
+  }>(
+    `
+      SELECT
+        id,
+        name,
+        description,
+        created_at AS createdAt,
+        share_token AS shareToken,
+        shared_at AS sharedAt
+      FROM collections
+      WHERE id = ?1
+        AND user_id = ?2
+      LIMIT 1
+    `,
+    [id, session.user.id]
+  );
 
   return NextResponse.json(updated);
 }
@@ -174,7 +225,7 @@ export async function PUT(
 // DELETE /api/collections/[id] — delete collection (books not deleted)
 export async function DELETE(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user) {
@@ -183,19 +234,24 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const [collection] = await db
-    .select({ id: collections.id })
-    .from(collections)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  const collection = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM collections
+      WHERE id = ?1
+        AND user_id = ?2
+      LIMIT 1
+    `,
+    [id, session.user.id]
+  );
 
   if (!collection) {
     return NextResponse.json({ error: "Collection not found" }, { status: 404 });
   }
 
-  await db.delete(collectionBooks).where(eq(collectionBooks.collectionId, id));
-  await db
-    .delete(collections)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  await execute("DELETE FROM collection_books WHERE collection_id = ?1", [id]);
+  await execute("DELETE FROM collections WHERE id = ?1 AND user_id = ?2", [id, session.user.id]);
 
   return NextResponse.json({ success: true });
 }
+

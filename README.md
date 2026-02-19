@@ -36,7 +36,7 @@ Any collection can be shared by generating a share link from the collection deta
 | Language | TypeScript |
 | UI | React 19, [Tailwind CSS v4](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com) |
 | Auth | [NextAuth.js v5](https://next-auth.aspen.finance) — credential-based, JWT sessions |
-| Database | SQLite via [better-sqlite3](https://github.com/JoshuaWise/better-sqlite3) + [Drizzle ORM](https://orm.drizzle.team) |
+| Database | SQLite via Rust (`watcher-rs` + `rusqlite`) |
 | Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs) |
 | Cover generation | Rust (`watcher-rs`) via [pdfium-render](https://crates.io/crates/pdfium-render) + fallback renderer |
 | File watching | Rust (`watcher-rs`) via [`notify`](https://crates.io/crates/notify) |
@@ -148,13 +148,13 @@ docker compose up -d --build
 
 **One-command setup:**
 ```sh
-pnpm setup          # installs deps, builds native modules, creates schema, seeds admin
+pnpm setup          # installs deps, creates schema, seeds admin
 ```
 
 **Or step-by-step:**
 ```sh
 pnpm install
-pnpm build:native   # builds better-sqlite3 for your Node.js version
+pnpm build:native   # no-op (kept for CI/script compatibility)
 pnpm db:push        # create the SQLite schema
 pnpm db:seed        # seed the default admin user
 ```
@@ -168,8 +168,6 @@ pnpm watcher        # Rust watcher (watches ./data/library by default)
 
 > **Rust required for local watcher/electron builds:** install a stable Rust toolchain (`rustup toolchain install stable`).
 
-> **Note:** If you see errors about missing `better_sqlite3.node` bindings, run `pnpm build:native` to compile the native modules for your platform.
-
 ### Electron Development
 
 Use:
@@ -178,7 +176,7 @@ Use:
 pnpm electron:dev
 ```
 
-This runs Electron with the internal app-managed Next server on `http://localhost:3210` and rebuilds native modules for your current Node runtime before launch.
+This runs Electron with the internal app-managed Next server on `http://localhost:3210`.
 
 If you explicitly want an externally managed Next dev server, use:
 
@@ -186,17 +184,15 @@ If you explicitly want an externally managed Next dev server, use:
 pnpm electron:dev:external
 ```
 
-Native module ABI notes:
-- `pnpm build:native` compiles `better-sqlite3` for your local Node runtime (used by web/Next dev).
-- `pnpm electron:rebuild` compiles those modules for Electron's Node ABI (used for packaged Electron builds).
-- `pnpm electron:build` now restores Node-native modules at the end so regular web dev keeps working.
+Native module note:
+- `pnpm build:native` is a compatibility no-op and can be ignored.
 
 ### Useful scripts
 
 | Script | What it does |
 |---|---|
-| `pnpm setup` | Complete initial setup (install, build native deps, create schema, seed admin) |
-| `pnpm build:native` | Build native dependencies (better-sqlite3) for your platform |
+| `pnpm setup` | Complete initial setup (install, create schema, seed admin) |
+| `pnpm build:native` | Compatibility no-op |
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |

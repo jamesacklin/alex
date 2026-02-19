@@ -1,8 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { execute, queryOne } from "@/lib/db/rust";
 
 export async function createAdmin(data: {
   email: string;
@@ -10,7 +9,13 @@ export async function createAdmin(data: {
   password: string;
 }) {
   // Guard: ensure no users exist (prevents race on concurrent requests)
-  const [existing] = await db.select().from(users).limit(1);
+  const existing = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      LIMIT 1
+    `
+  );
   if (existing) {
     return { error: "Setup already completed" };
   }
@@ -18,15 +23,15 @@ export async function createAdmin(data: {
   const passwordHash = await bcrypt.hash(data.password, 10);
   const now = Math.floor(Date.now() / 1000);
 
-  await db.insert(users).values({
-    id: crypto.randomUUID(),
-    email: data.email,
-    passwordHash,
-    displayName: data.displayName,
-    role: "admin",
-    createdAt: now,
-    updatedAt: now,
-  });
+  await execute(
+    `
+      INSERT INTO users (
+        id, email, password_hash, display_name, role, created_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [crypto.randomUUID(), data.email, passwordHash, data.displayName, "admin", now, now]
+  );
 
   return { success: true };
 }

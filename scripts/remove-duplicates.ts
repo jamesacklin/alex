@@ -1,12 +1,24 @@
-import { db } from "../src/lib/db";
-import { books } from "../src/lib/db/schema";
-import { sql } from "drizzle-orm";
+import { execute, queryAll } from "../src/lib/db/rust";
 
 async function removeDuplicates() {
   console.log("Finding duplicate books...");
 
   // Find all books, grouped by fileHash
-  const allBooks = await db.select().from(books);
+  const allBooks = await queryAll<{
+    id: string;
+    title: string;
+    fileHash: string;
+    addedAt: number;
+  }>(
+    `
+      SELECT
+        id,
+        title,
+        file_hash AS fileHash,
+        added_at AS addedAt
+      FROM books
+    `
+  );
   const byHash = new Map<string, typeof allBooks>();
 
   for (const book of allBooks) {
@@ -29,7 +41,7 @@ async function removeDuplicates() {
       );
 
       for (const book of toRemove) {
-        await db.delete(books).where(sql`${books.id} = ${book.id}`);
+        await execute("DELETE FROM books WHERE id = ?1", [book.id]);
         duplicatesRemoved++;
         console.log(`  Removed duplicate: ${book.id}`);
       }

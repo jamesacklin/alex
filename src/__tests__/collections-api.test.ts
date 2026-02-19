@@ -4,7 +4,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import Database from "better-sqlite3";
+import { execute, queryOne } from "@/lib/db/rust";
 
 const testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alex-"));
 const dbFile = path.join(testDbDir, "collections.db");
@@ -50,12 +50,8 @@ const book = {
   updatedAt: 1700000000,
 };
 
-let sqlite: Database.Database;
-
-function initSchema(db: Database.Database) {
-  db.exec(`
-    PRAGMA foreign_keys = ON;
-
+async function initSchema() {
+  await execute(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -64,8 +60,10 @@ function initSchema(db: Database.Database) {
       role TEXT NOT NULL DEFAULT 'user',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
-    );
+    )
+  `);
 
+  await execute(`
     CREATE TABLE IF NOT EXISTS books (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -79,8 +77,10 @@ function initSchema(db: Database.Database) {
       page_count INTEGER,
       added_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
-    );
+    )
+  `);
 
+  await execute(`
     CREATE TABLE IF NOT EXISTS collections (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
@@ -89,15 +89,19 @@ function initSchema(db: Database.Database) {
       share_token TEXT UNIQUE,
       shared_at INTEGER,
       created_at INTEGER NOT NULL
-    );
+    )
+  `);
 
+  await execute(`
     CREATE TABLE IF NOT EXISTS collection_books (
       collection_id TEXT NOT NULL REFERENCES collections(id),
       book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
       added_at INTEGER NOT NULL,
       PRIMARY KEY (collection_id, book_id)
-    );
+    )
+  `);
 
+  await execute(`
     CREATE TABLE IF NOT EXISTS reading_progress (
       user_id TEXT NOT NULL REFERENCES users(id),
       book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -108,41 +112,41 @@ function initSchema(db: Database.Database) {
       percent_complete REAL NOT NULL DEFAULT 0,
       last_read_at INTEGER,
       PRIMARY KEY (user_id, book_id)
-    );
+    )
   `);
 }
 
-function resetData() {
-  sqlite.exec(`
-    DELETE FROM reading_progress;
-    DELETE FROM collection_books;
-    DELETE FROM collections;
-    DELETE FROM books;
-    DELETE FROM users;
-  `);
+async function resetData() {
+  await execute("DELETE FROM reading_progress");
+  await execute("DELETE FROM collection_books");
+  await execute("DELETE FROM collections");
+  await execute("DELETE FROM books");
+  await execute("DELETE FROM users");
 
   const now = 1700000000;
 
-  sqlite
-    .prepare(
-      `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(user.id, user.email, "hashed", user.displayName, user.role, now, now);
+  await execute(
+    `
+      INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [user.id, user.email, "hashed", user.displayName, user.role, now, now]
+  );
 
-  sqlite
-    .prepare(
-      `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(otherUser.id, otherUser.email, "hashed", otherUser.displayName, otherUser.role, now, now);
+  await execute(
+    `
+      INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [otherUser.id, otherUser.email, "hashed", otherUser.displayName, otherUser.role, now, now]
+  );
 
-  sqlite
-    .prepare(
-      `INSERT INTO books (id, title, author, file_type, file_path, file_size, file_hash, added_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
+  await execute(
+    `
+      INSERT INTO books (id, title, author, file_type, file_path, file_size, file_hash, added_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+    `,
+    [
       book.id,
       book.title,
       book.author,
@@ -152,22 +156,21 @@ function resetData() {
       book.fileHash,
       book.addedAt,
       book.updatedAt,
-    );
+    ]
+  );
 }
 
-beforeAll(() => {
-  sqlite = new Database(dbFile);
-  sqlite.pragma("foreign_keys = ON");
-  initSchema(sqlite);
+beforeAll(async () => {
+  await initSchema();
 });
 
-beforeEach(() => {
-  resetData();
+beforeEach(async () => {
+  await resetData();
   authMock.mockResolvedValue({ user });
 });
 
 afterAll(() => {
-  sqlite.close();
+  fs.rmSync(testDbDir, { recursive: true, force: true });
 });
 
 describe("Collections API", () => {
@@ -195,12 +198,20 @@ describe("Collections API", () => {
   it("returns collection with its books", async () => {
     const { GET } = await import("@/app/api/collections/[id]/route");
 
-    sqlite
-      .prepare("INSERT INTO collections (id, user_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run("col-1", user.id, "Favorites", "Best of", 1700000000);
-    sqlite
-      .prepare("INSERT INTO collection_books (collection_id, book_id, added_at) VALUES (?, ?, ?)")
-      .run("col-1", book.id, 1700000000);
+    await execute(
+      `
+        INSERT INTO collections (id, user_id, name, description, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+      `,
+      ["col-1", user.id, "Favorites", "Best of", 1700000000]
+    );
+    await execute(
+      `
+        INSERT INTO collection_books (collection_id, book_id, added_at)
+        VALUES (?1, ?2, ?3)
+      `,
+      ["col-1", book.id, 1700000000]
+    );
 
     const res = await GET(new Request("http://localhost/api/collections/col-1"), {
       params: Promise.resolve({ id: "col-1" }),
@@ -219,9 +230,13 @@ describe("Collections API", () => {
   it("updates and deletes a collection", async () => {
     const { PUT, DELETE } = await import("@/app/api/collections/[id]/route");
 
-    sqlite
-      .prepare("INSERT INTO collections (id, user_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run("col-2", user.id, "Old", null, 1700000000);
+    await execute(
+      `
+        INSERT INTO collections (id, user_id, name, description, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+      `,
+      ["col-2", user.id, "Old", null, 1700000000]
+    );
 
     const updateReq = new Request("http://localhost/api/collections/col-2", {
       method: "PUT",
@@ -239,19 +254,28 @@ describe("Collections API", () => {
     });
     expect(deleteRes.status).toBe(200);
 
-    const remaining = sqlite
-      .prepare("SELECT COUNT(*) as total FROM collections WHERE id = ?")
-      .get("col-2") as { total: number };
-    expect(remaining.total).toBe(0);
+    const remaining = await queryOne<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM collections
+        WHERE id = ?1
+      `,
+      ["col-2"]
+    );
+    expect(Number(remaining?.total ?? 0)).toBe(0);
   });
 
   it("adds and removes a book from a collection", async () => {
     const { POST } = await import("@/app/api/collections/[id]/books/route");
     const { DELETE } = await import("@/app/api/collections/[id]/books/[bookId]/route");
 
-    sqlite
-      .prepare("INSERT INTO collections (id, user_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run("col-3", user.id, "Queue", null, 1700000000);
+    await execute(
+      `
+        INSERT INTO collections (id, user_id, name, description, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+      `,
+      ["col-3", user.id, "Queue", null, 1700000000]
+    );
 
     const addReq = new Request("http://localhost/api/collections/col-3/books", {
       method: "POST",
@@ -267,18 +291,27 @@ describe("Collections API", () => {
     });
     expect(removeRes.status).toBe(200);
 
-    const remaining = sqlite
-      .prepare("SELECT COUNT(*) as total FROM collection_books WHERE collection_id = ?")
-      .get("col-3") as { total: number };
-    expect(remaining.total).toBe(0);
+    const remaining = await queryOne<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM collection_books
+        WHERE collection_id = ?1
+      `,
+      ["col-3"]
+    );
+    expect(Number(remaining?.total ?? 0)).toBe(0);
   });
 
   it("returns 404 for collections owned by another user", async () => {
     const { GET } = await import("@/app/api/collections/[id]/route");
 
-    sqlite
-      .prepare("INSERT INTO collections (id, user_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run("col-4", otherUser.id, "Private", null, 1700000000);
+    await execute(
+      `
+        INSERT INTO collections (id, user_id, name, description, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+      `,
+      ["col-4", otherUser.id, "Private", null, 1700000000]
+    );
 
     const res = await GET(new Request("http://localhost/api/collections/col-4"), {
       params: Promise.resolve({ id: "col-4" }),
@@ -287,3 +320,4 @@ describe("Collections API", () => {
     expect(res.status).toBe(404);
   });
 });
+

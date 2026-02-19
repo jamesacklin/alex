@@ -1,9 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { queryOne } from "@/lib/db/rust";
 
 declare module "next-auth" {
   interface User {
@@ -37,11 +35,26 @@ const nextAuthResult = NextAuth({
 
         if (!email || !password) return null;
 
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.email, email))
-          .limit(1);
+        const user = await queryOne<{
+          id: string;
+          email: string;
+          passwordHash: string;
+          displayName: string;
+          role: string;
+        }>(
+          `
+            SELECT
+              id,
+              email,
+              password_hash AS passwordHash,
+              display_name AS displayName,
+              role
+            FROM users
+            WHERE email = ?1
+            LIMIT 1
+          `,
+          [email]
+        );
 
         if (!user) return null;
 

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
 import { authSession as auth } from "@/lib/auth/config";
-import { db } from "@/lib/db";
-import { books, collectionBooks, collections, readingProgress } from "@/lib/db/schema";
+import { queryAll, queryOne } from "@/lib/db/rust";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user) {
@@ -17,45 +15,56 @@ export async function GET(
 
   const { id } = await params;
 
-  // Verify collection ownership
-  const [collection] = await db
-    .select({ id: collections.id })
-    .from(collections)
-    .where(and(eq(collections.id, id), eq(collections.userId, session.user.id)));
+  const collection = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM collections
+      WHERE id = ?1
+        AND user_id = ?2
+      LIMIT 1
+    `,
+    [id, session.user.id]
+  );
 
   if (!collection) {
     return NextResponse.json({ error: "Collection not found" }, { status: 404 });
   }
 
-  // Get all books in this collection with status='reading' for this user
-  const joinCond = and(
-    eq(readingProgress.bookId, books.id),
-    eq(readingProgress.userId, session.user.id),
+  const rows = await queryAll<{
+    id: string;
+    title: string;
+    author: string | null;
+    coverPath: string | null;
+    fileType: string;
+    pageCount: number | null;
+    updatedAt: number;
+    progressStatus: string;
+    progressPercent: number;
+    progressLastReadAt: number | null;
+  }>(
+    `
+      SELECT
+        b.id,
+        b.title,
+        b.author,
+        b.cover_path AS coverPath,
+        b.file_type AS fileType,
+        b.page_count AS pageCount,
+        b.updated_at AS updatedAt,
+        rp.status AS progressStatus,
+        rp.percent_complete AS progressPercent,
+        rp.last_read_at AS progressLastReadAt
+      FROM collection_books cb
+      INNER JOIN books b ON cb.book_id = b.id
+      INNER JOIN reading_progress rp
+        ON rp.book_id = b.id
+       AND rp.user_id = ?1
+      WHERE cb.collection_id = ?2
+        AND rp.status = 'reading'
+      ORDER BY rp.last_read_at DESC
+    `,
+    [session.user.id, id]
   );
-
-  const rows = await db
-    .select({
-      id: books.id,
-      title: books.title,
-      author: books.author,
-      coverPath: books.coverPath,
-      fileType: books.fileType,
-      pageCount: books.pageCount,
-      updatedAt: books.updatedAt,
-      progressStatus: readingProgress.status,
-      progressPercent: readingProgress.percentComplete,
-      progressLastReadAt: readingProgress.lastReadAt,
-    })
-    .from(collectionBooks)
-    .innerJoin(books, eq(collectionBooks.bookId, books.id))
-    .innerJoin(readingProgress, joinCond)
-    .where(
-      and(
-        eq(collectionBooks.collectionId, id),
-        eq(readingProgress.status, "reading")
-      )
-    )
-    .orderBy(desc(readingProgress.lastReadAt));
 
   const booksResponse = rows.map((row) => ({
     id: row.id,
@@ -74,3 +83,4 @@ export async function GET(
 
   return NextResponse.json({ books: booksResponse });
 }
+

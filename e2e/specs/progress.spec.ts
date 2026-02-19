@@ -1,11 +1,9 @@
-import { and, eq } from 'drizzle-orm';
 import { type Page } from '@playwright/test';
 import { test, expect } from '../fixtures/auth.fixture';
 import { LoginPage } from '../page-objects/login.page';
 import { PdfReaderPage } from '../page-objects/pdf-reader.page';
 import { resetDatabase, seedDatabase } from '../helpers/db';
-import { db } from '../../src/lib/db';
-import { readingProgress } from '../../src/lib/db/schema';
+import { execute } from '../../src/lib/db/rust';
 
 const PDF_BOOK_ID = 'book-pdf-1';
 const ADMIN_EMAIL = 'admin@localhost';
@@ -95,19 +93,23 @@ test.describe('Reading Progress', () => {
 
     if (isElectronMode()) {
       const now = Math.floor(Date.now() / 1000);
-      await db
-        .delete(readingProgress)
-        .where(and(eq(readingProgress.userId, '2'), eq(readingProgress.bookId, PDF_BOOK_ID)));
-      await db.insert(readingProgress).values({
-        id: crypto.randomUUID(),
-        userId: '2',
-        bookId: PDF_BOOK_ID,
-        currentPage: 1,
-        totalPages,
-        percentComplete: 50,
-        status: 'reading',
-        lastReadAt: now,
-      });
+      await execute(
+        `
+          DELETE FROM reading_progress
+          WHERE user_id = ?1
+            AND book_id = ?2
+        `,
+        ['2', PDF_BOOK_ID]
+      );
+      await execute(
+        `
+          INSERT INTO reading_progress (
+            id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at
+          )
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        `,
+        [crypto.randomUUID(), '2', PDF_BOOK_ID, 1, totalPages, 50, 'reading', now]
+      );
 
       const readerAfterUserBProgress = await openPdf(authenticatedPage);
       expect(await readerAfterUserBProgress.getCurrentPage()).toBe(2);

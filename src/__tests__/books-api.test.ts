@@ -4,7 +4,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import Database from "better-sqlite3";
+import { execute } from "@/lib/db/rust";
 
 const testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alex-"));
 const dbFile = path.join(testDbDir, "books.db");
@@ -63,12 +63,8 @@ const books = [
   },
 ];
 
-let sqlite: Database.Database;
-
-function initSchema(db: Database.Database) {
-  db.exec(`
-    PRAGMA foreign_keys = ON;
-
+async function initSchema() {
+  await execute(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -77,8 +73,10 @@ function initSchema(db: Database.Database) {
       role TEXT NOT NULL DEFAULT 'user',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
-    );
+    )
+  `);
 
+  await execute(`
     CREATE TABLE IF NOT EXISTS books (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -92,8 +90,10 @@ function initSchema(db: Database.Database) {
       page_count INTEGER,
       added_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
-    );
+    )
+  `);
 
+  await execute(`
     CREATE TABLE IF NOT EXISTS reading_progress (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
@@ -104,40 +104,40 @@ function initSchema(db: Database.Database) {
       percent_complete REAL NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'not_started',
       last_read_at INTEGER
-    );
+    )
   `);
 }
 
-function resetData() {
-  sqlite.exec(`
-    DELETE FROM reading_progress;
-    DELETE FROM books;
-    DELETE FROM users;
-  `);
+async function resetData() {
+  await execute("DELETE FROM reading_progress");
+  await execute("DELETE FROM books");
+  await execute("DELETE FROM users");
 
   const now = 1700000000;
 
-  sqlite
-    .prepare(
-      `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(user.id, user.email, "hashed", user.displayName, user.role, now, now);
+  await execute(
+    `
+      INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [user.id, user.email, "hashed", user.displayName, user.role, now, now]
+  );
 
-  sqlite
-    .prepare(
-      `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(otherUser.id, otherUser.email, "hashed", otherUser.displayName, otherUser.role, now, now);
+  await execute(
+    `
+      INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `,
+    [otherUser.id, otherUser.email, "hashed", otherUser.displayName, otherUser.role, now, now]
+  );
 
   for (const book of books) {
-    sqlite
-      .prepare(
-        `INSERT INTO books (id, title, author, file_type, file_path, file_size, file_hash, added_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
+    await execute(
+      `
+        INSERT INTO books (id, title, author, file_type, file_path, file_size, file_hash, added_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+      `,
+      [
         book.id,
         book.title,
         book.author,
@@ -147,37 +147,38 @@ function resetData() {
         book.fileHash,
         book.addedAt,
         book.updatedAt,
-      );
+      ]
+    );
   }
 
-  sqlite
-    .prepare(
-      `INSERT INTO reading_progress (id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run("rp-1", user.id, "book-1", 5, 100, 0.05, "reading", 1700000100);
+  await execute(
+    `
+      INSERT INTO reading_progress (id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    `,
+    ["rp-1", user.id, "book-1", 5, 100, 0.05, "reading", 1700000100]
+  );
 
-  sqlite
-    .prepare(
-      `INSERT INTO reading_progress (id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run("rp-2", otherUser.id, "book-2", 10, 200, 0.1, "reading", 1700000200);
+  await execute(
+    `
+      INSERT INTO reading_progress (id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    `,
+    ["rp-2", otherUser.id, "book-2", 10, 200, 0.1, "reading", 1700000200]
+  );
 }
 
-beforeAll(() => {
-  sqlite = new Database(dbFile);
-  sqlite.pragma("foreign_keys = ON");
-  initSchema(sqlite);
+beforeAll(async () => {
+  await initSchema();
 });
 
-beforeEach(() => {
-  resetData();
+beforeEach(async () => {
+  await resetData();
   authMock.mockResolvedValue({ user });
 });
 
 afterAll(() => {
-  sqlite.close();
+  fs.rmSync(testDbDir, { recursive: true, force: true });
 });
 
 describe("Books API", () => {
@@ -225,3 +226,4 @@ describe("Books API", () => {
     expect(res.status).toBe(404);
   });
 });
+

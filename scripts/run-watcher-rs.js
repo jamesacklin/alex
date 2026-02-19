@@ -36,8 +36,14 @@ function main() {
     return;
   }
 
-  console.log('[watcher-rs] Release binary not found; falling back to cargo run --release');
-  runCommand('cargo', ['run', '--manifest-path', manifestPath, '--release', '--', ...args]);
+  console.error('[watcher-rs] Release binary not found; building via cargo build --release');
+  runCommand('cargo', ['build', '--manifest-path', manifestPath, '--release', '--locked']);
+
+  if (!fs.existsSync(releaseBinary)) {
+    throw new Error(`[watcher-rs] Expected release binary at ${releaseBinary} after build`);
+  }
+
+  runCommand(releaseBinary, args);
 }
 
 main();
