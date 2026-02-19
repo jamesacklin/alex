@@ -33,8 +33,6 @@ jobs:
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
       - run: pnpm build:native
       - run: mkdir -p data && pnpm db:push && pnpm db:seed
-      - run: exit 1
-        if: github.event_name == 'pull_request'
       - run: pnpm exec playwright test --config=e2e/playwright.config.ts
         env:
           E2E_PLATFORM: web
