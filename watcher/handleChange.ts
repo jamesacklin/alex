@@ -7,6 +7,7 @@ import { log } from "./log";
 import { extractPdfMetadata } from "./extractors/pdf";
 import { extractEpubMetadata } from "./extractors/epub";
 import { incrementLibraryVersion } from "../src/lib/db/library-version";
+import { handleAdd } from "./handleAdd";
 
 function computeHash(filePath: string): string {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -27,7 +28,14 @@ export async function handleChange(filePath: string) {
       .limit(1);
 
     if (!book) {
-      log(`[WARN] Change detected but no DB record: ${filePath}`);
+      log(`[INFO] Change detected for untracked file; attempting add: ${filePath}`);
+      await handleAdd(filePath);
+      return;
+    }
+
+    const newSize = fs.statSync(filePath).size;
+    if (newSize === 0) {
+      log(`[SKIP] Zero-byte file during change (waiting for write): ${filePath}`);
       return;
     }
 
@@ -36,8 +44,6 @@ export async function handleChange(filePath: string) {
       log(`[SKIP] Hash unchanged for "${book.title}"`);
       return;
     }
-
-    const newSize = fs.statSync(filePath).size;
 
     const metadata =
       book.fileType === "pdf"
