@@ -1,10 +1,8 @@
 # ---------------------------------------------------------------------------
-# Stage 1 – Builder: install native build deps, compile node_modules, build app
+# Stage 1 – Node builder: compile node_modules and build Next.js
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm AS builder
+FROM node:22-bookworm AS node-builder
 
-# Build tools and native dependencies for better-sqlite3
-# Use cache mount for apt to speed up repeated builds
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -16,17 +14,32 @@ RUN corepack enable pnpm
 
 WORKDIR /app
 
-# Install dependencies with pnpm store cache mount for faster installs
 COPY package.json pnpm-lock.yaml .pnpm-build-approval.yaml ./
 RUN --mount=type=cache,id=pnpm-${TARGETPLATFORM},target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-# Copy source and build Next.js
 COPY . .
 RUN pnpm build
 
 # ---------------------------------------------------------------------------
-# Stage 2 – Runtime: minimal image with only what's needed to run
+# Stage 2 – Rust builder: compile watcher-rs and collect runtime libs
+# ---------------------------------------------------------------------------
+FROM rust:1-bookworm AS rust-builder
+
+WORKDIR /app
+COPY watcher-rs ./watcher-rs
+
+RUN cargo build --manifest-path watcher-rs/Cargo.toml --release --locked
+
+RUN set -eux; \
+    mkdir -p /out; \
+    cp watcher-rs/target/release/watcher-rs /out/watcher-rs; \
+    chmod +x /out/watcher-rs; \
+    PDFIUM_SO="$(find /usr/local/cargo/cache/pdfium -name libpdfium.so -type f | head -n 1 || true)"; \
+    if [ -n "$PDFIUM_SO" ]; then cp "$PDFIUM_SO" /out/libpdfium.so; fi
+
+# ---------------------------------------------------------------------------
+# Stage 3 – Runtime: minimal image with prebuilt app + watcher-rs binary
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm-slim
 
@@ -34,27 +47,24 @@ RUN corepack enable pnpm
 
 WORKDIR /app
 
-# Copy built artifacts from the builder stage
-COPY --from=builder /app/package.json .
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
+COPY --from=node-builder /app/package.json .
+COPY --from=node-builder /app/node_modules ./node_modules
+COPY --from=node-builder /app/.next ./.next
+COPY --from=node-builder /app/public ./public
 
-# Next.js config
-COPY --from=builder /app/next.config.ts .
-COPY --from=builder /app/tsconfig.json .
-COPY --from=builder /app/drizzle.config.ts .
+COPY --from=node-builder /app/next.config.ts .
+COPY --from=node-builder /app/tsconfig.json .
+COPY --from=node-builder /app/drizzle.config.ts .
+COPY --from=node-builder /app/src/lib/db ./src/lib/db
 
-# Watcher service + the DB layer it imports at runtime
-COPY --from=builder /app/watcher ./watcher
-COPY --from=builder /app/src/lib/db ./src/lib/db
+COPY --from=rust-builder /out ./watcher-rs
 
 EXPOSE 3000
 
 # db:push (schema) and db:seed (default admin) are both idempotent –
 # running them every startup is safe and ensures the DB is ready.
-# The watcher is backgrounded; Next.js runs in the foreground as PID 1.
+# watcher-rs runs as a prebuilt binary; Next.js stays PID 1.
 CMD ["sh", "-c", \
   "pnpm db:push && pnpm db:seed && \
-   pnpm watcher & \
+   env LD_LIBRARY_PATH=/app/watcher-rs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /app/watcher-rs/watcher-rs & \
    exec pnpm start"]

@@ -304,27 +304,94 @@ async function waitForServerReady(timeoutMs = isE2E ? 120000 : 30000) {
   return false;
 }
 
+function watcherBinaryName() {
+  return process.platform === 'win32' ? 'watcher-rs.exe' : 'watcher-rs';
+}
+
+function getDevWatcherBinaryPath() {
+  return path.join(process.cwd(), 'watcher-rs', 'target', 'release', watcherBinaryName());
+}
+
+function getPackagedWatcherBinaryPath() {
+  return path.join(process.resourcesPath, 'watcher-rs', watcherBinaryName());
+}
+
+function getWatcherArgs(env: NodeJS.ProcessEnv) {
+  return [
+    '--library-path',
+    env.LIBRARY_PATH ?? './data/library',
+    '--db-path',
+    env.DATABASE_PATH ?? './data/library.db',
+    '--covers-path',
+    env.COVERS_PATH ?? './data/covers',
+  ];
+}
+
+function buildWatcherEnv(baseEnv: NodeJS.ProcessEnv, watcherDir: string) {
+  const env = { ...baseEnv };
+
+  if (process.platform === 'linux') {
+    env.LD_LIBRARY_PATH = env.LD_LIBRARY_PATH
+      ? `${watcherDir}:${env.LD_LIBRARY_PATH}`
+      : watcherDir;
+  } else if (process.platform === 'darwin') {
+    env.DYLD_LIBRARY_PATH = env.DYLD_LIBRARY_PATH
+      ? `${watcherDir}:${env.DYLD_LIBRARY_PATH}`
+      : watcherDir;
+  } else if (process.platform === 'win32') {
+    env.PATH = env.PATH
+      ? `${watcherDir};${env.PATH}`
+      : watcherDir;
+  }
+
+  return env;
+}
+
 function startWatcher(libraryPath: string) {
   if (isE2E) {
     console.log('[Electron] E2E mode: skipping file watcher startup');
     return;
   }
 
-  const env = getEnvVars(libraryPath);
-  const command = isDev ? 'npx' : getPackagedNodeCommand();
-  const args = isDev ? ['tsx', 'watcher/index.ts'] : [path.join(app.getAppPath(), 'watcher/dist/watcher/index.js')];
-  const watcherEnv = isDev
-    ? env
-    : {
-        ...env,
-        ELECTRON_RUN_AS_NODE: '1',
-      };
+  const baseEnv = getEnvVars(libraryPath);
+  const watcherArgs = getWatcherArgs(baseEnv);
   const workingDir = isDev ? process.cwd() : process.resourcesPath;
 
-  if (!isDev && !fs.existsSync(args[0])) {
-    console.error(`[Electron] Watcher entry not found: ${args[0]}`);
-    return;
+  let command: string;
+  let args: string[];
+  let watcherDir: string;
+
+  if (isDev) {
+    const devBinary = getDevWatcherBinaryPath();
+    if (fs.existsSync(devBinary)) {
+      command = devBinary;
+      args = watcherArgs;
+      watcherDir = path.dirname(devBinary);
+    } else {
+      command = 'cargo';
+      args = [
+        'run',
+        '--manifest-path',
+        path.join(process.cwd(), 'watcher-rs', 'Cargo.toml'),
+        '--release',
+        '--',
+        ...watcherArgs,
+      ];
+      watcherDir = path.join(process.cwd(), 'watcher-rs');
+      console.warn('[Electron] watcher-rs release binary not found; falling back to cargo run --release');
+    }
+  } else {
+    const packagedBinary = getPackagedWatcherBinaryPath();
+    if (!fs.existsSync(packagedBinary)) {
+      console.error(`[Electron] Packaged watcher binary not found: ${packagedBinary}`);
+      return;
+    }
+    command = packagedBinary;
+    args = watcherArgs;
+    watcherDir = path.dirname(packagedBinary);
   }
+
+  const watcherEnv = buildWatcherEnv(baseEnv, watcherDir);
 
   console.log('[Electron] Starting file watcher...');
   try {

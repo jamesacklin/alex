@@ -15,11 +15,16 @@ directories:
 files:
   - .next/standalone/**/*
   - public/**/*
-  - watcher/**/*
   - src/lib/db/**/*
   - electron/dist/**/*
   - package.json
   - drizzle.config.ts
+
+extraResources:
+  - from: watcher-rs/dist
+    to: watcher-rs
+    filter:
+      - "**/*"
 
 asar: true
 asarUnpack:
