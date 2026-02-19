@@ -76,19 +76,22 @@ export const test = base.extend<AppFixture>({
     console.log('[Fixture] User data dir:', testUserDataDir);
     console.log('[Fixture] Library path:', testLibraryPath);
 
-    // Kill any leftover server LISTENING on port 3210 from a previous test.
-    // Use -sTCP:LISTEN to avoid killing Playwright workers that still have
-    // client connections open to that port.
-    try {
-      if (process.platform === 'win32') {
-        execSync('FOR /F "tokens=5" %P IN (\'netstat -a -n -o ^| findstr LISTENING ^| findstr :3210\') DO TaskKill.exe /F /PID %P 2>nul || exit 0', { stdio: 'ignore' });
-      } else {
-        execSync('lsof -ti:3210 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+    // Wait for port 3210 to be free before launching a new Electron instance.
+    // After app.close(), the spawned Next.js server may linger briefly.
+    const portFreeDeadline = Date.now() + 15000;
+    while (Date.now() < portFreeDeadline) {
+      try {
+        const server = await new Promise<import('net').Server>((resolve, reject) => {
+          const s = require('net').createServer();
+          s.once('error', reject);
+          s.listen(3210, '127.0.0.1', () => { s.close(() => resolve(s)); });
+        });
+        void server;
+        break; // Port is free
+      } catch {
+        await sleep(500);
       }
-    } catch {
-      // Port might not be in use; ignore.
     }
-    await sleep(2000);
 
     const electronEntry = path.join(process.cwd(), 'electron', 'dist', 'main.js');
     if (!fs.existsSync(electronEntry)) {
