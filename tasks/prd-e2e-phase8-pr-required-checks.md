@@ -16,9 +16,11 @@ Wire E2E tests into GitHub repository branch protection rules, making them requi
 ## User Stories
 
 ### US-001: Enable branch protection on main
+
 **Description:** As a maintainer, I need branch protection enabled on the main branch to prevent accidental direct pushes.
 
 **Acceptance Criteria:**
+
 - [ ] Navigate to repository Settings → Branches
 - [ ] Add branch protection rule for `main` branch
 - [ ] Enable "Require a pull request before merging"
@@ -28,49 +30,23 @@ Wire E2E tests into GitHub repository branch protection rules, making them requi
 - [ ] Branch protection rule is active
 
 ### US-002: Add E2E web job as required check
+
 **Description:** As a maintainer, I need the E2E web job to be a required check so PRs cannot merge if web tests fail.
 
 **Acceptance Criteria:**
+
 - [ ] In branch protection rule, add required status check: `e2e-web`
 - [ ] Job name matches the job name in `.github/workflows/e2e.yml`
 - [ ] Verify check appears in PR UI after running workflow
 - [ ] Verify PR merge button is blocked until `e2e-web` passes
 - [ ] Branch protection rule saves successfully
 
-### US-003: Add E2E Electron Linux job as required check
-**Description:** As a maintainer, I need the E2E Electron Linux job to be a required check.
+### US-003: Verify PR merge is blocked when tests fail
 
-**Acceptance Criteria:**
-- [ ] In branch protection rule, add required status check: `e2e-electron-linux`
-- [ ] Job name matches the job name in `.github/workflows/e2e.yml`
-- [ ] Verify check appears in PR UI
-- [ ] Verify PR merge button is blocked until `e2e-electron-linux` passes
-- [ ] Branch protection rule saves successfully
-
-### US-004: Add E2E Electron macOS job as required check
-**Description:** As a maintainer, I need the E2E Electron macOS job to be a required check.
-
-**Acceptance Criteria:**
-- [ ] In branch protection rule, add required status check: `e2e-electron-macos`
-- [ ] Job name matches the job name in `.github/workflows/e2e.yml`
-- [ ] Verify check appears in PR UI
-- [ ] Verify PR merge button is blocked until `e2e-electron-macos` passes
-- [ ] Branch protection rule saves successfully
-
-### US-005: Add E2E Electron Windows job as required check
-**Description:** As a maintainer, I need the E2E Electron Windows job to be a required check.
-
-**Acceptance Criteria:**
-- [ ] In branch protection rule, add required status check: `e2e-electron-windows`
-- [ ] Job name matches the job name in `.github/workflows/e2e.yml`
-- [ ] Verify check appears in PR UI
-- [ ] Verify PR merge button is blocked until `e2e-electron-windows` passes
-- [ ] Branch protection rule saves successfully
-
-### US-006: Verify PR merge is blocked when tests fail
 **Description:** As a developer, I should not be able to merge a PR when E2E tests fail.
 
 **Acceptance Criteria:**
+
 - [ ] Create a test PR that intentionally breaks a test (e.g., change expected text)
 - [ ] Push to PR and wait for E2E workflow to run
 - [ ] Verify at least one E2E job fails
@@ -78,10 +54,12 @@ Wire E2E tests into GitHub repository branch protection rules, making them requi
 - [ ] Verify PR cannot be merged via UI or API
 - [ ] Fix the test and verify PR becomes mergeable after tests pass
 
-### US-007: Verify PR merge is allowed when all tests pass
+### US-004: Verify PR merge is allowed when all tests pass
+
 **Description:** As a developer, I should be able to merge a PR when all E2E tests pass.
 
 **Acceptance Criteria:**
+
 - [ ] Create a test PR with no breaking changes
 - [ ] Push to PR and wait for E2E workflow to run
 - [ ] Verify all 4 E2E jobs pass (web, Linux, macOS, Windows)
@@ -89,20 +67,24 @@ Wire E2E tests into GitHub repository branch protection rules, making them requi
 - [ ] Verify PR can be merged via UI or API
 - [ ] Merge PR successfully
 
-### US-008: Document required check configuration
+### US-005: Document required check configuration
+
 **Description:** As a maintainer, I need documentation explaining how branch protection and required checks are configured.
 
 **Acceptance Criteria:**
+
 - [ ] Add section to `docs/product/testing/PLAN.md` explaining required checks
-- [ ] Document which jobs are required: `e2e-web`, `e2e-electron-linux`, `e2e-electron-macos`, `e2e-electron-windows`
+- [ ] Document which jobs are required: `e2e-web`,
 - [ ] Document how to add/remove required checks in GitHub settings
 - [ ] Document what happens when a required check fails (PR blocked)
 - [ ] Document how to bypass checks (admin override, if enabled)
 
 ### US-009: Optional - Configure auto-merge when checks pass
+
 **Description:** As a developer, I want PRs to auto-merge when all required checks pass and approvals are met.
 
 **Acceptance Criteria:**
+
 - [ ] Enable "Require approvals" in branch protection (e.g., 1 approval required)
 - [ ] Developer enables auto-merge on a PR
 - [ ] When all required checks pass and approvals are met, PR merges automatically
@@ -112,7 +94,7 @@ Wire E2E tests into GitHub repository branch protection rules, making them requi
 ## Functional Requirements
 
 - FR-1: Branch protection must be enabled on `main` branch
-- FR-2: Required status checks must include all 4 E2E jobs: `e2e-web`, `e2e-electron-linux`, `e2e-electron-macos`, `e2e-electron-windows`
+- FR-2: Required status checks must include these E2E jobs: `e2e-web`
 - FR-3: PR merge must be blocked when any required E2E job fails
 - FR-4: PR merge must be allowed when all required E2E jobs pass
 - FR-5: Check names in branch protection must exactly match job names in workflow file
@@ -141,7 +123,7 @@ Wire E2E tests into GitHub repository branch protection rules, making them requi
 ## Success Metrics
 
 - Branch protection is active on main branch
-- All 4 E2E jobs are required status checks
+- The `e2e-web` E2E job is required status check
 - Test PR with failing tests is blocked from merging
 - Test PR with passing tests can merge successfully
 - Documentation is clear and complete
