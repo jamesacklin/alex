@@ -76,6 +76,17 @@ export const test = base.extend<AppFixture>({
     console.log('[Fixture] User data dir:', testUserDataDir);
     console.log('[Fixture] Library path:', testLibraryPath);
 
+    // Kill any leftover server process on port 3210 from a previous test.
+    try {
+      if (process.platform === 'win32') {
+        execSync('FOR /F "tokens=5" %P IN (\'netstat -a -n -o ^| findstr :3210\') DO TaskKill.exe /F /PID %P 2>nul || exit 0', { stdio: 'ignore' });
+      } else {
+        execSync('lsof -ti:3210 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+      }
+    } catch {
+      // Port might not be in use; ignore.
+    }
+
     const electronEntry = path.join(process.cwd(), 'electron', 'dist', 'main.js');
     if (!fs.existsSync(electronEntry)) {
       console.log('[Fixture] Electron dist missing, compiling main process...');
