@@ -241,6 +241,7 @@ function startServer(libraryPath: string) {
       env: serverEnv,
       cwd: workingDir,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn server process:', error);
@@ -331,6 +332,7 @@ function startWatcher(libraryPath: string) {
       env: watcherEnv,
       cwd: workingDir,
       stdio: 'inherit',
+      detached: process.platform !== 'win32',
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn watcher process:', error);
@@ -349,15 +351,23 @@ function startWatcher(libraryPath: string) {
 function killChildProcesses() {
   console.log('[Electron] Shutting down child processes...');
 
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
+  for (const child of [serverProcess, watcherProcess]) {
+    if (!child || child.pid == null) continue;
+    try {
+      // Kill the entire process group so that child processes (e.g. the
+      // Next.js server spawned by pnpm) are also terminated.
+      if (process.platform !== 'win32') {
+        process.kill(-child.pid, 'SIGKILL');
+      } else {
+        child.kill();
+      }
+    } catch {
+      // Process may already be dead.
+    }
   }
 
-  if (watcherProcess) {
-    watcherProcess.kill();
-    watcherProcess = null;
-  }
+  serverProcess = null;
+  watcherProcess = null;
 }
 
 function restartWatcher(libraryPath: string) {
