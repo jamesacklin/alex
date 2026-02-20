@@ -59,6 +59,7 @@ COPY --from=node-builder /app/package.json .
 COPY --from=node-builder /app/node_modules ./node_modules
 COPY --from=node-builder /app/.next ./.next
 COPY --from=node-builder /app/public ./public
+COPY --from=node-builder /app/scripts ./scripts
 
 COPY --from=node-builder /app/next.config.ts .
 COPY --from=node-builder /app/tsconfig.json .
@@ -72,6 +73,8 @@ EXPOSE 3000
 # running them every startup is safe and ensures the DB is ready.
 # watcher-rs runs as a prebuilt binary; Next.js stays PID 1.
 CMD ["sh", "-c", \
-  "pnpm db:push && pnpm db:seed && \
-   env LD_LIBRARY_PATH=/app/watcher-rs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /app/watcher-rs/watcher-rs & \
-   exec pnpm start"]
+  "export WATCHER_RS_BIN=/app/watcher-rs/watcher-rs; \
+   export LD_LIBRARY_PATH=/app/watcher-rs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; \
+   pnpm db:push && pnpm db:seed && \
+   /app/watcher-rs/watcher-rs & \
+   exec node .next/standalone/server.js"]
