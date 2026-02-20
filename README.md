@@ -140,7 +140,7 @@ docker compose up -d --build
    - **Email:** `admin@localhost`
    - **Password:** `admin123`
 
-   **Change the password immediately after logging in.**
+   **Change the password immediately after logging in** from **Settings → Users → Change Password**.
 
 5. **Add books:** Drop PDFs or EPUBs into your library folder (`/Volumes/books`). The file watcher will automatically detect and import them.
 
@@ -176,6 +176,8 @@ pnpm electron:dev
 ```
 
 This runs Electron with the internal app-managed Next server on `http://localhost:3210`.
+
+In desktop mode, Alex uses an app-managed admin session; the Settings view opens at **Users** and does not show **General** or **Log out**.
 
 ### Useful scripts
 

@@ -196,8 +196,8 @@ graph TB
 - `/read/[bookId]` - Book reader (PDF or EPUB)
 - `/shared/[token]` - Public collection view (no auth required)
 - `/shared/[token]/read/[bookId]` - Public book reader (no auth required)
-- `/admin/general` - General admin settings (admin only)
-- `/admin/users` - User management (admin only)
+- `/admin/general` - General admin settings (admin only, hidden from Electron desktop navigation)
+- `/admin/users` - User management and admin password resets (admin only)
 - `/admin/library` - Library management and bulk operations (admin only)
 - `/login` - Authentication page
 - `/onboarding` - First-run setup flow
@@ -389,6 +389,7 @@ The watcher is a standalone Rust binary that handles file monitoring, metadata e
   - Windows: .exe installer (x64)
   - Linux: AppImage and .deb packages
 - First-run setup flow for admin account creation
+- Desktop mode uses an app-managed admin session; Settings opens at `/admin/users` and does not expose logout controls
 - Native file system access for library management
 
 ## Technology Stack

@@ -94,7 +94,7 @@ Stores user accounts with authentication credentials and profile information.
 
 **Default Data:**
 - System creates default admin account: `admin@localhost` / `admin123`
-- Users should change default password on first login
+- Users should change the default password on first login from `/admin/users` via the **Change Password** action
 
 **Roles:**
 - `admin`: Can manage users, access admin panel, view all data
@@ -427,6 +427,8 @@ pnpm db:push
 
 # Seed the default admin user
 pnpm db:seed
+
+# Rotate seeded credentials immediately after login in /admin/users
 
 # Reset database (destructive)
 rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push && pnpm db:seed
