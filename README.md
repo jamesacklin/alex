@@ -177,12 +177,6 @@ pnpm electron:dev
 
 This runs Electron with the internal app-managed Next server on `http://localhost:3210`.
 
-If you explicitly want an externally managed Next dev server, use:
-
-```sh
-pnpm electron:dev:external
-```
-
 ### Useful scripts
 
 | Script | What it does |
@@ -194,7 +188,5 @@ pnpm electron:dev:external
 | `pnpm watcher` | Rust file watcher (`watcher-rs`); builds the binary if not found |
 | `pnpm watcher:build` | Build the `watcher-rs` release binary |
 | `pnpm electron:dev` | Electron dev mode (app-managed server on `:3210`) |
-| `pnpm electron:dev:external` | Electron dev with separately started Next dev server |
 | `pnpm db:push` | Apply schema to the database (uses Rust bridge) |
 | `pnpm db:seed` | Seed the default admin account |
-| `pnpm db:reset` | Wipe the database and re-seed from scratch |
