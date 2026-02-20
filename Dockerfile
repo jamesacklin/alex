@@ -75,6 +75,7 @@ EXPOSE 3000
 CMD ["sh", "-c", \
   "export WATCHER_RS_BIN=/app/watcher-rs/watcher-rs; \
    export LD_LIBRARY_PATH=/app/watcher-rs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; \
+   export HOSTNAME=0.0.0.0; \
    pnpm db:push && pnpm db:seed && \
    /app/watcher-rs/watcher-rs & \
    exec node .next/standalone/server.js"]
