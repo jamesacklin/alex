@@ -429,7 +429,7 @@ pnpm db:push
 pnpm db:seed
 
 # Reset database (destructive)
-pnpm db:reset
+rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push && pnpm db:seed
 ```
 
 ### Backup Strategy
