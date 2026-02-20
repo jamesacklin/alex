@@ -10,10 +10,11 @@ function watcherBinaryName() {
 
 function resolveWatcherBinary() {
   const envBinary = process.env.WATCHER_RS_BIN;
+  const packagedBinary = path.join(process.cwd(), 'watcher-rs', watcherBinaryName());
   const releaseBinary = path.join(process.cwd(), 'watcher-rs', 'target', 'release', watcherBinaryName());
   const distBinary = path.join(process.cwd(), 'watcher-rs', 'dist', watcherBinaryName());
 
-  const candidates = [envBinary, releaseBinary, distBinary].filter(Boolean);
+  const candidates = [envBinary, packagedBinary, releaseBinary, distBinary].filter(Boolean);
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
@@ -165,4 +166,3 @@ function main() {
 }
 
 main();
-
