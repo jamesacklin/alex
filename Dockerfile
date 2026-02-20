@@ -71,15 +71,21 @@ COPY --from=node-builder /app/public ./.next/standalone/public
 
 COPY --from=rust-builder /out ./watcher-rs
 
+# Absolute paths so runtime code is immune to cwd changes
+# (the Next.js standalone server does process.chdir to .next/standalone/).
+ENV DATABASE_PATH=/app/data/library.db
+ENV LIBRARY_PATH=/app/data/library
+ENV DB_MIGRATION_PATH=/app/src/lib/db/migrations/0000_wide_expediter.sql
+ENV WATCHER_RS_BIN=/app/watcher-rs/watcher-rs
+ENV LD_LIBRARY_PATH=/app/watcher-rs
+ENV HOSTNAME=0.0.0.0
+
 EXPOSE 3000
 
 # db:push (schema) and db:seed (default admin) are both idempotent –
 # running them every startup is safe and ensures the DB is ready.
 # watcher-rs runs as a prebuilt binary; Next.js stays PID 1.
 CMD ["sh", "-c", \
-  "export WATCHER_RS_BIN=/app/watcher-rs/watcher-rs; \
-   export LD_LIBRARY_PATH=/app/watcher-rs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; \
-   export HOSTNAME=0.0.0.0; \
-   pnpm db:push && pnpm db:seed && \
+  "pnpm db:push && pnpm db:seed && \
    /app/watcher-rs/watcher-rs & \
    exec node .next/standalone/server.js"]
