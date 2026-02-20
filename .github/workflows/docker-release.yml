@@ -15,22 +15,11 @@ env:
   REGISTRY_IMAGE_GHCR: ghcr.io/jamesacklin/alex
 
 jobs:
-  build-and-push:
+  prepare:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Resolve version
         id: version
         run: |
@@ -46,6 +35,87 @@ jobs:
           SANITIZED_VERSION="$(echo "$VERSION" | tr '/:' '--')"
           echo "version=$SANITIZED_VERSION" >> "$GITHUB_OUTPUT"
           echo "Building version: $SANITIZED_VERSION"
+
+  build-and-push:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          outputs: type=image,"name=${{ env.REGISTRY_IMAGE_DOCKERHUB }},${{ env.REGISTRY_IMAGE_GHCR }}",name-canonical=true,push-by-digest=true
+          cache-from: type=gha,scope=docker-release-${{ matrix.arch }}
+          cache-to: type=gha,scope=docker-release-${{ matrix.arch }},mode=max
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          DIGEST="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-manifests:
+    needs: [prepare, build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -71,36 +141,64 @@ jobs:
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=docker-release
-          cache-to: type=gha,scope=docker-release,mode=min
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
+      - name: Create and push manifests
+        run: |
+          set -eux
+
+          cd /tmp/digests
+          mapfile -t DIGESTS < <(ls -1)
+
+          DOCKERHUB_TAGS=()
+          GHCR_TAGS=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            case "$tag" in
+              "${{ env.REGISTRY_IMAGE_DOCKERHUB }}:"*)
+                DOCKERHUB_TAGS+=("$tag")
+                ;;
+              "${{ env.REGISTRY_IMAGE_GHCR }}:"*)
+                GHCR_TAGS+=("$tag")
+                ;;
+            esac
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+          DOCKERHUB_TAG_ARGS=()
+          for tag in "${DOCKERHUB_TAGS[@]}"; do
+            DOCKERHUB_TAG_ARGS+=("-t" "$tag")
+          done
+
+          GHCR_TAG_ARGS=()
+          for tag in "${GHCR_TAGS[@]}"; do
+            GHCR_TAG_ARGS+=("-t" "$tag")
+          done
+
+          DOCKERHUB_SOURCES=()
+          GHCR_SOURCES=()
+          for digest in "${DIGESTS[@]}"; do
+            DOCKERHUB_SOURCES+=("${{ env.REGISTRY_IMAGE_DOCKERHUB }}@sha256:${digest}")
+            GHCR_SOURCES+=("${{ env.REGISTRY_IMAGE_GHCR }}@sha256:${digest}")
+          done
+
+          docker buildx imagetools create "${DOCKERHUB_TAG_ARGS[@]}" "${DOCKERHUB_SOURCES[@]}"
+          docker buildx imagetools create "${GHCR_TAG_ARGS[@]}" "${GHCR_SOURCES[@]}"
 
       - name: Image summary
         run: |
-          echo "## Docker Images Published :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Docker Hub" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY_IMAGE_DOCKERHUB }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY_IMAGE_DOCKERHUB }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY_IMAGE_GHCR }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY_IMAGE_GHCR }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** \`${{ needs.prepare.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Docker Hub" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ env.REGISTRY_IMAGE_DOCKERHUB }}:${{ needs.prepare.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ env.REGISTRY_IMAGE_DOCKERHUB }}:latest" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### GitHub Container Registry" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ env.REGISTRY_IMAGE_GHCR }}:${{ needs.prepare.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ env.REGISTRY_IMAGE_GHCR }}:latest" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"

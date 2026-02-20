@@ -3,6 +3,8 @@
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm AS node-builder
 
+ARG TARGETPLATFORM
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -19,17 +21,24 @@ RUN --mount=type=cache,id=pnpm-${TARGETPLATFORM},target=/root/.local/share/pnpm/
     pnpm install --frozen-lockfile
 
 COPY . .
-RUN pnpm build
+RUN --mount=type=cache,id=next-${TARGETPLATFORM},target=/app/.next/cache \
+    pnpm build
 
 # ---------------------------------------------------------------------------
 # Stage 2 – Rust builder: compile watcher-rs and collect runtime libs
 # ---------------------------------------------------------------------------
 FROM rust:1-bookworm AS rust-builder
 
+ARG TARGETPLATFORM
+
 WORKDIR /app
 COPY watcher-rs ./watcher-rs
 
-RUN cargo build --manifest-path watcher-rs/Cargo.toml --release --locked
+RUN --mount=type=cache,id=cargo-registry-${TARGETPLATFORM},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git-${TARGETPLATFORM},target=/usr/local/cargo/git \
+    --mount=type=cache,id=cargo-cache-${TARGETPLATFORM},target=/usr/local/cargo/cache \
+    --mount=type=cache,id=watcher-target-${TARGETPLATFORM},target=/app/watcher-rs/target \
+    cargo build --manifest-path watcher-rs/Cargo.toml --release --locked
 
 RUN set -eux; \
     mkdir -p /out; \
