@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 
@@ -12,6 +13,17 @@ export function GeneralSettingsClient({
   displayName,
   email,
 }: GeneralSettingsClientProps) {
+  const [isElectron, setIsElectron] = useState(
+    process.env.NEXT_PUBLIC_ALEX_DESKTOP === "true",
+  );
+
+  useEffect(() => {
+    const electron = typeof window !== "undefined" && !!window.electronAPI;
+    if (electron) {
+      setIsElectron(true);
+    }
+  }, []);
+
   return (
     <div className="space-y-8">
       {/* Account info */}
@@ -23,7 +35,7 @@ export function GeneralSettingsClient({
       </div>
 
       {/* Logout */}
-      {process.env.NEXT_PUBLIC_ALEX_DESKTOP !== "true" && (
+      {!isElectron && (
         <div>
           <Button
             variant="outline"

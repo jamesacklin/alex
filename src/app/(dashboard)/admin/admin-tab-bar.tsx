@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -8,12 +9,14 @@ interface SettingsNavItem {
   label: string;
   href: string;
   adminOnly?: boolean;
+  hideInElectron?: boolean;
 }
 
 const SETTINGS_NAV: SettingsNavItem[] = [
   {
     label: "General",
     href: "/admin/general",
+    hideInElectron: true,
   },
   {
     label: "Users",
@@ -29,8 +32,21 @@ const SETTINGS_NAV: SettingsNavItem[] = [
 
 export function SettingsTabBar({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
+  const [isElectron, setIsElectron] = useState(
+    process.env.NEXT_PUBLIC_ALEX_DESKTOP === "true",
+  );
+
+  useEffect(() => {
+    const electron = typeof window !== "undefined" && !!window.electronAPI;
+    if (electron) {
+      setIsElectron(true);
+    }
+  }, []);
+
   const visibleItems = SETTINGS_NAV.filter(
-    (item) => !item.adminOnly || isAdmin,
+    (item) =>
+      (!item.adminOnly || isAdmin) &&
+      !(item.hideInElectron && isElectron),
   );
 
   return (
