@@ -57,13 +57,17 @@ WORKDIR /app
 
 COPY --from=node-builder /app/package.json .
 COPY --from=node-builder /app/node_modules ./node_modules
-COPY --from=node-builder /app/.next ./.next
-COPY --from=node-builder /app/public ./public
 COPY --from=node-builder /app/scripts ./scripts
-
 COPY --from=node-builder /app/next.config.ts .
 COPY --from=node-builder /app/tsconfig.json .
 COPY --from=node-builder /app/src/lib/db ./src/lib/db
+
+# Standalone server + its bundled node_modules
+COPY --from=node-builder /app/.next/standalone ./.next/standalone
+# Static assets must live inside the standalone dir so server.js can serve them
+COPY --from=node-builder /app/.next/static ./.next/standalone/.next/static
+# Public assets likewise
+COPY --from=node-builder /app/public ./.next/standalone/public
 
 COPY --from=rust-builder /out ./watcher-rs
 
