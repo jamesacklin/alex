@@ -88,7 +88,7 @@ export default function DashboardLayout({
   const transitionScopeKey = pathname.startsWith("/admin") ? "/admin" : pathname;
   const screenTitle = getScreenTitle(pathname);
 
-  const navItems = [
+  const navItems: NavItem[] = [
     ...NAV_ITEMS,
     {
       label: "Settings",
