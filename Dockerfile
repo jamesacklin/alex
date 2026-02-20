@@ -38,9 +38,8 @@ RUN --mount=type=cache,id=cargo-registry-${TARGETPLATFORM},target=/usr/local/car
     --mount=type=cache,id=cargo-git-${TARGETPLATFORM},target=/usr/local/cargo/git \
     --mount=type=cache,id=cargo-cache-${TARGETPLATFORM},target=/usr/local/cargo/cache \
     --mount=type=cache,id=watcher-target-${TARGETPLATFORM},target=/app/watcher-rs/target \
-    cargo build --manifest-path watcher-rs/Cargo.toml --release --locked
-
-RUN set -eux; \
+    set -eux; \
+    cargo build --manifest-path watcher-rs/Cargo.toml --release --locked; \
     mkdir -p /out; \
     cp watcher-rs/target/release/watcher-rs /out/watcher-rs; \
     chmod +x /out/watcher-rs; \
