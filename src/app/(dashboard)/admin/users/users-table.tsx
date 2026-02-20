@@ -57,7 +57,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { createUser, deleteUser, updateUser } from "./actions";
+import { createUser, deleteUser, updateUser, updateUserPassword } from "./actions";
 
 type UserRow = {
   id: string;
@@ -83,6 +83,19 @@ const editUserSchema = z.object({
 
 type EditUserValues = z.infer<typeof editUserSchema>;
 
+const resetPasswordSchema = z.object({
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(6, "Password must be at least 6 characters"),
+}).refine(
+  (values) => values.password === values.confirmPassword,
+  {
+    message: "Passwords must match",
+    path: ["confirmPassword"],
+  },
+);
+
+type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
+
 export default function UsersTable({
   users,
   currentUserId,
@@ -97,6 +110,9 @@ export default function UsersTable({
   const [editOpen, setEditOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUserEmail, setEditUserEmail] = useState("");
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordUserId, setPasswordUserId] = useState<string | null>(null);
+  const [passwordUserEmail, setPasswordUserEmail] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteEmail, setDeleteEmail] = useState("");
   const [actionsContainer, setActionsContainer] = useState<HTMLElement | null>(null);
@@ -114,6 +130,11 @@ export default function UsersTable({
   const editForm = useForm<EditUserValues>({
     resolver: zodResolver(editUserSchema),
     defaultValues: { displayName: "", role: "user" },
+  });
+
+  const passwordForm = useForm<ResetPasswordValues>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: { password: "", confirmPassword: "" },
   });
 
   async function onCreateSubmit(data: CreateUserValues) {
@@ -155,6 +176,22 @@ export default function UsersTable({
     setDeleteId(null);
   }
 
+  async function onPasswordSubmit(data: ResetPasswordValues) {
+    if (!passwordUserId) return;
+    const result = await updateUserPassword(passwordUserId, {
+      password: data.password,
+    });
+    if ("error" in result) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Password updated");
+    setPasswordOpen(false);
+    setPasswordUserId(null);
+    setPasswordUserEmail("");
+    passwordForm.reset();
+  }
+
   function openEditDialog(user: UserRow) {
     setEditUserId(user.id);
     setEditUserEmail(user.email);
@@ -163,6 +200,13 @@ export default function UsersTable({
       role: user.role === "admin" ? "admin" : "user",
     });
     setEditOpen(true);
+  }
+
+  function openPasswordDialog(user: UserRow) {
+    setPasswordUserId(user.id);
+    setPasswordUserEmail(user.email);
+    passwordForm.reset({ password: "", confirmPassword: "" });
+    setPasswordOpen(true);
   }
 
   const addUserButton = (
@@ -220,6 +264,13 @@ export default function UsersTable({
                       onClick={() => openEditDialog(user)}
                     >
                       Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openPasswordDialog(user)}
+                    >
+                      Change Password
                     </Button>
                     {isOwn ? (
                       <Tooltip>
@@ -396,6 +447,64 @@ export default function UsersTable({
                 disabled={editForm.formState.isSubmitting}
               >
                 {editForm.formState.isSubmitting ? "Saving…" : "Save Changes"}
+              </Button>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={passwordOpen}
+        onOpenChange={(open) => {
+          setPasswordOpen(open);
+          if (!open) {
+            setPasswordUserId(null);
+            setPasswordUserEmail("");
+            passwordForm.reset();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Set a new password for {passwordUserEmail || "this user"}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...passwordForm}>
+            <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
+              <FormField
+                control={passwordForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={passwordForm.control}
+                name="confirmPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={passwordForm.formState.isSubmitting}
+              >
+                {passwordForm.formState.isSubmitting ? "Saving…" : "Update Password"}
               </Button>
             </form>
           </Form>

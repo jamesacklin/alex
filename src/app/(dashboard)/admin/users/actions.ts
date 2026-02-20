@@ -106,3 +106,45 @@ export async function updateUser(
 
   return { success: true };
 }
+
+export async function updateUserPassword(
+  id: string,
+  data: { password: string },
+) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { error: "Forbidden" };
+  }
+
+  if (!data.password || data.password.length < 6) {
+    return { error: "Password must be at least 6 characters" };
+  }
+
+  const existing = await queryOne<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE id = ?1
+      LIMIT 1
+    `,
+    [id]
+  );
+  if (!existing) {
+    return { error: "User not found" };
+  }
+
+  const passwordHash = await bcrypt.hash(data.password, 10);
+  const updatedAt = Math.floor(Date.now() / 1000);
+
+  await execute(
+    `
+      UPDATE users
+      SET password_hash = ?1,
+          updated_at = ?2
+      WHERE id = ?3
+    `,
+    [passwordHash, updatedAt, id]
+  );
+
+  return { success: true };
+}
