@@ -383,6 +383,8 @@ function runDbSetup(libraryPath: string) {
 function startServer(libraryPath: string) {
   const env = getEnvVars(libraryPath);
   const runProdLikeServerForE2E = isDev && isE2E;
+  const standaloneServerPath = path.join(app.getAppPath(), '.next', 'standalone', 'server.js');
+  const useStandaloneServerForE2E = runProdLikeServerForE2E && fs.existsSync(standaloneServerPath);
   const packagedBootstrapScript = [
     "const Module=require('node:module')",
     "const path=require('node:path')",
@@ -395,24 +397,37 @@ function startServer(libraryPath: string) {
     "process.chdir=(directory)=>{try{chdir(directory)}catch(error){if(!error||error.code!=='ENOTDIR')throw error}}",
     "require(path.join(process.argv[1],'.next/standalone/server.js'))",
   ].join(';');
-  const command = isDev
-    ? (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
-    : getPackagedNodeCommand();
-  const args = runProdLikeServerForE2E
-    ? ['start', '-p', PORT.toString(), '-H', '127.0.0.1']
+  if (runProdLikeServerForE2E && !useStandaloneServerForE2E) {
+    console.warn(`[Electron] E2E standalone server not found at ${standaloneServerPath}; falling back to pnpm start`);
+  }
+
+  const command = useStandaloneServerForE2E
+    ? process.execPath
     : isDev
-      ? ['next', 'dev', '-p', PORT.toString(), '-H', '127.0.0.1']
-      : [
-          '-e',
-          packagedBootstrapScript,
-          app.getAppPath(),
-        ];
-  const serverEnv = isDev
-    ? env
-    : {
+      ? (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
+      : getPackagedNodeCommand();
+  const args = useStandaloneServerForE2E
+    ? [standaloneServerPath]
+    : runProdLikeServerForE2E
+      ? ['start', '-p', PORT.toString(), '-H', '127.0.0.1']
+      : isDev
+        ? ['next', 'dev', '-p', PORT.toString(), '-H', '127.0.0.1']
+        : [
+            '-e',
+            packagedBootstrapScript,
+            app.getAppPath(),
+          ];
+  const serverEnv = useStandaloneServerForE2E
+    ? {
         ...env,
-        ELECTRON_RUN_AS_NODE: '1',
-      };
+        HOSTNAME: '127.0.0.1',
+      }
+    : isDev
+      ? env
+      : {
+          ...env,
+          ELECTRON_RUN_AS_NODE: '1',
+        };
   const workingDir = isDev ? app.getAppPath() : process.resourcesPath;
 
   if (runProdLikeServerForE2E) {
