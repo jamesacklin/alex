@@ -88,3 +88,96 @@ pub fn title_from_key(key: &str) -> String {
         .unwrap_or(filename)
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{S3Object, compute_diff, title_from_key};
+    use crate::db::S3BookRow;
+
+    fn s3_book_row(path: &str, etag: Option<&str>) -> S3BookRow {
+        S3BookRow {
+            id: format!("id-{path}"),
+            title: format!("title-{path}"),
+            file_path: path.to_string(),
+            file_type: if path.to_lowercase().ends_with(".epub") {
+                "epub".to_string()
+            } else {
+                "pdf".to_string()
+            },
+            cover_path: None,
+            s3_etag: etag.map(|value| value.to_string()),
+        }
+    }
+
+    fn s3_object(path: &str, etag: &str) -> S3Object {
+        S3Object {
+            key: path.to_string(),
+            size: 123,
+            etag: etag.to_string(),
+        }
+    }
+
+    #[test]
+    fn compute_diff_identifies_added_changed_removed() {
+        let s3_objects = vec![
+            s3_object("new-book.pdf", "etag-new"),
+            s3_object("changed-book.epub", "etag-2"),
+            s3_object("same-book.pdf", "etag-same"),
+        ];
+        let db_books = vec![
+            s3_book_row("changed-book.epub", Some("etag-1")),
+            s3_book_row("same-book.pdf", Some("etag-same")),
+            s3_book_row("removed-book.pdf", Some("etag-removed")),
+        ];
+
+        let diff = compute_diff(&s3_objects, &db_books);
+
+        assert_eq!(diff.added.len(), 1);
+        assert_eq!(diff.changed.len(), 1);
+        assert_eq!(diff.removed.len(), 1);
+
+        assert_eq!(diff.added[0].key, "new-book.pdf");
+        assert_eq!(diff.changed[0].key, "changed-book.epub");
+        assert_eq!(diff.removed[0].file_path, "removed-book.pdf");
+    }
+
+    #[test]
+    fn compute_diff_treats_missing_db_etag_as_changed() {
+        let s3_objects = vec![s3_object("book.pdf", "etag-1")];
+        let db_books = vec![s3_book_row("book.pdf", None)];
+
+        let diff = compute_diff(&s3_objects, &db_books);
+
+        assert!(diff.added.is_empty());
+        assert_eq!(diff.changed.len(), 1);
+        assert!(diff.removed.is_empty());
+        assert_eq!(diff.changed[0].key, "book.pdf");
+    }
+
+    #[test]
+    fn compute_diff_empty_inputs_are_stable() {
+        let diff = compute_diff(&[], &[]);
+        assert!(diff.added.is_empty());
+        assert!(diff.changed.is_empty());
+        assert!(diff.removed.is_empty());
+    }
+
+    #[test]
+    fn title_from_key_uses_filename_without_extension() {
+        assert_eq!(
+            title_from_key("books/My Great Book.pdf"),
+            "My Great Book".to_string()
+        );
+        assert_eq!(title_from_key("plain.epub"), "plain".to_string());
+        assert_eq!(
+            title_from_key("nested/path/with.dots.v1.epub"),
+            "with.dots.v1".to_string()
+        );
+    }
+
+    #[test]
+    fn title_from_key_returns_filename_when_no_extension() {
+        assert_eq!(title_from_key("books/README"), "README".to_string());
+        assert_eq!(title_from_key("just-a-key"), "just-a-key".to_string());
+    }
+}

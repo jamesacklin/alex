@@ -43,10 +43,7 @@ fn try_extract_from_bytes(bytes: &[u8], fallback_title: &str) -> anyhow::Result<
     extract_from_doc(&doc, fallback_title)
 }
 
-fn extract_from_doc(
-    doc: &lopdf::Document,
-    fallback_title: &str,
-) -> anyhow::Result<BookMetadata> {
+fn extract_from_doc(doc: &lopdf::Document, fallback_title: &str) -> anyhow::Result<BookMetadata> {
     let pages = doc.get_pages().len() as u32;
     let (title, author) = extract_info_dict(doc, fallback_title);
 

@@ -1,8 +1,8 @@
 use super::S3Config;
 use anyhow::{Context, Result};
+use s3::Bucket;
 use s3::creds::Credentials;
 use s3::region::Region;
-use s3::Bucket;
 
 /// Create an S3 Bucket handle from config.
 pub fn create_bucket(config: &S3Config) -> Result<Box<Bucket>> {
