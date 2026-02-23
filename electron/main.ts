@@ -893,23 +893,27 @@ function setMacAppIcon() {
 
   const candidatePaths = [
     path.join(__dirname, '../icons/macos/icon.icns'),
+    path.join(__dirname, '../icons/macos/512x512.png'),
+    path.join(__dirname, '../icons/macos/256x256.png'),
     path.join(process.resourcesPath, 'icon.icns'),
     path.join(process.resourcesPath, 'macos/icon.icns'),
+    path.join(process.resourcesPath, 'macos/512x512.png'),
+    path.join(process.resourcesPath, 'macos/256x256.png'),
   ];
 
-  const iconPath = candidatePaths.find((candidatePath) => fs.existsSync(candidatePath));
-  if (!iconPath) {
-    console.warn('[Electron] macOS app icon not found in expected locations');
-    return;
+  for (const iconPath of candidatePaths) {
+    if (!fs.existsSync(iconPath)) {
+      continue;
+    }
+
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) {
+      app.dock.setIcon(icon);
+      return;
+    }
   }
 
-  const icon = nativeImage.createFromPath(iconPath);
-  if (icon.isEmpty()) {
-    console.warn(`[Electron] Failed to load macOS app icon: ${iconPath}`);
-    return;
-  }
-
-  app.dock.setIcon(icon);
+  console.warn('[Electron] Unable to load macOS app icon from known paths');
 }
 
 app.whenReady().then(async () => {
