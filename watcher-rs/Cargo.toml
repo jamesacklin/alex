@@ -23,6 +23,10 @@ sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 zip = "2"
 
+# S3 / R2 support (optional, enabled via S3_BUCKET env var at runtime)
+rust-s3 = { version = "0.35", default-features = false, features = ["tokio-rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
 [dev-dependencies]
 tempfile = "3"
 

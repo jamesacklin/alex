@@ -3,6 +3,8 @@ use crate::log::log;
 use anyhow::Result;
 use std::path::Path;
 
+/// Remove books from the DB whose local files no longer exist on disk.
+/// Only checks books with source='local' (S3 orphan cleanup is handled by the S3 scanner).
 pub fn remove_orphaned_books(db: &Database) -> Result<()> {
     let all_books = db.all_books()?;
     let mut removed = 0u32;

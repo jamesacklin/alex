@@ -1,10 +1,14 @@
 import fs from "fs";
 import { Readable } from "stream";
+import { spawn } from "child_process";
 import { NextResponse } from "next/server";
 import { authSession as auth } from "@/lib/auth/config";
 import { queryOne } from "@/lib/db/rust";
 
 export const dynamic = 'force-dynamic';
+
+/** True when S3 env vars are configured (S3 mode). */
+const isS3Mode = Boolean(process.env.S3_BUCKET);
 
 export async function GET(
   req: Request,
@@ -17,11 +21,12 @@ export async function GET(
 
   const { id } = await params;
 
-  const book = await queryOne<{ filePath: string; fileType: string }>(
+  const book = await queryOne<{ filePath: string; fileType: string; source: string }>(
     `
       SELECT
         file_path AS filePath,
-        file_type AS fileType
+        file_type AS fileType,
+        source
       FROM books
       WHERE id = ?1
       LIMIT 1
@@ -33,6 +38,19 @@ export async function GET(
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
   }
 
+  // S3 mode: stream via watcher-rs s3-stream subcommand
+  if (isS3Mode && book.source === "s3") {
+    return streamFromS3(book, req);
+  }
+
+  // Local mode: stream from filesystem
+  return streamFromDisk(book, req);
+}
+
+function streamFromDisk(
+  book: { filePath: string; fileType: string },
+  req: Request,
+): NextResponse {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(book.filePath);
@@ -95,4 +113,111 @@ export async function GET(
   }
 
   return new NextResponse(webStream, { status, headers });
+}
+
+/**
+ * Stream a book from S3 via the watcher-rs s3-stream subcommand.
+ *
+ * Protocol: watcher-rs writes a JSON header line to stdout, then raw bytes.
+ * We parse the header for content_length/content_type, then pipe the rest.
+ */
+async function streamFromS3(
+  book: { filePath: string; fileType: string },
+  req: Request,
+): Promise<NextResponse> {
+  const binaryPath = process.env.WATCHER_RS_BIN || "watcher-rs";
+
+  const args = ["s3-stream", "--key", book.filePath];
+
+  const rangeHeader = req.headers.get("range");
+  if (rangeHeader) {
+    args.push("--range", rangeHeader);
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn(binaryPath, args, {
+      env: process.env as Record<string, string>,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let headerParsed = false;
+    let headerBuf = "";
+    const bodyChunks: Uint8Array[] = [];
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (!headerParsed) {
+        // Buffer until we find a newline (end of JSON header line)
+        headerBuf += chunk.toString("utf8");
+        const newlineIdx = headerBuf.indexOf("\n");
+        if (newlineIdx !== -1) {
+          headerParsed = true;
+          const headerLine = headerBuf.slice(0, newlineIdx);
+          const remaining = Buffer.from(headerBuf.slice(newlineIdx + 1), "utf8");
+          if (remaining.length > 0) {
+            bodyChunks.push(new Uint8Array(remaining));
+          }
+
+          try {
+            const meta = JSON.parse(headerLine);
+            // Collect remaining body
+            child.stdout.on("data", (bodyChunk: Buffer) => {
+              bodyChunks.push(new Uint8Array(bodyChunk));
+            });
+
+            child.on("close", () => {
+              const body = concatUint8Arrays(bodyChunks);
+              const headers: Record<string, string> = {
+                "Content-Type": meta.content_type || "application/octet-stream",
+                "Content-Disposition": "inline",
+                "Accept-Ranges": "bytes",
+                "Content-Length": String(body.length),
+              };
+
+              const status = meta.status || 200;
+              if (status === 206 && meta.range_start !== undefined) {
+                headers["Content-Range"] =
+                  `bytes ${meta.range_start}-${meta.range_end}/${meta.content_length}`;
+              }
+
+              resolve(new NextResponse(body, { status, headers }));
+            });
+          } catch {
+            resolve(
+              NextResponse.json(
+                { error: "Failed to parse S3 stream header" },
+                { status: 500 },
+              ),
+            );
+          }
+        }
+      }
+    });
+
+    child.on("error", () => {
+      resolve(
+        NextResponse.json({ error: "Failed to spawn S3 stream" }, { status: 500 }),
+      );
+    });
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      child.kill();
+      if (!headerParsed) {
+        resolve(
+          NextResponse.json({ error: "S3 stream timeout" }, { status: 504 }),
+        );
+      }
+    }, 30_000);
+  });
+}
+
+function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
+  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
 }

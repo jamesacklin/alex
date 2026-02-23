@@ -23,12 +23,37 @@ pub fn extract_epub_metadata(file_path: &Path) -> BookMetadata {
     }
 }
 
+pub fn extract_epub_metadata_from_bytes(bytes: &[u8], fallback_title: &str) -> BookMetadata {
+    match try_extract_from_bytes(bytes, fallback_title) {
+        Ok(meta) => meta,
+        Err(_) => BookMetadata {
+            title: fallback_title.to_string(),
+            author: None,
+            description: None,
+            page_count: None,
+            cover_path: None,
+        },
+    }
+}
+
 fn try_extract(file_path: &Path, fallback_title: &str) -> anyhow::Result<BookMetadata> {
     let file = std::fs::File::open(file_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
+    try_extract_from_archive(&mut archive, fallback_title)
+}
 
-    let opf_path = parse_container_xml(&mut archive)?;
-    let (title, author, description) = parse_opf(&mut archive, &opf_path)?;
+fn try_extract_from_bytes(bytes: &[u8], fallback_title: &str) -> anyhow::Result<BookMetadata> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor)?;
+    try_extract_from_archive(&mut archive, fallback_title)
+}
+
+fn try_extract_from_archive<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    fallback_title: &str,
+) -> anyhow::Result<BookMetadata> {
+    let opf_path = parse_container_xml(archive)?;
+    let (title, author, description) = parse_opf(archive, &opf_path)?;
 
     let title = title
         .filter(|t| !t.trim().is_empty())
@@ -43,7 +68,9 @@ fn try_extract(file_path: &Path, fallback_title: &str) -> anyhow::Result<BookMet
     })
 }
 
-fn parse_container_xml(archive: &mut zip::ZipArchive<std::fs::File>) -> anyhow::Result<String> {
+fn parse_container_xml<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> anyhow::Result<String> {
     let mut container = archive.by_name("META-INF/container.xml")?;
     let mut xml = String::new();
     container.read_to_string(&mut xml)?;
@@ -73,8 +100,8 @@ fn parse_container_xml(archive: &mut zip::ZipArchive<std::fs::File>) -> anyhow::
     anyhow::bail!("No rootfile found in container.xml")
 }
 
-fn parse_opf(
-    archive: &mut zip::ZipArchive<std::fs::File>,
+fn parse_opf<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
     opf_path: &str,
 ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
     let mut opf_file = archive.by_name(opf_path)?;
