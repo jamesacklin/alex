@@ -95,6 +95,9 @@ pub fn handle_add_with_covers_dir(
         page_count: metadata.page_count.map(|p| p as i64),
         added_at: now,
         updated_at: now,
+        source: "local",
+        s3_bucket: None,
+        s3_etag: None,
     })?;
 
     if changes == 0 {

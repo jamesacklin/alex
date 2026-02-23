@@ -20,11 +20,35 @@ pub fn extract_pdf_metadata(file_path: &Path) -> BookMetadata {
     }
 }
 
+pub fn extract_pdf_metadata_from_bytes(bytes: &[u8], fallback_title: &str) -> BookMetadata {
+    match try_extract_from_bytes(bytes, fallback_title) {
+        Ok(meta) => meta,
+        Err(_) => BookMetadata {
+            title: fallback_title.to_string(),
+            author: None,
+            description: None,
+            page_count: None,
+            cover_path: None,
+        },
+    }
+}
+
 fn try_extract(file_path: &Path, fallback_title: &str) -> anyhow::Result<BookMetadata> {
     let doc = lopdf::Document::load(file_path)?;
-    let pages = doc.get_pages().len() as u32;
+    extract_from_doc(&doc, fallback_title)
+}
 
-    let (title, author) = extract_info_dict(&doc, fallback_title);
+fn try_extract_from_bytes(bytes: &[u8], fallback_title: &str) -> anyhow::Result<BookMetadata> {
+    let doc = lopdf::Document::load_mem(bytes)?;
+    extract_from_doc(&doc, fallback_title)
+}
+
+fn extract_from_doc(
+    doc: &lopdf::Document,
+    fallback_title: &str,
+) -> anyhow::Result<BookMetadata> {
+    let pages = doc.get_pages().len() as u32;
+    let (title, author) = extract_info_dict(doc, fallback_title);
 
     Ok(BookMetadata {
         title,

@@ -93,6 +93,7 @@ pub fn handle_change_with_covers_dir(
             cover_path: cover_path_str,
             page_count: metadata.page_count.map(|p| p as i64),
             updated_at: now,
+            s3_etag: None,
         },
     )?;
 

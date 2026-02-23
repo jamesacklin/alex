@@ -162,6 +162,40 @@ function main() {
     );
   }
 
+  // --- S3 source columns migration (0001) ---
+  const hasSourceColumn = runWatcherDb(
+    binaryPath,
+    dbPath,
+    'query-one',
+    "SELECT 1 AS present FROM pragma_table_info('books') WHERE name = 'source' LIMIT 1",
+  ).row;
+
+  if (!hasSourceColumn) {
+    console.log('[db:push] Applying S3 source columns migration...');
+    const s3MigrationPath = path.resolve(
+      path.dirname(migrationPath),
+      '0001_s3_source_columns.sql',
+    );
+
+    if (fs.existsSync(s3MigrationPath)) {
+      const s3Sql = fs.readFileSync(s3MigrationPath, 'utf8');
+      const s3Statements = splitMigrationStatements(s3Sql);
+      for (const statement of s3Statements) {
+        try {
+          runWatcherDb(binaryPath, dbPath, 'execute', statement);
+        } catch (e) {
+          // Column may already exist if partially applied
+          if (!String(e).includes('duplicate column')) {
+            throw e;
+          }
+        }
+      }
+      console.log('[db:push] S3 source columns applied.');
+    } else {
+      console.log('[db:push] S3 migration file not found, skipping.');
+    }
+  }
+
   console.log('[db:push] Database schema is ready.');
 }
 

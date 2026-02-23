@@ -10,6 +10,7 @@ use std::io::Read;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use watcher_rs::db::Database;
+use watcher_rs::s3::S3Config;
 
 #[derive(Parser)]
 #[command(
@@ -28,11 +29,35 @@ struct Cli {
 
     #[arg(long, env = "COVERS_PATH", default_value = "./data/covers")]
     covers_path: String,
+
+    // S3 configuration (optional — if S3_BUCKET is set, S3 mode is used instead of local)
+    #[arg(long, env = "S3_ENDPOINT")]
+    s3_endpoint: Option<String>,
+
+    #[arg(long, env = "S3_REGION", default_value = "auto")]
+    s3_region: String,
+
+    #[arg(long, env = "S3_BUCKET")]
+    s3_bucket: Option<String>,
+
+    #[arg(long, env = "S3_ACCESS_KEY_ID")]
+    s3_access_key: Option<String>,
+
+    #[arg(long, env = "S3_SECRET_ACCESS_KEY")]
+    s3_secret_key: Option<String>,
+
+    #[arg(long, env = "S3_PREFIX")]
+    s3_prefix: Option<String>,
+
+    #[arg(long, env = "S3_POLL_INTERVAL", default_value = "60")]
+    s3_poll_interval: u64,
 }
 
 #[derive(Subcommand)]
 enum Command {
     Db(DbCommand),
+    /// Stream an S3 object to stdout (used by the Next.js file-serving route).
+    S3Stream(S3StreamCommand),
 }
 
 #[derive(Args)]
@@ -51,6 +76,33 @@ enum DbAction {
     Execute,
 }
 
+#[derive(Args)]
+struct S3StreamCommand {
+    /// S3 object key to stream.
+    #[arg(long)]
+    key: String,
+
+    /// Optional HTTP Range header value (e.g. "bytes=0-1023").
+    #[arg(long)]
+    range: Option<String>,
+
+    // S3 credentials (inherited from env vars by default)
+    #[arg(long, env = "S3_ENDPOINT")]
+    s3_endpoint: Option<String>,
+
+    #[arg(long, env = "S3_REGION", default_value = "auto")]
+    s3_region: String,
+
+    #[arg(long, env = "S3_BUCKET")]
+    s3_bucket: String,
+
+    #[arg(long, env = "S3_ACCESS_KEY_ID")]
+    s3_access_key: String,
+
+    #[arg(long, env = "S3_SECRET_ACCESS_KEY")]
+    s3_secret_key: String,
+}
+
 #[derive(Deserialize)]
 struct SqlRequest {
     sql: String,
@@ -63,7 +115,15 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Db(cmd)) => run_db_command(cmd),
-        None => run_watcher(cli),
+        Some(Command::S3Stream(cmd)) => run_s3_stream(cmd),
+        None => {
+            // Auto-detect: if S3_BUCKET is set, run S3 watcher; otherwise local.
+            if cli.s3_bucket.is_some() {
+                run_s3_watcher(cli)
+            } else {
+                run_watcher(cli)
+            }
+        }
     }
 }
 
@@ -88,6 +148,73 @@ fn run_watcher(args: Cli) -> Result<()> {
 
     // Run the watcher (blocks until shutdown)
     watcher_rs::watcher::run(library_path, covers_path, db, shutdown)?;
+
+    Ok(())
+}
+
+fn run_s3_watcher(args: Cli) -> Result<()> {
+    let bucket = args
+        .s3_bucket
+        .as_ref()
+        .context("S3_BUCKET is required for S3 mode")?;
+    let access_key = args
+        .s3_access_key
+        .as_ref()
+        .context("S3_ACCESS_KEY_ID is required for S3 mode")?;
+    let secret_key = args
+        .s3_secret_key
+        .as_ref()
+        .context("S3_SECRET_ACCESS_KEY is required for S3 mode")?;
+
+    let config = S3Config {
+        endpoint: args.s3_endpoint.clone(),
+        region: args.s3_region.clone(),
+        bucket: bucket.clone(),
+        access_key: access_key.clone(),
+        secret_key: secret_key.clone(),
+        prefix: args.s3_prefix.clone(),
+        poll_interval: args.s3_poll_interval,
+    };
+
+    std::fs::create_dir_all(&args.covers_path)?;
+    let covers_path = std::fs::canonicalize(&args.covers_path)?;
+    let db = Database::open(&args.db_path)?;
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_flag = Arc::clone(&shutdown);
+    ctrlc::set_handler(move || {
+        shutdown_flag.store(true, Ordering::Relaxed);
+    })?;
+
+    // Create a tokio runtime for async S3 operations
+    let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+    rt.block_on(watcher_rs::s3::watcher::run(
+        config,
+        &covers_path,
+        db,
+        shutdown,
+    ))?;
+
+    Ok(())
+}
+
+fn run_s3_stream(cmd: S3StreamCommand) -> Result<()> {
+    let config = S3Config {
+        endpoint: cmd.s3_endpoint,
+        region: cmd.s3_region,
+        bucket: cmd.s3_bucket,
+        access_key: cmd.s3_access_key,
+        secret_key: cmd.s3_secret_key,
+        prefix: None,
+        poll_interval: 0,
+    };
+
+    let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+    rt.block_on(watcher_rs::s3::stream::run(
+        config,
+        &cmd.key,
+        cmd.range.as_deref(),
+    ))?;
 
     Ok(())
 }

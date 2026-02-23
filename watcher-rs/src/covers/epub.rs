@@ -6,13 +6,30 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub fn extract_epub_cover(file_path: &Path, book_id: &str, covers_dir: &Path) -> Option<PathBuf> {
-    std::fs::create_dir_all(covers_dir).ok()?;
-
     let file = std::fs::File::open(file_path).ok()?;
     let mut archive = zip::ZipArchive::new(file).ok()?;
+    extract_cover_from_archive(&mut archive, book_id, covers_dir)
+}
 
-    let opf_path = parse_container_xml(&mut archive)?;
-    let cover_href = parse_opf_for_cover_href(&mut archive, &opf_path)?;
+pub fn extract_epub_cover_from_bytes(
+    bytes: &[u8],
+    book_id: &str,
+    covers_dir: &Path,
+) -> Option<PathBuf> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor).ok()?;
+    extract_cover_from_archive(&mut archive, book_id, covers_dir)
+}
+
+fn extract_cover_from_archive<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    book_id: &str,
+    covers_dir: &Path,
+) -> Option<PathBuf> {
+    std::fs::create_dir_all(covers_dir).ok()?;
+
+    let opf_path = parse_container_xml(archive)?;
+    let cover_href = parse_opf_for_cover_href(archive, &opf_path)?;
 
     let relative_cover_path = resolve_relative_path(&opf_path, &cover_href);
     let mut cover_file = archive.by_name(&relative_cover_path).ok()?;
@@ -31,7 +48,9 @@ pub fn extract_epub_cover(file_path: &Path, book_id: &str, covers_dir: &Path) ->
     Some(cover_path)
 }
 
-fn parse_container_xml(archive: &mut zip::ZipArchive<std::fs::File>) -> Option<String> {
+fn parse_container_xml<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Option<String> {
     let mut container = archive.by_name("META-INF/container.xml").ok()?;
     let mut xml = String::new();
     container.read_to_string(&mut xml).ok()?;
@@ -60,8 +79,8 @@ fn parse_container_xml(archive: &mut zip::ZipArchive<std::fs::File>) -> Option<S
     None
 }
 
-fn parse_opf_for_cover_href(
-    archive: &mut zip::ZipArchive<std::fs::File>,
+fn parse_opf_for_cover_href<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
     opf_path: &str,
 ) -> Option<String> {
     let mut opf_file = archive.by_name(opf_path).ok()?;
