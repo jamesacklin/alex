@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface S3FormState {
   endpoint: string;
@@ -121,11 +122,18 @@ export default function OnboardingPage() {
         </div>
 
         {/* Storage mode selector */}
-        <div className="flex gap-2 justify-center">
-          <Button
-            variant={storageMode === "local" ? "default" : "outline"}
+        <div role="tablist" aria-label="Storage mode" className="flex gap-1.5 justify-center">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={storageMode === "local"}
             onClick={() => setStorageMode("local")}
-            size="sm"
+            className={cn(
+              "inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer",
+              storageMode === "local"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border",
+            )}
           >
             <svg
               className="h-4 w-4 mr-2"
@@ -139,11 +147,18 @@ export default function OnboardingPage() {
               <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
             </svg>
             Local Folder
-          </Button>
-          <Button
-            variant={storageMode === "s3" ? "default" : "outline"}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={storageMode === "s3"}
             onClick={() => setStorageMode("s3")}
-            size="sm"
+            className={cn(
+              "inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 cursor-pointer",
+              storageMode === "s3"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border",
+            )}
           >
             <svg
               className="h-4 w-4 mr-2"
@@ -159,7 +174,7 @@ export default function OnboardingPage() {
               <path d="M2 8s0-4 4-4 4 4 8 4 4-4 4-4" />
             </svg>
             S3 / R2 Bucket
-          </Button>
+          </button>
         </div>
 
         <Card>

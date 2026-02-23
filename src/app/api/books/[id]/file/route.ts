@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import { Readable } from "stream";
 import { spawn } from "child_process";
 import { NextResponse } from "next/server";
@@ -9,6 +10,31 @@ export const dynamic = 'force-dynamic';
 
 /** True when S3 env vars are configured (S3 mode). */
 const isS3Mode = Boolean(process.env.S3_BUCKET);
+
+function watcherBinaryName() {
+  return process.platform === "win32" ? "watcher-rs.exe" : "watcher-rs";
+}
+
+function resolveWatcherBinaryPath() {
+  const binaryName = watcherBinaryName();
+  const processWithResourcesPath = process as NodeJS.Process & { resourcesPath?: string };
+  const resourcesPath = processWithResourcesPath.resourcesPath;
+  const candidates = [
+    process.env.WATCHER_RS_BIN,
+    path.join(process.cwd(), "watcher-rs", "target", "release", binaryName),
+    path.join(process.cwd(), "watcher-rs", "target", "debug", binaryName),
+    path.join(process.cwd(), "watcher-rs", "dist", binaryName),
+    resourcesPath ? path.join(resourcesPath, "watcher-rs", binaryName) : undefined,
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return binaryName;
+}
 
 export async function GET(
   req: Request,
@@ -125,7 +151,7 @@ async function streamFromS3(
   book: { filePath: string; fileType: string },
   req: Request,
 ): Promise<NextResponse> {
-  const binaryPath = process.env.WATCHER_RS_BIN || "watcher-rs";
+  const binaryPath = resolveWatcherBinaryPath();
   const nodeEnv =
     process.env.NODE_ENV === "development" ||
     process.env.NODE_ENV === "production" ||
@@ -145,78 +171,122 @@ async function streamFromS3(
   }
 
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (response: NextResponse) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(response);
+    };
+
     const child = spawn(binaryPath, args, {
       env: watcherEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
+    let stderr = "";
     let headerParsed = false;
-    let headerBuf = "";
+    let headerBuf = Buffer.alloc(0);
+    let meta: {
+      content_type?: string;
+      content_length?: number;
+      status?: number;
+      range_start?: number;
+      range_end?: number;
+    } | null = null;
     const bodyChunks: Uint8Array[] = [];
 
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+
     child.stdout.on("data", (chunk: Buffer) => {
-      if (!headerParsed) {
-        // Buffer until we find a newline (end of JSON header line)
-        headerBuf += chunk.toString("utf8");
-        const newlineIdx = headerBuf.indexOf("\n");
-        if (newlineIdx !== -1) {
-          headerParsed = true;
-          const headerLine = headerBuf.slice(0, newlineIdx);
-          const remaining = Buffer.from(headerBuf.slice(newlineIdx + 1), "utf8");
-          if (remaining.length > 0) {
-            bodyChunks.push(new Uint8Array(remaining));
-          }
+      if (headerParsed) {
+        bodyChunks.push(new Uint8Array(chunk));
+        return;
+      }
 
-          try {
-            const meta = JSON.parse(headerLine);
-            // Collect remaining body
-            child.stdout.on("data", (bodyChunk: Buffer) => {
-              bodyChunks.push(new Uint8Array(bodyChunk));
-            });
+      // Buffer until we find a newline (end of JSON header line)
+      headerBuf = Buffer.concat([headerBuf, chunk]);
+      const newlineIdx = headerBuf.indexOf(0x0a);
+      if (newlineIdx === -1) {
+        return;
+      }
 
-            child.on("close", () => {
-              const body = concatUint8Arrays(bodyChunks);
-              const normalizedBody = new Uint8Array(body.length);
-              normalizedBody.set(body);
-              const responseBody = new Blob([normalizedBody]);
-              const headers: Record<string, string> = {
-                "Content-Type": meta.content_type || "application/octet-stream",
-                "Content-Disposition": "inline",
-                "Accept-Ranges": "bytes",
-                "Content-Length": String(body.length),
-              };
+      headerParsed = true;
+      const headerLine = headerBuf.subarray(0, newlineIdx).toString("utf8").trim();
+      const remaining = headerBuf.subarray(newlineIdx + 1);
+      if (remaining.length > 0) {
+        bodyChunks.push(new Uint8Array(remaining));
+      }
 
-              const status = meta.status || 200;
-              if (status === 206 && meta.range_start !== undefined) {
-                headers["Content-Range"] =
-                  `bytes ${meta.range_start}-${meta.range_end}/${meta.content_length}`;
-              }
-
-              resolve(new NextResponse(responseBody, { status, headers }));
-            });
-          } catch {
-            resolve(
-              NextResponse.json(
-                { error: "Failed to parse S3 stream header" },
-                { status: 500 },
-              ),
-            );
-          }
-        }
+      try {
+        meta = JSON.parse(headerLine) as {
+          content_type?: string;
+          content_length?: number;
+          status?: number;
+          range_start?: number;
+          range_end?: number;
+        };
+      } catch {
+        finish(
+          NextResponse.json(
+            { error: "Failed to parse S3 stream header", details: headerLine },
+            { status: 500 },
+          ),
+        );
       }
     });
 
-    child.on("error", () => {
-      resolve(
-        NextResponse.json({ error: "Failed to spawn S3 stream" }, { status: 500 }),
+    child.on("close", (code) => {
+      if (!headerParsed || !meta) {
+        finish(
+          NextResponse.json(
+            {
+              error: "S3 stream failed before response header",
+              exitCode: code,
+              details: stderr.trim() || undefined,
+            },
+            { status: 502 },
+          ),
+        );
+        return;
+      }
+
+      const body = concatUint8Arrays(bodyChunks);
+      const normalizedBody = new Uint8Array(body.length);
+      normalizedBody.set(body);
+      const responseBody = new Blob([normalizedBody]);
+      const headers: Record<string, string> = {
+        "Content-Type": meta.content_type || "application/octet-stream",
+        "Content-Disposition": "inline",
+        "Accept-Ranges": "bytes",
+        "Content-Length": String(body.length),
+      };
+
+      const status = meta.status || 200;
+      if (status === 206 && meta.range_start !== undefined) {
+        headers["Content-Range"] =
+          `bytes ${meta.range_start}-${meta.range_end}/${meta.content_length}`;
+      }
+
+      finish(new NextResponse(responseBody, { status, headers }));
+    });
+
+    child.on("error", (error) => {
+      finish(
+        NextResponse.json(
+          { error: "Failed to spawn S3 stream", details: error.message },
+          { status: 500 },
+        ),
       );
     });
 
     // Timeout after 30 seconds
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       child.kill();
       if (!headerParsed) {
-        resolve(
+        finish(
           NextResponse.json({ error: "S3 stream timeout" }, { status: 504 }),
         );
       }
