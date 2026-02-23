@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -22,24 +24,70 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+interface S3FormState {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+  prefix: string;
+  pollInterval: string;
+}
+
+const EMPTY_S3_FORM: S3FormState = {
+  endpoint: "",
+  region: "",
+  bucket: "",
+  accessKey: "",
+  secretKey: "",
+  prefix: "",
+  pollInterval: "60",
+};
+
 export default function AdminLibraryPage() {
   const router = useRouter();
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showSwitchToLocalDialog, setShowSwitchToLocalDialog] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [libraryPath, setLibraryPath] = useState<string>("");
+  const [storageMode, setStorageMode] = useState<"local" | "s3">("local");
+  const [s3Form, setS3Form] = useState<S3FormState>(EMPTY_S3_FORM);
+  const [isSavingS3, setIsSavingS3] = useState(false);
+
+  const loadElectronState = useCallback(async () => {
+    if (!window.electronAPI) return;
+    const [path, mode, config] = await Promise.all([
+      window.electronAPI.getLibraryPath(),
+      window.electronAPI.getStorageMode(),
+      window.electronAPI.getS3Config(),
+    ]);
+    setLibraryPath(path);
+    setStorageMode(mode);
+    if (config) {
+      setS3Form({
+        endpoint: config.endpoint || "",
+        region: config.region || "",
+        bucket: config.bucket || "",
+        accessKey: config.accessKey || "",
+        secretKey: config.secretKey || "",
+        prefix: config.prefix || "",
+        pollInterval: config.pollInterval ? String(config.pollInterval) : "60",
+      });
+    }
+  }, []);
 
   useEffect(() => {
     const electron = typeof window !== "undefined" && !!window.electronAPI;
     setIsElectron(electron);
 
-    if (electron && window.electronAPI) {
-      window.electronAPI.getLibraryPath().then(setLibraryPath);
+    if (electron) {
+      loadElectronState();
     }
-  }, []);
+  }, [loadElectronState]);
 
   const handleClearLibrary = async () => {
     setIsClearing(true);
@@ -147,6 +195,74 @@ export default function AdminLibraryPage() {
     }
   };
 
+  const handleSaveS3Config = async () => {
+    if (!window.electronAPI || isSavingS3) return;
+
+    if (!s3Form.bucket || !s3Form.accessKey || !s3Form.secretKey) {
+      toast.error("Missing required fields", {
+        description: "Bucket, Access Key, and Secret Key are required.",
+      });
+      return;
+    }
+
+    setIsSavingS3(true);
+    try {
+      const result = await window.electronAPI.saveS3Config({
+        bucket: s3Form.bucket,
+        accessKey: s3Form.accessKey,
+        secretKey: s3Form.secretKey,
+        endpoint: s3Form.endpoint || undefined,
+        region: s3Form.region || undefined,
+        prefix: s3Form.prefix || undefined,
+        pollInterval: s3Form.pollInterval ? Number(s3Form.pollInterval) : undefined,
+      });
+
+      if (result.success) {
+        setStorageMode("s3");
+        toast.success("S3 storage configured", {
+          description: "Library cleared and watcher restarted with S3 backend.",
+        });
+        router.refresh();
+      } else {
+        toast.error("Failed to save S3 config", {
+          description: result.error || "Unknown error",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to save S3 config:", error);
+      toast.error("Failed to save S3 config");
+    } finally {
+      setIsSavingS3(false);
+    }
+  };
+
+  const handleSwitchToLocal = async () => {
+    if (!window.electronAPI) return;
+    setIsProcessing(true);
+    try {
+      const result = await window.electronAPI.switchToLocalStorage();
+      if (result.success) {
+        setStorageMode("local");
+        setShowSwitchToLocalDialog(false);
+        toast.success("Switched to local storage", {
+          description: "Library cleared. Select a folder to start scanning.",
+        });
+        router.refresh();
+      } else {
+        toast.error("Failed to switch storage mode");
+      }
+    } catch (error) {
+      console.error("Failed to switch to local:", error);
+      toast.error("Failed to switch storage mode");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const updateS3Field = (field: keyof S3FormState, value: string) => {
+    setS3Form((prev) => ({ ...prev, [field]: value }));
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -156,8 +272,72 @@ export default function AdminLibraryPage() {
       </div>
 
       <div className="grid gap-6">
-        {/* Electron-only: Change Library Directory */}
+        {/* Electron-only: Storage Mode */}
         {isElectron && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Storage Mode</CardTitle>
+              <CardDescription>
+                Choose where your book files are stored. Switch between a local
+                folder or an S3-compatible bucket (e.g. Cloudflare R2, AWS S3,
+                MinIO).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Button
+                    variant={storageMode === "local" ? "default" : "outline"}
+                    onClick={() => {
+                      if (storageMode === "s3") {
+                        setShowSwitchToLocalDialog(true);
+                      }
+                    }}
+                    disabled={isProcessing || storageMode === "local"}
+                    size="sm"
+                  >
+                    <svg
+                      className="h-4 w-4 mr-2"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                    </svg>
+                    Local Folder
+                  </Button>
+                  <Button
+                    variant={storageMode === "s3" ? "default" : "outline"}
+                    onClick={() => setStorageMode("s3")}
+                    disabled={isProcessing}
+                    size="sm"
+                  >
+                    <svg
+                      className="h-4 w-4 mr-2"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2 16s0-4 4-4 4 4 8 4 4-4 4-4" />
+                      <path d="M2 12s0-4 4-4 4 4 8 4 4-4 4-4" />
+                      <path d="M2 8s0-4 4-4 4 4 8 4 4-4 4-4" />
+                    </svg>
+                    S3 / R2 Bucket
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Electron-only: Change Library Directory (local mode) */}
+        {isElectron && storageMode === "local" && (
           <Card>
             <CardHeader>
               <CardTitle>Library Directory</CardTitle>
@@ -190,6 +370,128 @@ export default function AdminLibraryPage() {
                     <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
                   </svg>
                   Change Directory
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Electron-only: S3 Configuration (s3 mode) */}
+        {isElectron && storageMode === "s3" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>S3 Configuration</CardTitle>
+              <CardDescription>
+                Connect to an S3-compatible bucket. Works with Cloudflare R2,
+                AWS S3, MinIO, and other S3-compatible services. The watcher
+                will poll the bucket for PDF and EPUB files.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="s3-endpoint">Endpoint URL</Label>
+                    <Input
+                      id="s3-endpoint"
+                      placeholder="https://abc123.r2.cloudflarestorage.com"
+                      value={s3Form.endpoint}
+                      onChange={(e) => updateS3Field("endpoint", e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Required for R2 and MinIO. Leave empty for AWS S3.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="s3-region">Region</Label>
+                    <Input
+                      id="s3-region"
+                      placeholder="auto"
+                      value={s3Form.region}
+                      onChange={(e) => updateS3Field("region", e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Use &quot;auto&quot; for Cloudflare R2.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="s3-bucket">
+                      Bucket Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="s3-bucket"
+                      placeholder="my-library"
+                      value={s3Form.bucket}
+                      onChange={(e) => updateS3Field("bucket", e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="s3-access-key">
+                        Access Key ID <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="s3-access-key"
+                        placeholder="AKIA..."
+                        value={s3Form.accessKey}
+                        onChange={(e) => updateS3Field("accessKey", e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="s3-secret-key">
+                        Secret Access Key <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="s3-secret-key"
+                        type="password"
+                        placeholder="••••••••"
+                        value={s3Form.secretKey}
+                        onChange={(e) => updateS3Field("secretKey", e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="s3-prefix">Key Prefix</Label>
+                      <Input
+                        id="s3-prefix"
+                        placeholder="books/"
+                        value={s3Form.prefix}
+                        onChange={(e) => updateS3Field("prefix", e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Only scan objects under this prefix.
+                      </p>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="s3-poll-interval">Poll Interval (s)</Label>
+                      <Input
+                        id="s3-poll-interval"
+                        type="number"
+                        min="10"
+                        placeholder="60"
+                        value={s3Form.pollInterval}
+                        onChange={(e) => updateS3Field("pollInterval", e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        How often to check for changes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleSaveS3Config}
+                  disabled={isSavingS3 || !s3Form.bucket || !s3Form.accessKey || !s3Form.secretKey}
+                >
+                  {isSavingS3 ? "Saving..." : "Save & Connect"}
                 </Button>
               </div>
             </CardContent>
@@ -402,6 +704,28 @@ export default function AdminLibraryPage() {
               disabled={isResetting}
             >
               {isResetting ? "Resetting..." : "Reset App"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showSwitchToLocalDialog} onOpenChange={setShowSwitchToLocalDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch to local storage?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will disconnect from S3, clear all books from the library,
+              and switch to local folder mode. You will need to select a
+              library folder to start scanning local files.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSwitchToLocal}
+              disabled={isProcessing}
+            >
+              {isProcessing ? "Switching..." : "Switch to Local"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -9,4 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   nukeAndRescanLibrary: () => ipcRenderer.invoke('nuke-and-rescan-library'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getLibraryPath: () => ipcRenderer.invoke('get-library-path'),
+  getStorageMode: () => ipcRenderer.invoke('get-storage-mode'),
+  getS3Config: () => ipcRenderer.invoke('get-s3-config'),
+  saveS3Config: (config: Record<string, unknown>) => ipcRenderer.invoke('save-s3-config', config),
+  switchToLocalStorage: () => ipcRenderer.invoke('switch-to-local-storage'),
 });
