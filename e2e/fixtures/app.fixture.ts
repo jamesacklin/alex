@@ -6,15 +6,79 @@ import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { createServer, type Server } from 'net';
+import { createServer } from 'net';
 
 type AppFixture = {
   appPage: Page;
   electronApp: ElectronApplication | null;
 };
 
+const E2E_ELECTRON_PORT = 3210;
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function isPortFree(port: number): Promise<boolean> {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const server = createServer();
+      server.once('error', reject);
+      server.listen(port, '127.0.0.1', () => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPortToBeFree(port: number, timeoutMs = 15_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isPortFree(port)) {
+      return true;
+    }
+    await sleep(250);
+  }
+  return false;
+}
+
+function killPortListeners(port: number) {
+  try {
+    if (process.platform === 'darwin' || process.platform === 'linux') {
+      execSync(`lsof -ti:tcp:${port} -sTCP:LISTEN | xargs kill -9 2>/dev/null || true`, { stdio: 'ignore' });
+      return;
+    }
+    if (process.platform === 'win32') {
+      execSync(`FOR /F "tokens=5" %P IN ('netstat -a -n -o ^| findstr :${port}') DO TaskKill.exe /F /PID %P 2>nul || exit 0`, { stdio: 'ignore' });
+    }
+  } catch {
+    // Ignore cleanup errors.
+  }
+}
+
+function forceKillProcessTree(pid: number) {
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
+      return;
+    }
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      process.kill(pid, 'SIGKILL');
+    }
+  } catch {
+    // Process may already be gone.
+  }
 }
 
 async function waitForRouteReady(url: string, timeoutMs = 60000): Promise<void> {
@@ -77,21 +141,15 @@ export const test = base.extend<AppFixture>({
     console.log('[Fixture] User data dir:', testUserDataDir);
     console.log('[Fixture] Library path:', testLibraryPath);
 
-    // Wait for port 3210 to be free before launching a new Electron instance.
-    // After app.close(), the spawned Next.js server may linger briefly.
-    const portFreeDeadline = Date.now() + 15000;
-    while (Date.now() < portFreeDeadline) {
-      try {
-        const server = await new Promise<Server>((resolve, reject) => {
-          const s = createServer();
-          s.once('error', reject);
-          s.listen(3210, '127.0.0.1', () => { s.close(() => resolve(s)); });
-        });
-        void server;
-        break; // Port is free
-      } catch {
-        await sleep(500);
-      }
+    // Ensure Electron's Next.js port is free before launching.
+    let portIsFree = await waitForPortToBeFree(E2E_ELECTRON_PORT, 10_000);
+    if (!portIsFree) {
+      console.warn(`[Fixture] Port ${E2E_ELECTRON_PORT} still in use, attempting forced cleanup...`);
+      killPortListeners(E2E_ELECTRON_PORT);
+      portIsFree = await waitForPortToBeFree(E2E_ELECTRON_PORT, 10_000);
+    }
+    if (!portIsFree) {
+      throw new Error(`Port ${E2E_ELECTRON_PORT} is still in use before Electron launch`);
     }
 
     const electronEntry = path.join(process.cwd(), 'electron', 'dist', 'main.js');
@@ -157,12 +215,41 @@ export const test = base.extend<AppFixture>({
 
       console.log('[Fixture] Closing Electron app...');
       try {
-        await app.close();
+        await app.evaluate(({ app }) => {
+          app.quit();
+        });
+      } catch {
+        // Ignore if app is already gone or cannot be evaluated.
+      }
+
+      const closePromise = app.close().catch((error) => {
+        console.warn('[Fixture] app.close() rejected:', error);
+      });
+      const closeCompleted = await Promise.race([
+        closePromise.then(() => true),
+        sleep(15_000).then(() => false),
+      ]);
+
+      if (!closeCompleted && electronProcess.pid != null) {
+        console.warn(`[Fixture] app.close() timed out, force-killing process tree (pid=${electronProcess.pid})`);
+        forceKillProcessTree(electronProcess.pid);
+      }
+
+      try {
+        await closePromise;
       } catch (error) {
         console.warn('[Fixture] Electron app was already closed:', error);
       }
-      // Give child processes (Next.js server) time to release the port.
-      await sleep(2000);
+
+      let released = await waitForPortToBeFree(E2E_ELECTRON_PORT, 10_000);
+      if (!released) {
+        console.warn(`[Fixture] Port ${E2E_ELECTRON_PORT} still in use after close, forcing cleanup...`);
+        killPortListeners(E2E_ELECTRON_PORT);
+        released = await waitForPortToBeFree(E2E_ELECTRON_PORT, 10_000);
+      }
+      if (!released) {
+        console.warn(`[Fixture] Port ${E2E_ELECTRON_PORT} remained busy after cleanup attempts`);
+      }
 
       fs.rmSync(testUserDataDir, { recursive: true, force: true });
       fs.rmSync(testLibraryPath, { recursive: true, force: true });
