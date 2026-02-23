@@ -3,6 +3,27 @@ import type { Page } from '@playwright/test';
 import { LibraryPage } from '../page-objects/library.page';
 import { resetDatabase, seedDatabase, seedManyBooks } from '../helpers/db';
 
+function resolveAppBaseUrl(page: Page): string {
+  const currentUrl = page.url();
+  if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
+    return new URL(currentUrl).origin;
+  }
+
+  if (process.env.BASE_URL) {
+    return process.env.BASE_URL;
+  }
+
+  return process.env.E2E_PLATFORM === 'electron'
+    ? 'http://127.0.0.1:3210'
+    : 'http://localhost:3000';
+}
+
+async function gotoLibrary(page: Page, query = ''): Promise<void> {
+  const baseUrl = resolveAppBaseUrl(page);
+  const targetUrl = new URL(`/library${query}`, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
+  await page.goto(targetUrl);
+}
+
 async function mockLibraryRequestStatus(
   page: Page,
   status: number,
@@ -73,10 +94,7 @@ test.describe('Library Page', () => {
     expect(initialCount).toBeGreaterThanOrEqual(3);
 
     // Search for a specific book (from our seed data: "Sample PDF Book")
-    // Use baseURL to construct absolute URL for cross-platform compatibility
-    const currentUrl = authenticatedPage.url();
-    const baseUrl = currentUrl.split('/library')[0];
-    await authenticatedPage.goto(`${baseUrl}/library?q=Sample+PDF`);
+    await gotoLibrary(authenticatedPage, '?q=Sample+PDF');
     await libraryPage.waitForBooksToLoad();
 
     // Verify only matching books are displayed
@@ -89,7 +107,7 @@ test.describe('Library Page', () => {
     expect(hasSamplePdf).toBe(true);
 
     // Clear search
-    await authenticatedPage.goto(`${baseUrl}/library`);
+    await gotoLibrary(authenticatedPage);
     await libraryPage.waitForBooksToLoad();
 
     // Verify all books return
@@ -174,9 +192,7 @@ test.describe('Library Page', () => {
     await libraryPage.waitForBooksToLoad();
 
     // Search for a non-existent book
-    const currentUrl = authenticatedPage.url();
-    const baseUrl = currentUrl.split('/library')[0];
-    await authenticatedPage.goto(`${baseUrl}/library?q=nonexistent12345`);
+    await gotoLibrary(authenticatedPage, '?q=nonexistent12345');
     await libraryPage.waitForBooksToLoad();
 
     // Verify empty state is displayed
@@ -227,9 +243,7 @@ test.describe('Library Page', () => {
     const libraryPage = new LibraryPage(authenticatedPage);
 
     // Reload the page to get the new seeded data
-    const currentUrl = authenticatedPage.url();
-    const baseUrl = currentUrl.split('/library')[0];
-    await authenticatedPage.goto(`${baseUrl}/library`);
+    await gotoLibrary(authenticatedPage);
     const loadTimeout = process.env.E2E_PLATFORM === 'electron' ? 120000 : 30000;
     await expect.poll(
       async () => await libraryPage.getBookCount(),
@@ -273,9 +287,7 @@ test.describe('Library Page', () => {
     const libraryPage = new LibraryPage(authenticatedPage);
 
     // Reload the page to get the new seeded data
-    const currentUrl = authenticatedPage.url();
-    const baseUrl = currentUrl.split('/library')[0];
-    await authenticatedPage.goto(`${baseUrl}/library`);
+    await gotoLibrary(authenticatedPage);
     const loadTimeout = process.env.E2E_PLATFORM === 'electron' ? 120000 : 30000;
     await expect.poll(
       async () => await libraryPage.getBookCount(),
@@ -304,7 +316,7 @@ test.describe('Library Page', () => {
   test('shows a forbidden toast when library fetch returns 403', async ({ authenticatedPage }) => {
     await mockLibraryRequestStatus(authenticatedPage, 403, 'Forbidden');
 
-    await authenticatedPage.goto(`/library?e2e-toast=${Date.now()}`);
+    await gotoLibrary(authenticatedPage, `?e2e-toast=${Date.now()}`);
 
     await expect(authenticatedPage.getByText('Forbidden').first()).toBeVisible();
     await expect(
@@ -317,7 +329,7 @@ test.describe('Library Page', () => {
   test('shows a not-found toast when library fetch returns 404', async ({ authenticatedPage }) => {
     await mockLibraryRequestStatus(authenticatedPage, 404, 'Book source not found');
 
-    await authenticatedPage.goto(`/library?e2e-toast=${Date.now()}`);
+    await gotoLibrary(authenticatedPage, `?e2e-toast=${Date.now()}`);
 
     await expect(authenticatedPage.getByText('Not found').first()).toBeVisible();
     await expect(
@@ -330,7 +342,7 @@ test.describe('Library Page', () => {
   test('shows a server-error toast when library fetch returns 500', async ({ authenticatedPage }) => {
     await mockLibraryRequestStatus(authenticatedPage, 500, 'Internal server error');
 
-    await authenticatedPage.goto(`/library?e2e-toast=${Date.now()}`);
+    await gotoLibrary(authenticatedPage, `?e2e-toast=${Date.now()}`);
 
     await expect(authenticatedPage.getByText('Server error').first()).toBeVisible();
     await expect(
