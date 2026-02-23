@@ -42,9 +42,18 @@ function getPackagedNodeCommand(): string {
 function getEnvVars(libraryPath: string) {
   const paths = getDataPaths(libraryPath);
   const nextauthSecret = store.get('nextauthSecret');
+  const nodeEnv =
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'production' ||
+    process.env.NODE_ENV === 'test'
+      ? process.env.NODE_ENV
+      : isDev
+        ? 'development'
+        : 'production';
 
-  const env: Record<string, string | undefined> = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
+    NODE_ENV: nodeEnv,
     DATABASE_PATH: paths.databasePath,
     LIBRARY_PATH: paths.libraryPath,
     COVERS_PATH: paths.coversPath,

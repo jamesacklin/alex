@@ -126,6 +126,16 @@ async function streamFromS3(
   req: Request,
 ): Promise<NextResponse> {
   const binaryPath = process.env.WATCHER_RS_BIN || "watcher-rs";
+  const nodeEnv =
+    process.env.NODE_ENV === "development" ||
+    process.env.NODE_ENV === "production" ||
+    process.env.NODE_ENV === "test"
+      ? process.env.NODE_ENV
+      : "production";
+  const watcherEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    NODE_ENV: nodeEnv,
+  };
 
   const args = ["s3-stream", "--key", book.filePath];
 
@@ -136,7 +146,7 @@ async function streamFromS3(
 
   return new Promise((resolve) => {
     const child = spawn(binaryPath, args, {
-      env: process.env as Record<string, string>,
+      env: watcherEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -166,6 +176,9 @@ async function streamFromS3(
 
             child.on("close", () => {
               const body = concatUint8Arrays(bodyChunks);
+              const normalizedBody = new Uint8Array(body.length);
+              normalizedBody.set(body);
+              const responseBody = new Blob([normalizedBody]);
               const headers: Record<string, string> = {
                 "Content-Type": meta.content_type || "application/octet-stream",
                 "Content-Disposition": "inline",
@@ -179,7 +192,7 @@ async function streamFromS3(
                   `bytes ${meta.range_start}-${meta.range_end}/${meta.content_length}`;
               }
 
-              resolve(new NextResponse(body, { status, headers }));
+              resolve(new NextResponse(responseBody, { status, headers }));
             });
           } catch {
             resolve(
