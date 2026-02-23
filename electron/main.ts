@@ -51,8 +51,23 @@ function getEnvVars(libraryPath: string) {
         ? 'development'
         : 'production';
 
-  const env: NodeJS.ProcessEnv = {
+  // Build optional S3 env vars
+  const s3Vars: Record<string, string> = {};
+  const storageMode = store.get('storageMode');
+  const s3Config = store.get('s3Config');
+  if (storageMode === 's3' && s3Config) {
+    s3Vars.S3_BUCKET = s3Config.bucket;
+    s3Vars.S3_ACCESS_KEY_ID = s3Config.accessKey;
+    s3Vars.S3_SECRET_ACCESS_KEY = s3Config.secretKey;
+    if (s3Config.endpoint) s3Vars.S3_ENDPOINT = s3Config.endpoint;
+    if (s3Config.region) s3Vars.S3_REGION = s3Config.region;
+    if (s3Config.prefix) s3Vars.S3_PREFIX = s3Config.prefix;
+    if (s3Config.pollInterval) s3Vars.S3_POLL_INTERVAL = String(s3Config.pollInterval);
+  }
+
+  return {
     ...process.env,
+    ...s3Vars,
     NODE_ENV: nodeEnv,
     DATABASE_PATH: paths.databasePath,
     LIBRARY_PATH: paths.libraryPath,
@@ -62,21 +77,6 @@ function getEnvVars(libraryPath: string) {
     NEXTAUTH_SECRET: nextauthSecret,
     NEXTAUTH_URL: `http://127.0.0.1:${PORT}`,
   };
-
-  // Pass S3 env vars when in S3 mode
-  const storageMode = store.get('storageMode');
-  const s3Config = store.get('s3Config');
-  if (storageMode === 's3' && s3Config) {
-    env.S3_BUCKET = s3Config.bucket;
-    env.S3_ACCESS_KEY_ID = s3Config.accessKey;
-    env.S3_SECRET_ACCESS_KEY = s3Config.secretKey;
-    if (s3Config.endpoint) env.S3_ENDPOINT = s3Config.endpoint;
-    if (s3Config.region) env.S3_REGION = s3Config.region;
-    if (s3Config.prefix) env.S3_PREFIX = s3Config.prefix;
-    if (s3Config.pollInterval) env.S3_POLL_INTERVAL = String(s3Config.pollInterval);
-  }
-
-  return env;
 }
 
 type WatcherDbAction = 'query-all' | 'query-one' | 'execute';
@@ -922,12 +922,15 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('complete-onboarding', () => {
     const libPath = store.get('libraryPath');
-    if (!libPath) {
+    const mode = store.get('storageMode');
+
+    // Local mode requires a library path; S3 mode does not
+    if (mode !== 's3' && !libPath) {
       return { success: false, error: 'No library path set' };
     }
 
     try {
-      startWatcher(libPath);
+      startWatcher(libPath || '');
       isFirstRun = false;
       return { success: true };
     } catch (error) {
