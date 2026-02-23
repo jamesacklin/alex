@@ -214,31 +214,29 @@ export const test = base.extend<AppFixture>({
       electronProcess.off('exit', onExit);
 
       console.log('[Fixture] Closing Electron app...');
-      try {
-        await app.evaluate(({ app }) => {
-          app.quit();
-        });
-      } catch {
-        // Ignore if app is already gone or cannot be evaluated.
-      }
-
-      const closePromise = app.close().catch((error) => {
+      const closePromise = app.close().then(
+        () => true,
+        (error) => {
         console.warn('[Fixture] app.close() rejected:', error);
-      });
-      const closeCompleted = await Promise.race([
-        closePromise.then(() => true),
-        sleep(15_000).then(() => false),
+          return false;
+        },
+      );
+      let closeCompleted = await Promise.race<boolean>([
+        closePromise,
+        sleep(4_000).then(() => false),
       ]);
 
       if (!closeCompleted && electronProcess.pid != null) {
         console.warn(`[Fixture] app.close() timed out, force-killing process tree (pid=${electronProcess.pid})`);
         forceKillProcessTree(electronProcess.pid);
+        closeCompleted = await Promise.race<boolean>([
+          closePromise,
+          sleep(2_000).then(() => false),
+        ]);
       }
 
-      try {
-        await closePromise;
-      } catch (error) {
-        console.warn('[Fixture] Electron app was already closed:', error);
+      if (!closeCompleted) {
+        console.warn('[Fixture] Electron shutdown did not complete after force-kill timeout; continuing cleanup');
       }
 
       let released = await waitForPortToBeFree(E2E_ELECTRON_PORT, 10_000);
