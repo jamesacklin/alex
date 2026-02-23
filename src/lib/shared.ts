@@ -17,6 +17,7 @@ type SharedBook = {
   description: string | null;
   fileType: string;
   filePath: string;
+  source: string;
   fileSize: number;
   fileHash: string;
   coverPath: string | null;
@@ -85,6 +86,7 @@ export async function getSharedBook(token: string, bookId: string): Promise<Shar
           b.description,
           b.file_type AS fileType,
           b.file_path AS filePath,
+          b.source,
           b.file_size AS fileSize,
           b.file_hash AS fileHash,
           b.cover_path AS coverPath,
@@ -104,4 +106,3 @@ export async function getSharedBook(token: string, bookId: string): Promise<Shar
     return null;
   }
 }
-
