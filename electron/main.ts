@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as net from 'net';
 import { spawn, ChildProcess, spawnSync } from 'child_process';
 import { store } from './store';
 import { getDataPaths } from './paths';
@@ -15,6 +16,7 @@ let isFirstRun = false;
 const PORT = 3210;
 const isDev = !app.isPackaged;
 const isE2E = process.env.ALEX_E2E === 'true';
+const detachChildProcesses = process.platform !== 'win32' && !isDev;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,6 +39,34 @@ function getPackagedNodeCommand(): string {
   }
 
   return process.execPath;
+}
+
+function resolveMigrationPath() {
+  const migrationRelPath = path.join('src', 'lib', 'db', 'migrations', '0000_wide_expediter.sql');
+  const candidates = [
+    path.join(process.cwd(), migrationRelPath),
+    path.join(app.getAppPath(), migrationRelPath),
+    path.join(process.resourcesPath, migrationRelPath),
+    path.join(process.resourcesPath, 'app', migrationRelPath),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function isS3Configured() {
+  const mode = store.get('storageMode') || 'local';
+  const config = store.get('s3Config');
+  return mode === 's3' && !!(config?.bucket && config?.accessKey && config?.secretKey);
+}
+
+function shouldStartWatcher(libraryPath: string) {
+  return Boolean(libraryPath) || isS3Configured();
 }
 
 function getEnvVars(libraryPath: string) {
@@ -197,11 +227,11 @@ function runDbSetup(libraryPath: string) {
     return;
   }
   const absoluteDatabasePath = path.resolve(databasePath);
-  const migrationPath = path.join(app.getAppPath(), 'src/lib/db/migrations/0000_wide_expediter.sql');
+  const migrationPath = resolveMigrationPath();
 
   try {
-    if (!fs.existsSync(migrationPath)) {
-      console.error(`[Electron] Migration file not found: ${migrationPath}`);
+    if (!migrationPath) {
+      console.error('[Electron] Migration file not found; skipping database setup');
       return;
     }
 
@@ -224,6 +254,40 @@ function runDbSetup(libraryPath: string) {
         runWatcherDbCommand('execute', { sql: statement }, env);
       }
       console.log('[Electron] Database schema initialized');
+    }
+
+    const booksTableExists = runWatcherDbCommand(
+      'query-one',
+      { sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'books' LIMIT 1" },
+      env,
+    ).row;
+
+    if (booksTableExists) {
+      const requiredS3Columns = [
+        { name: 'source', definition: "TEXT NOT NULL DEFAULT 'local'" },
+        { name: 's3_bucket', definition: 'TEXT' },
+        { name: 's3_etag', definition: 'TEXT' },
+      ] as const;
+
+      for (const column of requiredS3Columns) {
+        const hasColumn = runWatcherDbCommand(
+          'query-one',
+          {
+            sql: "SELECT 1 AS present FROM pragma_table_info('books') WHERE name = ?1 LIMIT 1",
+            params: [column.name],
+          },
+          env,
+        ).row;
+
+        if (!hasColumn) {
+          runWatcherDbCommand(
+            'execute',
+            { sql: `ALTER TABLE books ADD COLUMN ${column.name} ${column.definition}` },
+            env,
+          );
+          console.log(`[Electron] Added missing books.${column.name} column`);
+        }
+      }
     }
 
     const hasFileHashIndex = runWatcherDbCommand(
@@ -360,7 +424,7 @@ function startServer(libraryPath: string) {
       env: serverEnv,
       cwd: workingDir,
       stdio: ['ignore', 'pipe', 'pipe'],
-      ...(process.platform !== 'win32' && { detached: true }),
+      ...(detachChildProcesses && { detached: true }),
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn server process:', error);
@@ -518,7 +582,7 @@ function startWatcher(libraryPath: string) {
       env: watcherEnv,
       cwd: workingDir,
       stdio: 'inherit',
-      ...(process.platform !== 'win32' && { detached: true }),
+      ...(detachChildProcesses && { detached: true }),
     });
   } catch (error) {
     console.error('[Electron] Failed to spawn watcher process:', error);
@@ -540,12 +604,11 @@ function killChildProcesses() {
   for (const child of [serverProcess, watcherProcess]) {
     if (!child || child.pid == null) continue;
     try {
-      // Kill the entire process group so that child processes (e.g. the
-      // Next.js server spawned by pnpm) are also terminated.
-      if (process.platform !== 'win32') {
+      if (detachChildProcesses) {
+        // Detached child processes are their own process groups.
         process.kill(-child.pid, 'SIGKILL');
       } else {
-        child.kill();
+        child.kill('SIGKILL');
       }
     } catch {
       // Process may already be dead.
@@ -564,8 +627,108 @@ function restartWatcher(libraryPath: string) {
     watcherProcess = null;
   }
 
-  if (libraryPath) {
+  if (shouldStartWatcher(libraryPath)) {
     startWatcher(libraryPath);
+  }
+}
+
+function isPortListening(port: number, host = '127.0.0.1') {
+  return new Promise<boolean>((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+
+    socket.setTimeout(500);
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+    socket.once('timeout', () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
+async function waitForPortToClose(port: number, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const listening = await isPortListening(port);
+    if (!listening) {
+      return true;
+    }
+    await sleep(100);
+  }
+  return false;
+}
+
+function forceKillPortListener(port: number) {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const result = spawnSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], {
+    encoding: 'utf8',
+  });
+
+  if (result.error || !result.stdout) {
+    return;
+  }
+
+  const pids = result.stdout
+    .split(/\s+/)
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid);
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+      console.warn(`[Electron] Force-killed lingering process on port ${port}: PID ${pid}`);
+    } catch {
+      // PID may already be gone.
+    }
+  }
+}
+
+async function stopServerProcess() {
+  if (serverProcess && serverProcess.pid != null) {
+    const exitingProcess = serverProcess;
+
+    try {
+      if (detachChildProcesses && exitingProcess.pid != null) {
+        process.kill(-exitingProcess.pid, 'SIGKILL');
+      } else {
+        exitingProcess.kill('SIGKILL');
+      }
+    } catch {
+      // Process may already be dead.
+    }
+
+    await Promise.race([
+      new Promise<void>((resolve) => exitingProcess.once('exit', () => resolve())),
+      sleep(2000),
+    ]);
+  }
+
+  serverProcess = null;
+
+  const portClosed = await waitForPortToClose(PORT, 3000);
+  if (!portClosed) {
+    console.warn(`[Electron] Port ${PORT} still in use after stopping server; attempting cleanup`);
+    forceKillPortListener(PORT);
+    await waitForPortToClose(PORT, 3000);
+  }
+}
+
+async function restartServer(libraryPath: string) {
+  console.log('[Electron] Restarting Next.js server...');
+  await stopServerProcess();
+  startServer(libraryPath);
+  const ready = await waitForServerReady();
+  if (!ready) {
+    throw new Error('Next.js server did not become ready after restart');
   }
 }
 
@@ -868,6 +1031,7 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       const libraryPath = store.get('libraryPath') || '';
+      await restartServer(libraryPath);
       startWatcher(libraryPath);
 
       return { success: true };
@@ -892,6 +1056,7 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       const libraryPath = store.get('libraryPath');
+      await restartServer(libraryPath || '');
       if (libraryPath) {
         startWatcher(libraryPath);
       }
@@ -970,7 +1135,7 @@ app.whenReady().then(async () => {
 
   // First-run detection
   const libraryPath = store.get('libraryPath') || '';
-  if (!libraryPath) {
+  if (!libraryPath && !isS3Configured()) {
     console.log('[Electron] First run detected, will show onboarding page');
     isFirstRun = true;
   }
@@ -987,7 +1152,7 @@ app.whenReady().then(async () => {
       runDbSetup(libraryPath);
     }
     startServer(libraryPath);
-    if (libraryPath) {
+    if (shouldStartWatcher(libraryPath)) {
       startWatcher(libraryPath);
     }
 
@@ -1015,7 +1180,7 @@ app.whenReady().then(async () => {
     }
 
     // Start watcher only (server is running externally)
-    if (libraryPath) {
+    if (shouldStartWatcher(libraryPath)) {
       startWatcher(libraryPath);
     }
 
@@ -1040,6 +1205,16 @@ app.on('before-quit', () => {
   destroyTray();
   killChildProcesses();
 });
+
+const handleProcessSignal = () => {
+  isQuitting = true;
+  destroyTray();
+  killChildProcesses();
+  app.quit();
+};
+
+process.on('SIGINT', handleProcessSignal);
+process.on('SIGTERM', handleProcessSignal);
 
 app.on('window-all-closed', () => {
   // On macOS, keep app running in tray
