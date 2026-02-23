@@ -59,7 +59,14 @@ export class LibraryPage {
     // Check if we're already on the library page (Electron starts here)
     const currentUrl = this.page.url();
     if (!currentUrl.includes('/library')) {
-      await this.page.goto('/library');
+      const baseUrl = currentUrl.startsWith('http://') || currentUrl.startsWith('https://')
+        ? new URL(currentUrl).origin
+        : process.env.BASE_URL
+          || (process.env.E2E_PLATFORM === 'electron'
+            ? 'http://127.0.0.1:3210'
+            : 'http://localhost:3000');
+      const targetUrl = new URL('/library', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
+      await this.page.goto(targetUrl);
     }
     await this.page.waitForLoadState('domcontentloaded');
   }
