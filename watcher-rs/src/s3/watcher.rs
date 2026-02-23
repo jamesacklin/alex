@@ -29,8 +29,7 @@ pub async fn run(
 
     // Initial scan
     log("[S3] Starting initial scan...");
-    let scan_result =
-        run_scan_cycle(&bucket, &config.bucket, prefix, covers_path, &db).await;
+    let scan_result = run_scan_cycle(&bucket, &config.bucket, prefix, covers_path, &db).await;
     match scan_result {
         Ok((added, changed, removed)) => {
             log(&format!(
@@ -92,10 +91,7 @@ async fn run_scan_cycle(
 
     for object in &diff.added {
         if let Err(e) = handle_s3_add(bucket, object, db, bucket_name, covers_dir).await {
-            log(&format!(
-                "[S3] [ERROR] Failed to add {}: {}",
-                object.key, e
-            ));
+            log(&format!("[S3] [ERROR] Failed to add {}: {}", object.key, e));
         }
     }
 

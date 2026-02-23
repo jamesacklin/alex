@@ -201,9 +201,9 @@ impl Database {
 
     /// Return all local books (for orphan cleanup in local mode).
     pub fn all_books(&self) -> Result<Vec<OrphanRow>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, file_path, cover_path FROM books WHERE source = 'local'",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, title, file_path, cover_path FROM books WHERE source = 'local'")?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(OrphanRow {

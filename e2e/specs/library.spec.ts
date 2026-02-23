@@ -1,6 +1,37 @@
 import { test, expect } from '../fixtures/auth.fixture';
+import type { Page } from '@playwright/test';
 import { LibraryPage } from '../page-objects/library.page';
 import { resetDatabase, seedDatabase, seedManyBooks } from '../helpers/db';
+
+async function mockLibraryRequestStatus(
+  page: Page,
+  status: number,
+  error: string,
+) {
+  await page.route('**/api/books*', async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.pathname === '/api/books/now-reading') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ books: [] }),
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/books') {
+      await route.fulfill({
+        status,
+        contentType: 'application/json',
+        body: JSON.stringify({ error }),
+      });
+      return;
+    }
+
+    await route.continue();
+  });
+}
 
 test.describe('Library Page', () => {
   test('displays books after seeding (US-005)', async ({ authenticatedPage }) => {
@@ -268,5 +299,44 @@ test.describe('Library Page', () => {
       // Should be less than or equal to initial page size
       expect(countAfterFilter).toBeLessThanOrEqual(initialCount);
     }
+  });
+
+  test('shows a forbidden toast when library fetch returns 403', async ({ authenticatedPage }) => {
+    await mockLibraryRequestStatus(authenticatedPage, 403, 'Forbidden');
+
+    await authenticatedPage.goto(`/library?e2e-toast=${Date.now()}`);
+
+    await expect(authenticatedPage.getByText('Forbidden').first()).toBeVisible();
+    await expect(
+      authenticatedPage.getByText(
+        'You do not have permission to access this library data.',
+      ),
+    ).toBeVisible();
+  });
+
+  test('shows a not-found toast when library fetch returns 404', async ({ authenticatedPage }) => {
+    await mockLibraryRequestStatus(authenticatedPage, 404, 'Book source not found');
+
+    await authenticatedPage.goto(`/library?e2e-toast=${Date.now()}`);
+
+    await expect(authenticatedPage.getByText('Not found').first()).toBeVisible();
+    await expect(
+      authenticatedPage.getByText(
+        'The requested library data could not be found.',
+      ),
+    ).toBeVisible();
+  });
+
+  test('shows a server-error toast when library fetch returns 500', async ({ authenticatedPage }) => {
+    await mockLibraryRequestStatus(authenticatedPage, 500, 'Internal server error');
+
+    await authenticatedPage.goto(`/library?e2e-toast=${Date.now()}`);
+
+    await expect(authenticatedPage.getByText('Server error').first()).toBeVisible();
+    await expect(
+      authenticatedPage.getByText(
+        'The server returned an unexpected error. Please try again.',
+      ),
+    ).toBeVisible();
   });
 });

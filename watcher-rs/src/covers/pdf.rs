@@ -22,11 +22,7 @@ pub fn render_pdf_cover_from_bytes(
     render_first_page(&document, book_id, covers_dir)
 }
 
-fn render_first_page(
-    document: &PdfDocument,
-    book_id: &str,
-    covers_dir: &Path,
-) -> Option<PathBuf> {
+fn render_first_page(document: &PdfDocument, book_id: &str, covers_dir: &Path) -> Option<PathBuf> {
     let page = document.pages().get(0).ok()?;
 
     let render = page

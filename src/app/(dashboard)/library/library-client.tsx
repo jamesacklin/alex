@@ -8,11 +8,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BookCard, type Book } from "@/components/library/BookCard";
 import { BookFilters } from "@/components/library/BookFilters";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import {
+  fetchJsonOrThrow,
+  getRequestErrorPresentation,
+  isAbortError,
+} from "@/lib/client/request-error";
 
 interface CachedLibraryQueryResult {
   books: Book[];
   total: number;
   hasMore: boolean;
+}
+
+interface LibraryBooksResponse {
+  books?: Book[];
+  total?: number;
+  hasMore?: boolean;
+}
+
+interface NowReadingResponse {
+  books?: Book[];
 }
 
 const libraryQueryCache = new Map<string, CachedLibraryQueryResult>();
@@ -25,6 +40,17 @@ function createLibraryCacheKey(
   sort: string,
 ) {
   return JSON.stringify({ q, type, status, sort });
+}
+
+function showLibraryErrorToast(error: unknown, toastId: string, actionLabel: string) {
+  const presentation = getRequestErrorPresentation(error, {
+    resourceLabel: "library data",
+    actionLabel,
+  });
+  toast.error(presentation.title, {
+    id: toastId,
+    description: presentation.description,
+  });
 }
 
 export default function LibraryClient() {
@@ -64,18 +90,24 @@ export default function LibraryClient() {
   useEffect(() => {
     let isCancelled = false;
 
-    fetch("/api/books/now-reading")
-      .then((r) => r.json())
-      .then((data) => {
+    const fetchNowReading = async () => {
+      try {
+        const data = await fetchJsonOrThrow<NowReadingResponse>(
+          "/api/books/now-reading",
+        );
         if (isCancelled) return;
         if (data.books) {
           nowReadingCache = data.books;
           setNowReadingBooks(data.books);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (isCancelled || isAbortError(err)) return;
         console.error("Failed to fetch now reading books:", err);
-      });
+        showLibraryErrorToast(err, "library-now-reading-error", "load now reading books");
+      }
+    };
+
+    void fetchNowReading();
 
     return () => {
       isCancelled = true;
@@ -108,14 +140,13 @@ export default function LibraryClient() {
         const params = new URLSearchParams(searchParams.toString());
         params.delete("page"); // Always start from page 1 on filter change
 
-        const response = await fetch(`/api/books?${params}`, {
+        const data = await fetchJsonOrThrow<LibraryBooksResponse>(`/api/books?${params}`, {
           signal: controller.signal,
         });
-        const data = await response.json();
 
-        setBooks(data.books);
-        setTotal(data.total);
-        setHasMore(data.hasMore);
+        setBooks(data.books ?? []);
+        setTotal(data.total ?? 0);
+        setHasMore(Boolean(data.hasMore));
         setLoading(false);
         libraryQueryCache.set(libraryCacheKey, {
           books: data.books ?? [],
@@ -123,9 +154,10 @@ export default function LibraryClient() {
           hasMore: Boolean(data.hasMore),
         });
       } catch (error) {
-        if (error instanceof Error && error.name !== "AbortError") {
-          setLoading(false);
-        }
+        if (isAbortError(error)) return;
+        setLoading(false);
+        console.error("Failed to fetch library books:", error);
+        showLibraryErrorToast(error, "library-books-error", "load library books");
       }
     };
 
@@ -160,33 +192,48 @@ export default function LibraryClient() {
           const params = new URLSearchParams(searchParams.toString());
           params.delete("page");
 
-          fetch(`/api/books?${params}`)
-            .then((r) => r.json())
-            .then((d) => {
-              setBooks(d.books);
-              setTotal(d.total);
-              setHasMore(d.hasMore);
+          const refreshLibrary = async () => {
+            try {
+              const d = await fetchJsonOrThrow<LibraryBooksResponse>(`/api/books?${params}`);
+              setBooks(d.books ?? []);
+              setTotal(d.total ?? 0);
+              setHasMore(Boolean(d.hasMore));
               setLoading(false);
               libraryQueryCache.set(libraryCacheKey, {
                 books: d.books ?? [],
                 total: d.total ?? 0,
                 hasMore: Boolean(d.hasMore),
               });
-            })
-            .catch(() => setLoading(false));
+            } catch (error) {
+              console.error("Failed to refresh library books:", error);
+              setLoading(false);
+              showLibraryErrorToast(error, "library-refresh-error", "refresh library books");
+            }
+          };
+
+          void refreshLibrary();
 
           // Also refresh now reading section
-          fetch("/api/books/now-reading")
-            .then((r) => r.json())
-            .then((data) => {
-              if (data.books) {
-                nowReadingCache = data.books;
-                setNowReadingBooks(data.books);
+          const refreshNowReading = async () => {
+            try {
+              const refreshData = await fetchJsonOrThrow<NowReadingResponse>(
+                "/api/books/now-reading",
+              );
+              if (refreshData.books) {
+                nowReadingCache = refreshData.books;
+                setNowReadingBooks(refreshData.books);
               }
-            })
-            .catch((err) => {
+            } catch (err) {
               console.error("Failed to fetch now reading books:", err);
-            });
+              showLibraryErrorToast(
+                err,
+                "library-now-reading-refresh-error",
+                "refresh now reading books",
+              );
+            }
+          };
+
+          void refreshNowReading();
         }
       } catch {
         // Ignore parsing errors
@@ -236,16 +283,13 @@ export default function LibraryClient() {
       const params = new URLSearchParams(searchParams.toString());
       params.set("page", String(nextPage));
 
-      const response = await fetch(`/api/books?${params}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
+      const data = await fetchJsonOrThrow<LibraryBooksResponse>(`/api/books?${params}`);
 
       // Only update if we got new books
       if (data.books && data.books.length > 0) {
+        const nextPageBooks = data.books;
         setBooks((prev) => {
-          const nextBooks = [...prev, ...data.books];
+          const nextBooks = [...prev, ...nextPageBooks];
           libraryQueryCache.set(libraryCacheKey, {
             books: nextBooks,
             total: data.total ?? 0,
@@ -254,8 +298,8 @@ export default function LibraryClient() {
           return nextBooks;
         });
         setCurrentPage(nextPage);
-        setHasMore(data.hasMore);
-        setTotal(data.total);
+        setHasMore(Boolean(data.hasMore));
+        setTotal(data.total ?? 0);
       } else {
         // No more books to load
         setHasMore(false);
@@ -270,6 +314,7 @@ export default function LibraryClient() {
       }
     } catch (error) {
       console.error("Failed to load more books:", error);
+      showLibraryErrorToast(error, "library-load-more-error", "load more books");
       setHasMore(false); // Stop trying on error
     } finally {
       setIsLoadingMore(false);

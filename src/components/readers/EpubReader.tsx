@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Menu,
@@ -23,6 +24,7 @@ import {
   type SavedEpubProgress,
 } from "./epub-progress";
 import { ReadingProgressMeter } from "@/components/library/ReadingProgressMeter";
+import { getRequestErrorPresentation } from "@/lib/client/request-error";
 
 type TocItem = { label: string; href: string };
 type FontSize = "small" | "medium" | "large" | "xl";
@@ -64,6 +66,27 @@ export function EpubReader({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [renditionReady, setRenditionReady] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+
+  const handleEpubLoadFailure = useCallback(
+    (err: unknown) => {
+      const presentation = getRequestErrorPresentation(err, {
+        resourceLabel: "book file",
+        actionLabel: "load book file",
+        providerLabel: "S3",
+      });
+      toast.error(presentation.title, {
+        id: `epub-load-error-${bookId}`,
+        description: presentation.description,
+      });
+      setError(
+        presentation.kind === "not-found"
+          ? "This book file could not be found."
+          : presentation.inlineMessage,
+      );
+      setLoading(false);
+    },
+    [bookId],
+  );
 
   const progressKey = `epub-progress:${bookId}`;
   const progressPersistContainers = useRef(new WeakSet<HTMLElement>());
@@ -647,8 +670,7 @@ export function EpubReader({
       // Hook error listener for book load failures
       rendition.book.on("openFailed", (err: unknown) => {
         console.error("ePub load error:", err);
-        setError("Failed to load book. Please try again.");
-        setLoading(false);
+        handleEpubLoadFailure(err);
       });
 
       // Hide loading spinner once book is ready
@@ -658,8 +680,7 @@ export function EpubReader({
         })
         .catch((err: unknown) => {
           console.error("Failed to load book:", err);
-          setError("Failed to load book. Please try again.");
-          setLoading(false);
+          handleEpubLoadFailure(err);
         });
 
       // Extract table of contents
@@ -704,6 +725,7 @@ export function EpubReader({
       applyThemeToRendition,
       applyFontSettingsToRendition,
       attachContainerProgressPersistence,
+      handleEpubLoadFailure,
     ],
   );
 

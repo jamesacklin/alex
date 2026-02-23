@@ -85,3 +85,57 @@ fn parse_range(range: &str) -> Result<(u64, Option<u64>)> {
 
     Ok((start, end))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_range;
+
+    #[test]
+    fn parse_range_handles_start_and_end() {
+        let (start, end) = parse_range("bytes=10-20").expect("range should parse");
+        assert_eq!(start, 10);
+        assert_eq!(end, Some(20));
+    }
+
+    #[test]
+    fn parse_range_handles_open_ended_range() {
+        let (start, end) = parse_range("bytes=512-").expect("range should parse");
+        assert_eq!(start, 512);
+        assert_eq!(end, None);
+    }
+
+    #[test]
+    fn parse_range_handles_missing_start_as_zero() {
+        let (start, end) = parse_range("bytes=-1024").expect("range should parse");
+        assert_eq!(start, 0);
+        assert_eq!(end, Some(1024));
+    }
+
+    #[test]
+    fn parse_range_rejects_missing_prefix() {
+        let error = parse_range("10-20").expect_err("missing bytes= must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("Invalid range header: must start with 'bytes='")
+        );
+    }
+
+    #[test]
+    fn parse_range_rejects_non_numeric_start() {
+        let error = parse_range("bytes=a-10").expect_err("non numeric start must fail");
+        assert!(error.to_string().contains("Invalid range start"));
+    }
+
+    #[test]
+    fn parse_range_rejects_non_numeric_end() {
+        let error = parse_range("bytes=10-z").expect_err("non numeric end must fail");
+        assert!(error.to_string().contains("Invalid range end"));
+    }
+
+    #[test]
+    fn parse_range_rejects_missing_separator() {
+        let error = parse_range("bytes=100").expect_err("missing separator must fail");
+        assert!(error.to_string().contains("Invalid range format"));
+    }
+}

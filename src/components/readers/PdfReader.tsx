@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { toast } from "sonner";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { PdfToolbar } from "./PdfToolbar";
+import { getRequestErrorPresentation } from "@/lib/client/request-error";
 
 function Spinner() {
   return (
@@ -38,6 +40,26 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [error, setError] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
+
+  const handleLoadFailure = useCallback(
+    (err: unknown) => {
+      const presentation = getRequestErrorPresentation(err, {
+        resourceLabel: "book file",
+        actionLabel: "load book file",
+        providerLabel: "S3",
+      });
+      toast.error(presentation.title, {
+        id: `pdf-load-error-${bookId}`,
+        description: presentation.description,
+      });
+      setError(
+        presentation.kind === "not-found"
+          ? "This book file could not be found."
+          : presentation.inlineMessage,
+      );
+    },
+    [bookId],
+  );
 
   // --- Container dimensions ---
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
@@ -546,12 +568,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
               });
             }}
             onLoadError={(err) => {
-              const message = String((err as Error | undefined)?.message ?? "");
-              if (message.includes("404") || message.includes("410")) {
-                setError("This shared link is no longer available.");
-              } else {
-                setError("Failed to load book. Please try again.");
-              }
+              handleLoadFailure(err);
             }}
             loading={<Spinner />}
           >
@@ -574,7 +591,7 @@ export function PdfReader({ bookId, title, initialPage, fileUrl, backUrl, onPage
                         pageNumber={pageNumber}
                         width={effectiveWidth}
                         loading={<Spinner />}
-                        onError={() => setError("Failed to load book. Please try again.")}
+                        onError={(err) => handleLoadFailure(err)}
                         renderTextLayer={true}
                         renderAnnotationLayer={true}
                         customTextRenderer={customTextRenderer as (props: { str: string; itemIndex: number; pageNumber: number }) => string}
