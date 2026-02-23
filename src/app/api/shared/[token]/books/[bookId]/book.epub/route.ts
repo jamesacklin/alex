@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSharedBook } from "@/lib/shared";
+import { serveBookFile } from "@/lib/files/serve-book-file";
 
 export const dynamic = "force-dynamic";
 
@@ -21,20 +22,9 @@ export async function GET(
     return NextResponse.json({ error: "Not an EPUB book" }, { status: 400 });
   }
 
-  const fileResponse = await fetch(
-    new URL(`/api/shared/${token}/books/${bookId}/file`, req.url),
-    {
-      method: "GET",
-      headers: req.headers,
-    }
-  );
-
-  const responseHeaders = new Headers(fileResponse.headers);
-  responseHeaders.set("Content-Type", "application/epub+zip");
-  responseHeaders.set("Content-Disposition", 'inline; filename="book.epub"');
-
-  return new NextResponse(fileResponse.body, {
-    status: fileResponse.status,
-    headers: responseHeaders,
+  return await serveBookFile(book, req, {
+    cacheControl: "private, max-age=3600, must-revalidate",
+    contentTypeOverride: "application/epub+zip",
+    filenameOverride: "book.epub",
   });
 }

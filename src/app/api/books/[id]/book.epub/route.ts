@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authSession as auth } from "@/lib/auth/config";
 import { queryOne } from "@/lib/db/rust";
+import { serveBookFile } from "@/lib/files/serve-book-file";
 
 // Prevent Next.js from attempting to statically analyze this route during build
 export const dynamic = 'force-dynamic';
@@ -18,10 +19,12 @@ export async function GET(
 
   const { id } = await params;
 
-  const book = await queryOne<{ fileType: string }>(
+  const book = await queryOne<{ filePath: string; fileType: string; source: string }>(
     `
       SELECT
-        file_type AS fileType
+        file_path AS filePath,
+        file_type AS fileType,
+        source
       FROM books
       WHERE id = ?1
       LIMIT 1
@@ -37,17 +40,8 @@ export async function GET(
     return NextResponse.json({ error: "Not an EPUB book" }, { status: 400 });
   }
 
-  const fileResponse = await fetch(new URL(`/api/books/${id}/file`, req.url), {
-    method: "GET",
-    headers: req.headers,
-  });
-
-  const responseHeaders = new Headers(fileResponse.headers);
-  responseHeaders.set("Content-Type", "application/epub+zip");
-  responseHeaders.set("Content-Disposition", 'inline; filename="book.epub"');
-
-  return new NextResponse(fileResponse.body, {
-    status: fileResponse.status,
-    headers: responseHeaders,
+  return await serveBookFile(book, req, {
+    contentTypeOverride: "application/epub+zip",
+    filenameOverride: "book.epub",
   });
 }
