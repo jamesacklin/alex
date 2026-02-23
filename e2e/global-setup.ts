@@ -33,14 +33,19 @@ export default async function globalSetup() {
   console.log('[E2E] Running global setup...');
 
   try {
-    // Kill any existing processes on port 3210 (Electron's port)
+    const e2eElectronPort =
+      Number.parseInt(process.env.E2E_ELECTRON_PORT ?? '', 10)
+      || Number.parseInt(process.env.BASE_URL?.split(':').pop() ?? '', 10)
+      || 3210;
+
+    // Kill any existing processes on Electron's port
     // This prevents EADDRINUSE errors when running tests
-    console.log('[E2E] Cleaning up any existing processes on port 3210...');
+    console.log(`[E2E] Cleaning up any existing processes on port ${e2eElectronPort}...`);
     try {
       if (process.platform === 'darwin' || process.platform === 'linux') {
-        execSync('lsof -ti:3210 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+        execSync(`lsof -ti:${e2eElectronPort} | xargs kill -9 2>/dev/null || true`, { stdio: 'ignore' });
       } else if (process.platform === 'win32') {
-        execSync('FOR /F "tokens=5" %P IN (\'netstat -a -n -o ^| findstr :3210\') DO TaskKill.exe /F /PID %P 2>nul || exit 0', { stdio: 'ignore' });
+        execSync(`FOR /F "tokens=5" %P IN ('netstat -a -n -o ^| findstr :${e2eElectronPort}') DO TaskKill.exe /F /PID %P 2>nul || exit 0`, { stdio: 'ignore' });
       }
     } catch {
       // Ignore errors - port might not be in use

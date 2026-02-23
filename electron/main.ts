@@ -72,10 +72,11 @@ function shouldStartWatcher(libraryPath: string) {
 function getEnvVars(libraryPath: string) {
   const paths = getDataPaths(libraryPath);
   const nextauthSecret = store.get('nextauthSecret');
-  const nodeEnv =
-    process.env.NODE_ENV === 'development' ||
-    process.env.NODE_ENV === 'production' ||
-    process.env.NODE_ENV === 'test'
+  const nodeEnv = isE2E
+    ? 'production'
+    : process.env.NODE_ENV === 'development' ||
+        process.env.NODE_ENV === 'production' ||
+        process.env.NODE_ENV === 'test'
       ? process.env.NODE_ENV
       : isDev
         ? 'development'
