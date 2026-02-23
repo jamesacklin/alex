@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { authSession as auth } from "@/lib/auth/config";
 import { queryOne } from "@/lib/db/rust";
-import fs from "fs";
 
 // Prevent Next.js from attempting to statically analyze this route during build
 export const dynamic = 'force-dynamic';
@@ -9,7 +8,7 @@ export const dynamic = 'force-dynamic';
 // GET /api/books/[id]/book.epub — serves the epub file with .epub extension
 // This endpoint exists solely for epub.js compatibility, which needs a URL ending in .epub
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
@@ -19,10 +18,9 @@ export async function GET(
 
   const { id } = await params;
 
-  const book = await queryOne<{ filePath: string; fileType: string }>(
+  const book = await queryOne<{ fileType: string }>(
     `
       SELECT
-        file_path AS filePath,
         file_type AS fileType
       FROM books
       WHERE id = ?1
@@ -35,17 +33,21 @@ export async function GET(
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
   }
 
-  if (!fs.existsSync(book.filePath)) {
-    return NextResponse.json({ error: "File not found on disk" }, { status: 404 });
+  if (book.fileType !== "epub") {
+    return NextResponse.json({ error: "Not an EPUB book" }, { status: 400 });
   }
 
-  const fileBuffer = fs.readFileSync(book.filePath);
+  const fileResponse = await fetch(new URL(`/api/books/${id}/file`, req.url), {
+    method: "GET",
+    headers: req.headers,
+  });
 
-  return new NextResponse(fileBuffer, {
-    headers: {
-      "Content-Type": "application/epub+zip",
-      "Content-Disposition": `inline; filename="book.epub"`,
-      "Cache-Control": "public, max-age=31536000",
-    },
+  const responseHeaders = new Headers(fileResponse.headers);
+  responseHeaders.set("Content-Type", "application/epub+zip");
+  responseHeaders.set("Content-Disposition", 'inline; filename="book.epub"');
+
+  return new NextResponse(fileResponse.body, {
+    status: fileResponse.status,
+    headers: responseHeaders,
   });
 }
