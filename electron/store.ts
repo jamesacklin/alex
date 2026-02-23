@@ -3,6 +3,16 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
+interface S3Config {
+  endpoint?: string;
+  region?: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+  prefix?: string;
+  pollInterval?: number;
+}
+
 interface StoreSchema {
   libraryPath: string;
   windowBounds?: {
@@ -12,6 +22,8 @@ interface StoreSchema {
     height: number;
   };
   nextauthSecret: string;
+  storageMode: 'local' | 's3';
+  s3Config?: S3Config;
 }
 
 function generateSecret(): string {
@@ -21,6 +33,7 @@ function generateSecret(): string {
 const DEFAULT_STORE: StoreSchema = {
   libraryPath: '',
   nextauthSecret: generateSecret(),
+  storageMode: 'local',
 };
 
 const storePath = path.join(app.getPath('userData'), 'config.json');

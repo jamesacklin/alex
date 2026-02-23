@@ -43,7 +43,7 @@ function getEnvVars(libraryPath: string) {
   const paths = getDataPaths(libraryPath);
   const nextauthSecret = store.get('nextauthSecret');
 
-  return {
+  const env: Record<string, string | undefined> = {
     ...process.env,
     DATABASE_PATH: paths.databasePath,
     LIBRARY_PATH: paths.libraryPath,
@@ -53,6 +53,21 @@ function getEnvVars(libraryPath: string) {
     NEXTAUTH_SECRET: nextauthSecret,
     NEXTAUTH_URL: `http://127.0.0.1:${PORT}`,
   };
+
+  // Pass S3 env vars when in S3 mode
+  const storageMode = store.get('storageMode');
+  const s3Config = store.get('s3Config');
+  if (storageMode === 's3' && s3Config) {
+    env.S3_BUCKET = s3Config.bucket;
+    env.S3_ACCESS_KEY_ID = s3Config.accessKey;
+    env.S3_SECRET_ACCESS_KEY = s3Config.secretKey;
+    if (s3Config.endpoint) env.S3_ENDPOINT = s3Config.endpoint;
+    if (s3Config.region) env.S3_REGION = s3Config.region;
+    if (s3Config.prefix) env.S3_PREFIX = s3Config.prefix;
+    if (s3Config.pollInterval) env.S3_POLL_INTERVAL = String(s3Config.pollInterval);
+  }
+
+  return env;
 }
 
 type WatcherDbAction = 'query-all' | 'query-one' | 'execute';
@@ -810,6 +825,73 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-library-path', () => {
     return store.get('libraryPath') || '';
+  });
+
+  ipcMain.handle('get-storage-mode', () => {
+    return store.get('storageMode') || 'local';
+  });
+
+  ipcMain.handle('get-s3-config', () => {
+    return store.get('s3Config') || null;
+  });
+
+  ipcMain.handle('save-s3-config', async (_event, config: {
+    endpoint?: string;
+    region?: string;
+    bucket: string;
+    accessKey: string;
+    secretKey: string;
+    prefix?: string;
+    pollInterval?: number;
+  }) => {
+    try {
+      store.set('s3Config', config);
+      store.set('storageMode', 's3');
+
+      // Stop watcher, clear books, restart with S3 config
+      if (watcherProcess) {
+        watcherProcess.kill();
+        watcherProcess = null;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      await clearBooksTable();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const libraryPath = store.get('libraryPath') || '';
+      startWatcher(libraryPath);
+
+      return { success: true };
+    } catch (error) {
+      console.error('[Electron] Failed to save S3 config:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('switch-to-local-storage', async () => {
+    try {
+      store.set('storageMode', 'local');
+
+      // Stop watcher, clear books, restart in local mode
+      if (watcherProcess) {
+        watcherProcess.kill();
+        watcherProcess = null;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      await clearBooksTable();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const libraryPath = store.get('libraryPath');
+      if (libraryPath) {
+        startWatcher(libraryPath);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('[Electron] Failed to switch to local storage:', error);
+      return { success: false, error: String(error) };
+    }
   });
 
   ipcMain.handle('select-library-path-initial', async () => {
