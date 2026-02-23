@@ -4,17 +4,18 @@
 [![Docker Image](https://img.shields.io/badge/docker-jamesacklin%2Falex-blue?logo=docker)](https://hub.docker.com/r/jamesacklin/alex)
 [![Docker Pulls](https://img.shields.io/docker/pulls/jamesacklin/alex)](https://hub.docker.com/r/jamesacklin/alex)
 
-A self-hosted personal library for your ebook collection. Drop PDFs or EPUBs into a folder and Alex takes care of the rest — extracting metadata, generating covers, and making everything readable from a clean, fast web interface.
+A self-hosted personal library for your ebook collection. Store books in a local folder or an S3-compatible bucket (Cloudflare R2, AWS S3, MinIO), and Alex handles metadata extraction, cover generation, and browser reading from one unified pipeline.
 
 ## Features
 
-- **Zero-effort ingestion.** A background watcher monitors a folder on disk. Add a PDF or EPUB and it appears in your library automatically, complete with title, author, and a cover pulled from the first page.
+- **Zero-effort ingestion (local or S3).** Alex can watch a local folder or poll an S3-compatible bucket for `.pdf` and `.epub` files. New or changed books are imported automatically with metadata and covers.
 - **Read in the browser.** Full-featured readers for both PDFs and EPUBs, with a modern floating tab bar interface:
   - **PDF:** Page navigation, continuous zoom, fit-to-width rendering, and full-text search
   - **EPUB:** Table of contents navigation, chapter skipping, continuous vertical scrolling, customizable font sizes, an `80ch` reading column, and themed typography using IBM Plex Serif
 - **Reading progress.** Every page turn and location change is saved. Books move through *not started → reading → completed* on their own. Progress appears on book cards and in the EPUB reader header with a precise percentage meter.
 - **Now Reading sections.** Library and collection views each show a dedicated *Now Reading* shelf, powered by reading-progress status and recency. Books shown there are excluded from the corresponding *All Books* grids to avoid duplicates.
 - **Public collections.** Share a collection with anyone via a link — no account required. Recipients can browse the book list and read PDFs and EPUBs directly in the browser. Share links use unguessable tokens and can be revoked at any time.
+- **Unified source-aware file serving.** All private and shared file routes use one source-driver pipeline, so local files and S3 objects are streamed through the same API behavior.
 - **Search and filter.** Find books by title or author with pill-style filter UI. Filter by format and reading status, sort by what matters to you.
 - **Multi-user.** Built-in user management with admin and user roles. Each reader keeps their own progress; admins can add or remove accounts.
 - **Docker-ready.** Ships as a single container with everything it needs. Mount your book folder, set one secret, and it runs.
@@ -28,6 +29,40 @@ Any collection can be shared by generating a share link from the collection deta
 - **Full reader, no account.** The public reader reuses the same `PdfReader` and `EpubReader` components as authenticated users. Reading progress for anonymous viewers is stored in the browser's `localStorage` rather than the server database.
 - **No user data exposed.** Public responses omit the collection owner's identity. No anonymous user records are created on the server.
 
+### Storage Backends
+
+Alex supports two storage modes:
+
+- **Local mode**: `watcher-rs` monitors `LIBRARY_PATH` and ingests local files.
+- **S3 mode**: `watcher-rs` polls a bucket using S3 credentials and ingests object keys (without persisting book files to local disk).
+
+Runtime mode selection:
+
+- **Web/Docker**: if `S3_BUCKET` is set, watcher runs in S3 mode; otherwise local mode.
+- **Electron**: mode is selected in onboarding/admin settings (`Local Folder` vs `S3 / R2 Bucket`).
+
+Required S3 env vars:
+
+```env
+S3_BUCKET=my-books
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+```
+
+Optional S3 env vars:
+
+```env
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_PREFIX=books/
+S3_POLL_INTERVAL=60
+```
+
+Notes:
+
+- Book files stay in object storage when using S3 mode; only metadata and covers are persisted locally.
+- Browser clients call Alex API routes, not the bucket directly. Most installs do not need bucket CORS for in-app reading.
+
 ## Tech Stack
 
 | Layer | What |
@@ -40,6 +75,20 @@ Any collection can be shared by generating a share link from the collection deta
 | Book rendering | [PDF.js](https://mozilla.github.io/pdf.js/) (PDFs), [epub.js](https://github.com/futurepress/epub.js) via [react-reader](https://github.com/gerhardsletten/react-reader) (EPUBs) |
 | Cover generation | Rust (`watcher-rs`) via [pdfium-render](https://crates.io/crates/pdfium-render) + fallback renderer |
 | File watching | Rust (`watcher-rs`) via [`notify`](https://crates.io/crates/notify) |
+
+## Unified File Serving
+
+Alex resolves book content through a source-driver registry in `src/lib/files/serve-book-file.ts`:
+
+- `local` driver: streams from disk with byte-range support
+- `s3` driver: streams through `watcher-rs s3-stream`
+
+All file routes use this same path:
+
+- Authenticated: `/api/books/[id]/file`, `/api/books/[id]/book.epub`
+- Public: `/api/shared/[token]/books/[bookId]/file`, `/api/shared/[token]/books/[bookId]/book.epub`
+
+For new providers, downstream consumers only need to register one new handler in `SOURCE_HANDLERS` and keep route contracts unchanged.
 
 ## Getting Started
 
@@ -106,6 +155,23 @@ volumes:
 
 Then follow steps 1, 3-5 from the "Docker (build from source)" section below.
 
+Optional S3 mode (instead of local `LIBRARY_PATH` ingestion):
+
+```yaml
+environment:
+  DATABASE_PATH: /app/data/library.db
+  COVERS_PATH: /app/data/covers
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+  NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+  S3_BUCKET: my-books
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+  S3_ENDPOINT: https://<account-id>.r2.cloudflarestorage.com
+  S3_REGION: auto
+  S3_PREFIX: books/
+  S3_POLL_INTERVAL: 60
+```
+
 ### Docker (build from source)
 
 1. Create a `.env` file in the project root:
@@ -119,7 +185,7 @@ Generate a random secret:
 openssl rand -base64 32
 ```
 
-2. **Point to your existing library.** Edit `docker-compose.yml` and change the library volume mount:
+2. **Local mode only:** Point to your existing library by editing `docker-compose.yml` and changing the library volume mount:
 
 ```yaml
 volumes:
@@ -128,7 +194,8 @@ volumes:
   - /Volumes/books:/app/data/library
 ```
 
-Or keep the default (`./library`) to create a new library folder next to your `docker-compose.yml`.
+Or keep the default (`./library`) to create a new library folder next to your `docker-compose.yml`.  
+If you are using S3 mode, skip this step and configure S3 env vars instead.
 
 3. Start the stack:
 
@@ -142,7 +209,9 @@ docker compose up -d --build
 
    **Change the password immediately after logging in.**
 
-5. **Add books:** Drop PDFs or EPUBs into your library folder (`/Volumes/books`). The file watcher will automatically detect and import them.
+5. **Add books:**
+- Local mode: drop PDFs/EPUBs into your library folder (`/Volumes/books`).
+- S3 mode: upload PDFs/EPUBs to your configured bucket/prefix.
 
 ### Local Development
 
@@ -162,10 +231,21 @@ In two terminals:
 
 ```sh
 pnpm dev            # Next.js dev server → http://localhost:3000
-pnpm watcher        # Rust watcher (watches ./data/library by default)
+pnpm watcher        # Rust watcher (local mode by default, S3 mode when S3_BUCKET is set)
 ```
 
 > **Rust toolchain required:** The watcher binary and database bridge are written in Rust. Install a stable toolchain with `rustup toolchain install stable`. The binary is built automatically by `pnpm db:push` and `pnpm watcher` if not already compiled.
+
+For local dev in S3 mode, set S3 env vars before starting the watcher:
+
+```sh
+export S3_BUCKET=my-books
+export S3_ACCESS_KEY_ID=...
+export S3_SECRET_ACCESS_KEY=...
+export S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+export S3_REGION=auto
+pnpm watcher
+```
 
 ### Electron Development
 
@@ -176,6 +256,7 @@ pnpm electron:dev
 ```
 
 This runs Electron with the internal app-managed Next server on `http://localhost:3210`.
+Electron starts and manages its own watcher process (local or S3 mode based on app settings). Do not run `pnpm watcher` separately when using `pnpm electron:dev`.
 
 ### Useful scripts
 
@@ -185,7 +266,7 @@ This runs Electron with the internal app-managed Next server on `http://localhos
 | `pnpm dev` | Next.js development server |
 | `pnpm build` | Production build |
 | `pnpm start` | Production server |
-| `pnpm watcher` | Rust file watcher (`watcher-rs`); builds the binary if not found |
+| `pnpm watcher` | Rust watcher (`watcher-rs`); local mode by default, S3 mode when `S3_BUCKET` is set |
 | `pnpm watcher:build` | Build the `watcher-rs` release binary |
 | `pnpm electron:dev` | Electron dev mode (app-managed server on `:3210`) |
 | `pnpm db:push` | Apply schema to the database (uses Rust bridge) |
