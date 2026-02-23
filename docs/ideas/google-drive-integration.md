@@ -8,12 +8,13 @@ Allow users to connect their Google Drive account to Alex, browse/monitor their 
 
 ## Architecture Summary
 
-Alex currently works like this:
-- A **Rust file watcher** (`watcher-rs`) monitors a local `LIBRARY_PATH` directory for `.pdf` and `.epub` files, extracts metadata/covers, and inserts rows into a **SQLite** database via the `books` table.
-- The **Next.js frontend** queries the `books` table and serves files from local disk paths (`/api/books/[id]/file`).
-- **Auth** uses NextAuth v5 with a Credentials provider (email/password), JWT sessions, stored in a `users` table.
+Alex now has a source-aware data and file-serving architecture:
 
-The Google Drive integration adds a parallel ingestion path: instead of watching a local directory, a server-side poller queries the Google Drive API for PDFs/EPUBs, downloads them into the local library, and lets the existing watcher pipeline handle indexing. The user authenticates via Google OAuth to grant Drive read access.
+- `books` includes `source` metadata (`local` / `s3` today).
+- All private and shared file routes use the same source-driver registry (`serveBookFile` + `SOURCE_HANDLERS`).
+- Ingestion can vary by provider without changing reader route contracts.
+
+Google Drive should be integrated as another source in this model, not as a separate route stack.
 
 ---
 
@@ -139,11 +140,9 @@ The sync process:
      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE SET NULL
    );
    ```
-3. **Download new/changed files** — For files not yet synced (or where `drive_md5` changed):
-   - Download via Drive API `files.get` with `alt=media`.
-   - Save to `LIBRARY_PATH/google-drive/{driveFileId}/{filename}`.
-   - The existing `watcher-rs` will detect the new file, extract metadata/cover, and insert it into `books`.
-   - After the watcher processes it, update `google_drive_files.book_id` by matching on `file_path`.
+3. **Sync new/changed files** — For files not yet synced (or where `drive_md5` changed), choose one model:
+   - **Preferred (source-native):** Keep Drive-backed rows in `books` (`source='google-drive'`) and stream via a `google-drive` handler in `SOURCE_HANDLERS`.
+   - **Fallback (local mirror):** Download to `LIBRARY_PATH/google-drive/{driveFileId}/{filename}` and let local watcher index mirrored files.
 4. **Handle deletions** — Files removed from Drive: optionally remove the local copy and let the watcher handle the book deletion. This should be a user preference (keep local copy vs. mirror Drive deletions).
 
 ### 3.2 Sync Trigger Mechanisms
@@ -167,19 +166,13 @@ Three ways sync can happen:
 
 ## Phase 4: Reading Google Drive Files
 
-### 4.1 No Reader Changes Needed
+### 4.1 Reader Contract Stays Stable
 
-Once a Drive file is downloaded to `LIBRARY_PATH/google-drive/...`, the existing watcher indexes it into the `books` table with a `file_path`. The existing `/api/books/[id]/file` route serves files by reading from `file_path`, and the EPUB/PDF readers work unchanged.
+Reader pages and route URLs remain unchanged. Provider-specific behavior should be implemented in `serveBookFile` by adding a `google-drive` source handler.
 
 ### 4.2 Source Attribution in UI
 
-Add a `source` column to the `books` table (or use the `google_drive_files` join) to display a small Google Drive icon/badge on books that originated from Drive. This helps the user distinguish local vs. Drive-synced books.
-
-```sql
-ALTER TABLE books ADD COLUMN source TEXT DEFAULT 'local' NOT NULL;
-```
-
-The watcher would need a small update: when inserting books from the `google-drive/` subdirectory, set `source = 'google-drive'`. Alternatively, derive this from the `file_path` containing `google-drive/` at query time to avoid changing the Rust watcher.
+The `books.source` column already exists. Drive integration should set `source='google-drive'` for Drive-backed rows and show a provider badge in the library UI.
 
 ### 4.3 Lazy/On-Demand Download (Future Enhancement)
 
@@ -217,7 +210,7 @@ The existing `/api/library/events` SSE endpoint polls a `library_version` counte
 ### Migration & Schema
 | File | Description |
 |------|-------------|
-| `src/lib/db/migrations/0001_google_drive.sql` | New tables: `google_drive_connections`, `google_drive_files`; `ALTER TABLE books ADD COLUMN source` |
+| `src/lib/db/migrations/0001_google_drive.sql` | New tables: `google_drive_connections`, `google_drive_files` |
 | `scripts/db-push.js` | Update to apply new migration |
 
 ### Google Drive Auth
@@ -242,6 +235,7 @@ The existing `/api/library/events` SSE endpoint polls a `library_version` counte
 | `src/lib/google-drive/sync.ts` | Core sync logic: list, diff, download, track |
 | `src/app/api/google-drive/sync/route.ts` | `POST` trigger sync |
 | `src/app/api/google-drive/webhook/route.ts` | Drive push notification receiver (Phase 5) |
+| `src/lib/files/serve-book-file.ts` | Register `google-drive` source handler in `SOURCE_HANDLERS` |
 
 ### Frontend
 | File | Description |
@@ -289,6 +283,7 @@ For Electron, the OAuth flow will need to open the system browser and capture th
 
 1. **Phase 1** — OAuth + token storage (env setup, migration, auth routes, token refresh)
 2. **Phase 2** — File/folder listing APIs + settings UI (integrations page, connect/disconnect)
-3. **Phase 3** — Sync engine + manual sync (download files, let watcher index, sync status)
+3. **Phase 3** — Sync engine + manual sync (source-native or local-mirror model)
 4. **Phase 4** — Source attribution in library UI (badge on Drive-sourced books)
-5. **Phase 5** — Webhook-based change monitoring (optional, for publicly-hosted deployments)
+5. **Phase 5** — Register `google-drive` handler in `SOURCE_HANDLERS` and reuse existing file routes
+6. **Phase 6** — Webhook-based change monitoring (optional, for publicly-hosted deployments)

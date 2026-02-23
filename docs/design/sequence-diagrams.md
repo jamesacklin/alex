@@ -10,6 +10,7 @@ This diagram shows how the system detects and propagates library changes in near
 sequenceDiagram
     participant User
     participant LibFolder as Library Folder
+    participant S3 as S3 / R2 Bucket
     participant Watcher as watcher-rs
     participant DB as SQLite DB
     participant SSE as SSE Endpoint
@@ -35,6 +36,13 @@ sequenceDiagram
     Watcher->>DB: INSERT INTO books
     Watcher->>DB: incrementLibraryVersion()
 
+    Note over Watcher,S3: S3 Poll Cycle (alternative mode)
+    Watcher->>S3: List objects + compute diff
+    S3-->>Watcher: Added/changed/removed keys
+    Watcher->>S3: GetObject for changed keys
+    Watcher->>DB: Upsert/Delete books (source='s3')
+    Watcher->>DB: incrementLibraryVersion()
+
     Note over SSE,Client: Update Detection
     SSE->>DB: getLibraryVersion()
     DB-->>SSE: New version: 12346
@@ -55,8 +63,16 @@ sequenceDiagram
     Client->>API: GET /read/[bookId]
     API->>DB: Get book metadata
     Client->>API: GET /api/books/[id]/book.epub
-    API->>LibFolder: Read epub file
-    API-->>Client: Stream epub data
+    API->>API: Resolve source driver
+    alt Local source
+        API->>LibFolder: Read epub file
+        API-->>Client: Stream epub data
+    else S3 source
+        API->>Watcher: watcher-rs s3-stream --key ...
+        Watcher->>S3: GetObject (or range)
+        Watcher-->>API: Streamed bytes
+        API-->>Client: Stream epub data
+    end
     Client->>Client: Render with epub.js
 
     Note over User,DB: Progress Tracking
@@ -72,17 +88,20 @@ sequenceDiagram
 3. **Cross-process Signaling**: Watcher and API share state via database
 4. **Near Real-time**: Updates detected within 2 seconds, pushed immediately
 5. **Efficient Updates**: Only refreshes when actual changes occur
+6. **Source parity**: The same SSE/update signaling works for local and S3 ingestion
 
 ---
 
 ## Book Ingestion Flow
 
-Detailed flow showing how a new book is processed when added to the library folder.
+Detailed flow showing how a new book is processed in local mode (filesystem events) or S3 mode (poll diff).
 
 ```mermaid
 sequenceDiagram
     participant FS as File System
+    participant S3 as S3 / R2 Bucket
     participant Notify as notify crate
+    participant Poll as S3 Poller
     participant Handler as handle_add
     participant PDF as lopdf
     participant EPUB as quick-xml + zip
@@ -91,11 +110,21 @@ sequenceDiagram
     participant Pdfium as pdfium-render
     participant Glyph as ab_glyph + imageproc
 
-    FS->>Notify: File added: book.pdf
-    Notify->>Notify: Debounce (2s stability threshold)
-    Notify->>Handler: dispatch add event
+    alt Local mode
+        FS->>Notify: File added: book.pdf
+        Notify->>Notify: Debounce (2s stability threshold)
+        Notify->>Handler: dispatch add event
+    else S3 mode
+        Poll->>S3: List objects + diff
+        S3-->>Poll: Added/changed key list
+        Poll->>Handler: dispatch add/change event
+    end
 
-    Handler->>FS: Read file
+    alt Local source
+        Handler->>FS: Read file
+    else S3 source
+        Handler->>S3: GetObject
+    end
     Handler->>Handler: Compute SHA-256 hash
 
     alt Check for duplicate
@@ -141,6 +170,7 @@ sequenceDiagram
 5. **Cover Generation**: `pdfium-render` for PDFs, ZIP extraction for EPUBs, synthetic fallback via `ab_glyph`
 6. **Database Insert**: Atomic insert via `rusqlite`
 7. **Version Bump**: Triggers real-time update to all clients
+8. **Source metadata**: S3 books persist `source`, `s3_bucket`, and `s3_etag`
 
 ---
 
@@ -207,7 +237,10 @@ sequenceDiagram
     participant UI as PDF Reader UI
     participant Worker as PDF.js Worker
     participant API
+    participant SourceDriver as Source Driver
     participant FS as File System
+    participant S3 as S3 / R2 Bucket
+    participant Streamer as watcher-rs s3-stream
     participant DB as Database
 
     User->>UI: Click "Open Book"
@@ -223,8 +256,18 @@ sequenceDiagram
 
     UI->>Worker: Initialize PDF.js
     UI->>API: GET /api/books/[id]/file
-    API->>FS: Read PDF file
-    FS-->>API: File stream
+    API->>SourceDriver: Resolve by books.source
+    alt source=local
+        SourceDriver->>FS: Read PDF file
+        FS-->>SourceDriver: File stream
+        SourceDriver-->>API: Stream
+    else source=s3
+        SourceDriver->>Streamer: s3-stream --key --range?
+        Streamer->>S3: GetObject/GetObjectRange
+        S3-->>Streamer: Object bytes
+        Streamer-->>SourceDriver: Stream + metadata header
+        SourceDriver-->>API: Stream
+    end
     API-->>Worker: PDF binary data
 
     Worker->>Worker: Parse PDF structure
@@ -254,6 +297,7 @@ sequenceDiagram
 4. **Streaming**: Large PDFs streamed incrementally
 5. **Debounced Saves**: Progress updates batched to reduce writes
 6. **Status Tracking**: Automatic status updates (not_started → reading → completed)
+7. **Unified source pipeline**: Local and S3 books use the same route contract
 
 ---
 
@@ -266,7 +310,10 @@ sequenceDiagram
     participant ReactReader as react-reader
     participant Rendition as epub.js Rendition
     participant API
+    participant SourceDriver as Source Driver
     participant FS as File System
+    participant S3 as S3 / R2 Bucket
+    participant Streamer as watcher-rs s3-stream
     participant DB as Database
 
     User->>UI: Click "Open Book"
@@ -281,8 +328,17 @@ sequenceDiagram
     API-->>UI: Progress data
 
     UI->>API: GET /api/books/[id]/book.epub
-    API->>FS: Read EPUB file
-    FS-->>API: EPUB binary
+    API->>SourceDriver: Resolve by books.source
+    alt source=local
+        SourceDriver->>FS: Read EPUB file
+        FS-->>SourceDriver: EPUB binary
+    else source=s3
+        SourceDriver->>Streamer: s3-stream --key
+        Streamer->>S3: GetObject
+        S3-->>Streamer: EPUB binary
+        Streamer-->>SourceDriver: Stream + metadata header
+    end
+    SourceDriver-->>API: EPUB binary
     API-->>UI: ArrayBuffer
 
     UI->>ReactReader: Initialize with ArrayBuffer
@@ -322,6 +378,7 @@ sequenceDiagram
 5. **Progress Meter**: Header displays precise percentage while reading
 6. **Scroll Restore**: Saved scroll fraction is restored when viewport dimensions match
 7. **Percentage Calculation**: epub.js generates location spine for progress tracking
+8. **Same API contract for all sources**: `.epub` endpoint behavior is unchanged by storage backend
 
 ---
 
@@ -456,7 +513,10 @@ sequenceDiagram
     participant Owner
     participant OwnerUI as Owner's Browser
     participant API as API Routes
+    participant SourceDriver as Source Driver
     participant DB as Database
+    participant FS as File System
+    participant S3 as S3 / R2 Bucket
     participant Viewer
     participant ViewerUI as Viewer's Browser
     participant LS as localStorage
@@ -493,6 +553,13 @@ sequenceDiagram
     ViewerUI->>ViewerUI: Navigate to /shared/[token]/read/[bookId]
     ViewerUI->>API: GET /api/shared/[token]/books/[bookId]/file
     API->>DB: Verify token + book membership
+    API->>SourceDriver: Resolve by books.source
+    alt source=local
+        SourceDriver->>FS: Read file
+    else source=s3
+        SourceDriver->>S3: Stream via watcher-rs
+    end
+    SourceDriver-->>API: Stream bytes
     API-->>ViewerUI: Stream book file
 
     ViewerUI->>LS: Load saved progress (if any)
@@ -569,9 +636,14 @@ sequenceDiagram
         Electron->>Next: Start embedded server on :3210
         Next->>DB: Run db:push (idempotent)
         Next->>DB: Run db:seed (idempotent)
-        Next->>Watcher: Start file watcher
-        Watcher->>DB: getLibraryPath()
-        Watcher->>Watcher: Monitor library folder
+        Next->>Watcher: Start watcher-rs
+        Watcher->>Watcher: Select local or S3 mode from config
+        alt Local mode
+            Watcher->>DB: getLibraryPath()
+            Watcher->>Watcher: Monitor library folder
+        else S3 mode
+            Watcher->>Watcher: Poll bucket + process diff
+        end
         Next-->>Electron: Server ready
         Electron->>Browser: Create window → http://localhost:3210
         Browser->>Next: GET /library
@@ -599,7 +671,7 @@ sequenceDiagram
 ### Electron Architecture Notes
 
 1. **Embedded Server**: Next.js runs as a child process managed by Electron
-2. **Port 3210**: Fixed port for internal communication (no conflicts - local only)
+2. **Port 3210**: Fixed localhost port for internal communication
 3. **Single Instance**: Electron ensures only one app instance runs at a time
 4. **Data Location**: SQLite database and library stored in platform-specific app data:
    - macOS: `~/Library/Application Support/alex`
@@ -608,3 +680,4 @@ sequenceDiagram
 5. **Rust Binary**: `watcher-rs` bundled at `process.resourcesPath/watcher-rs/` with PDFium library; no native Node modules required
 6. **Auto-updates**: Electron-builder provides update checking and installation
 7. **First-run Setup**: Setup route creates initial admin account before library access
+8. **Storage mode selection**: Onboarding/admin lets users switch between local folder and S3 bucket backends

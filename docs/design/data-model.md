@@ -1,6 +1,6 @@
 # Data Model
 
-This document describes the database schema for Alex, including all tables, relationships, and key constraints.
+This document describes the database schema for Alex, including all tables, relationships, and key constraints across local-folder and S3-backed book sources.
 
 ## Entity Relationship Diagram
 
@@ -35,6 +35,9 @@ erDiagram
         int page_count
         int added_at
         int updated_at
+        text source
+        text s3_bucket
+        text s3_etag
     }
 
     reading_progress {
@@ -113,13 +116,16 @@ Stores book metadata and file information for all books in the library.
 | author | TEXT | NULL | Book author (if available in metadata) |
 | description | TEXT | NULL | Book description/summary (if available) |
 | file_type | TEXT | NOT NULL | File format: 'pdf' or 'epub' |
-| file_path | TEXT | NOT NULL, UNIQUE | Absolute path to file in library folder |
+| file_path | TEXT | NOT NULL, UNIQUE | Local absolute path (`source='local'`) or S3 object key (`source='s3'`) |
 | file_size | INTEGER | NOT NULL | File size in bytes |
 | file_hash | TEXT | NOT NULL, UNIQUE | SHA-256 hash of file contents (for duplicate detection) |
 | cover_path | TEXT | NULL | Absolute path to cover image (400x600 PNG) |
 | page_count | INTEGER | NULL | Number of pages (PDF only) |
 | added_at | INTEGER | NOT NULL | Unix timestamp when book was added |
 | updated_at | INTEGER | NOT NULL | Unix timestamp of last modification |
+| source | TEXT | NOT NULL, DEFAULT 'local' | Storage source: `'local'` or `'s3'` |
+| s3_bucket | TEXT | NULL | Bucket name for S3-backed books; `NULL` for local books |
+| s3_etag | TEXT | NULL | Last observed object ETag for S3 change detection |
 
 **Indexes:**
 - Primary key on `id`
@@ -135,6 +141,8 @@ Stores book metadata and file information for all books in the library.
 - `page_count` is NULL for EPUBs (reflowable format, no fixed pages)
 - `cover_path` is NULL if cover generation failed
 - `file_hash` allows different files with same content to be deduplicated
+- `source='local'` rows are ingested from `LIBRARY_PATH`; `source='s3'` rows are ingested by S3 polling
+- `s3_etag` is used for cheap S3 change detection before full reprocessing
 
 ---
 
@@ -375,6 +383,14 @@ WHERE file_hash = ?
 LIMIT 1;
 ```
 
+**List S3 books in a bucket (for diff computation):**
+```sql
+SELECT id, title, file_path, file_type, cover_path, s3_etag
+FROM books
+WHERE source = 's3'
+  AND s3_bucket = ?;
+```
+
 **Get shared collection by token:**
 ```sql
 SELECT * FROM collections
@@ -452,6 +468,7 @@ rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push &&
 - **Primary Keys**: All tables use UUID v4 for globally unique identifiers
 - **Foreign Keys**: Enforced with appropriate cascade behavior
 - **Unique Constraints**: Prevent duplicate emails and file paths
+- **Source Integrity**: `books.source` is always present (`local`/`s3`), with optional S3 metadata columns
 - **Not Null**: Required fields enforced at database level
 - **Defaults**: Sensible defaults for timestamps and status values
 
@@ -467,7 +484,7 @@ rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push &&
 
 - **Application Level**: Rust types enforce correct data shapes before INSERT/UPDATE; Next.js API routes validate input before passing to the DB bridge
 - **Database Level**: SQLite enforces constraints (NOT NULL, UNIQUE, FK)
-- **File Validation**: Watcher checks file extensions (.pdf, .epub only)
+- **File Validation**: Ingestion pipeline checks file extensions (.pdf, .epub only)
 - **Hash Validation**: SHA-256 prevents silent data corruption
 
 ---
@@ -496,5 +513,5 @@ All foreign keys are indexed automatically. Additional indexes:
 - **Multi-user Capable**: Supports multiple users with isolated progress
 - **Read-heavy Workload**: Most queries are SELECTs (library browsing)
 - **Write Bottleneck**: Watcher and progress updates are primary writes
-- **File Storage**: Books stored on filesystem (not in database)
+- **File Storage**: Books are stored in local filesystem or S3-compatible object storage (not in database)
 - **Cover Storage**: PNG covers separate from database (reduces blob storage)

@@ -8,7 +8,8 @@ Alex is built as a modern web application with the following key components:
 
 - **Next.js 16** - Full-stack React framework with App Router
 - **SQLite** - Embedded database for metadata and user data, accessed via a Rust bridge binary (`watcher-rs`)
-- **Rust File Watcher** - Standalone Rust binary (`watcher-rs`) monitoring the library folder using the `notify` crate
+- **Rust Ingestion Engine** - Standalone Rust binary (`watcher-rs`) that runs in local-folder or S3-polling mode
+- **Source-aware File Serving** - Unified source driver pipeline for local and S3-backed book streaming
 - **Real-time Updates** - Server-Sent Events (SSE) for live library updates
 - **Multi-format Readers** - PDF.js for PDFs, epub.js for EPUBs
 
@@ -33,21 +34,27 @@ graph TB
     subgraph "Next.js App Router"
         Pages[Pages & Layouts]
         API[API Routes]
+        SourceDriver[Source Driver<br/>serveBookFile + SOURCE_HANDLERS]
         Auth[NextAuth.js]
         SSEEndpoint[/api/library/events]
     end
 
-    subgraph "File System"
+    subgraph "Storage Backends"
         LibFolder[Library Folder<br/>~/library]
+        S3Bucket[S3 / R2 Bucket]
         Covers[Cover Images<br/>data/covers/]
         DB[(SQLite Database<br/>library.db)]
     end
 
     subgraph "Rust Watcher (watcher-rs)"
         Notify[notify crate<br/>File Watcher]
+        S3Poll[S3 Poller]
         HandleAdd[handle_add]
         HandleChange[handle_change]
         HandleDelete[handle_delete]
+        S3HandleAdd[handle_s3_add]
+        S3HandleChange[handle_s3_change]
+        S3HandleDelete[handle_s3_delete]
         Extract[Metadata Extractors<br/>lopdf / quick-xml]
         CoverGen[Cover Generator<br/>pdfium-render / ab_glyph]
     end
@@ -77,11 +84,17 @@ graph TB
     SSEEndpoint -->|library_version| SSE
     SSE -->|Show Refresh Banner| UI
 
-    %% File Watching Flow
+    %% Local File Watching Flow
     LibFolder -.->|File Added/Changed/Deleted| Notify
     Notify -->|add| HandleAdd
     Notify -->|change| HandleChange
     Notify -->|remove| HandleDelete
+
+    %% S3 Polling Flow
+    S3Poll -.->|ListObjects diff| S3Bucket
+    S3Poll -->|added| S3HandleAdd
+    S3Poll -->|changed| S3HandleChange
+    S3Poll -->|removed| S3HandleDelete
 
     %% Add Book Flow
     HandleAdd -->|Read File| LibFolder
@@ -101,15 +114,32 @@ graph TB
     HandleDelete -->|Remove Cover| Covers
     HandleDelete -->|incrementLibraryVersion| DB
 
+    %% S3 Add/Change/Delete Flow
+    S3HandleAdd -->|GetObject| S3Bucket
+    S3HandleAdd -->|Extract Metadata| Extract
+    S3HandleAdd -->|Generate Cover| CoverGen
+    S3HandleAdd -->|Insert Book Record| DB
+    S3HandleAdd -->|incrementLibraryVersion| DB
+    S3HandleChange -->|GetObject + compare hash| S3Bucket
+    S3HandleChange -->|Update Book + s3_etag| DB
+    S3HandleChange -->|incrementLibraryVersion| DB
+    S3HandleDelete -->|Delete Record| DB
+    S3HandleDelete -->|Remove Cover| Covers
+    S3HandleDelete -->|incrementLibraryVersion| DB
+
     %% Reading Flow - PDF
     PDF -->|Request Page| API
-    API -->|/api/books/[id]/file| LibFolder
+    API -->|resolve source| SourceDriver
+    SourceDriver -->|local| LibFolder
+    SourceDriver -->|s3-stream| S3Bucket
     PDF -->|Save Progress| API
     API -->|Update Progress| DB
 
     %% Reading Flow - EPUB
     EPUB -->|Request Book| API
-    API -->|/api/books/[id]/book.epub| LibFolder
+    API -->|resolve source| SourceDriver
+    SourceDriver -->|local| LibFolder
+    SourceDriver -->|s3-stream| S3Bucket
     EPUB -->|Save Location| API
     API -->|Update Progress| DB
 
@@ -120,9 +150,13 @@ graph TB
     PubUI -->|Read Book| PubPDF
     PubUI -->|Read Book| PubEPUB
     PubPDF -->|Request File| API
-    API -->|/api/shared/[token]/books/[bookId]/file| LibFolder
+    API -->|resolve source| SourceDriver
+    SourceDriver -->|local| LibFolder
+    SourceDriver -->|s3-stream| S3Bucket
     PubEPUB -->|Request File| API
-    API -->|/api/shared/[token]/books/[bookId]/book.epub| LibFolder
+    API -->|resolve source| SourceDriver
+    SourceDriver -->|local| LibFolder
+    SourceDriver -->|s3-stream| S3Bucket
     PubPDF -->|Save Progress| LocalStorage
     PubEPUB -->|Save Progress| LocalStorage
 
@@ -149,9 +183,9 @@ graph TB
 
     class UI,SSE,PDF,EPUB client
     class PubUI,PubPDF,PubEPUB,LocalStorage client
-    class Pages,API,Auth,SSEEndpoint server
-    class LibFolder,Covers,DB,Users,Books,Progress,Collections,Settings storage
-    class Notify,HandleAdd,HandleChange,HandleDelete,Extract,CoverGen process
+    class Pages,API,SourceDriver,Auth,SSEEndpoint server
+    class LibFolder,S3Bucket,Covers,DB,Users,Books,Progress,Collections,Settings storage
+    class Notify,S3Poll,HandleAdd,HandleChange,HandleDelete,S3HandleAdd,S3HandleChange,S3HandleDelete,Extract,CoverGen process
 ```
 
 ## Component Descriptions
@@ -231,6 +265,8 @@ Public (no auth):
 - `GET /api/shared/[token]/books/[bookId]/file` - Public book file streaming (scoped to collection)
 - `GET /api/shared/[token]/books/[bookId]/book.epub` - Public EPUB file (scoped to collection)
 
+All four book-file endpoints (authenticated + public, PDF + EPUB) delegate to the same source-aware helper: `src/lib/files/serve-book-file.ts`.
+
 **NextAuth.js**
 - Credential-based authentication
 - JWT sessions
@@ -244,13 +280,35 @@ Public (no auth):
 - Pushes update events to all connected clients
 - Automatic keepalive every 15 seconds
 
-### File System
+### Source Driver Pipeline
 
-**Library Folder**
+`serveBookFile()` resolves `books.source` and dispatches to `SOURCE_HANDLERS`:
+
+- `local` driver streams from `file_path` on disk with HTTP range support.
+- `s3` driver validates env config and streams via `watcher-rs s3-stream`.
+
+This keeps route behavior consistent across:
+
+- `/api/books/[id]/file`
+- `/api/books/[id]/book.epub`
+- `/api/shared/[token]/books/[bookId]/file`
+- `/api/shared/[token]/books/[bookId]/book.epub`
+
+Adding another provider is a single registry extension, not a route rewrite.
+
+### Storage Backends
+
+**Local Library Folder**
 - User-specified directory (default: `./data/library`)
 - Contains PDF and EPUB files
-- Monitored by file watcher
+- Monitored in local mode via `notify`
 - Mounted as Docker volume
+
+**S3-compatible Bucket**
+- Supports Cloudflare R2, AWS S3, MinIO, and compatible APIs
+- Enabled when runtime config includes `S3_BUCKET` (+ credentials)
+- Objects are scanned/polled by `watcher-rs`; `books.file_path` stores the object key
+- Book bytes are streamed on demand via `watcher-rs s3-stream`
 
 **Cover Images**
 - PNG files generated from first page
@@ -266,19 +324,19 @@ Public (no auth):
 
 ### Rust Watcher (`watcher-rs`)
 
-The watcher is a standalone Rust binary that handles file monitoring, metadata extraction, cover generation, and database writes. It also exposes a `db` subcommand used by the Next.js app for all database access.
+The watcher is a standalone Rust binary that handles ingestion, metadata extraction, cover generation, and database writes. It also exposes `db` and `s3-stream` subcommands used by the Next.js app.
 
-**File Watcher (`notify` crate)**
-- Monitors library folder recursively for file events
-- Filters for `.pdf` and `.epub` files only (case-insensitive)
-- Custom debouncing: 500ms poll interval with 2-second stability threshold (replaces chokidar's `awaitWriteFinish`)
-- Runs as a background process in production (Docker) or as a managed child process (Electron)
+**Ingestion Modes**
+- Local mode: `notify` watches the library folder recursively for add/change/delete events
+- S3 mode: periodic object listing + diff on bucket/prefix (`S3_POLL_INTERVAL`)
+- Runtime chooses mode from config (`S3_BUCKET` set => S3 mode; otherwise local mode)
 
 **Event Handlers**
 - `handle_add` - New file detected: extract metadata, generate cover, insert DB record
 - `handle_change` - Existing file modified: re-hash, re-extract metadata, update DB record
 - `handle_delete` - File removed: delete DB record and cover image
-- Orphan cleanup on startup: removes DB entries for files that no longer exist on disk
+- `handle_s3_add` / `handle_s3_change` / `handle_s3_delete` - Equivalent S3 object lifecycle handlers
+- Orphan cleanup on startup applies to local books; S3 removals are diff-driven by the poller
 
 **Metadata Extractors**
 - PDF: `lopdf` for reading the Info dictionary (title, author, page count)
@@ -296,21 +354,22 @@ The watcher is a standalone Rust binary that handles file monitoring, metadata e
 - Next.js calls this via `src/lib/db/rust.ts`, which spawns the binary as a child process
 - This replaces the previous `better-sqlite3` + Drizzle ORM setup
 
+**S3 Stream Bridge**
+- The `watcher-rs s3-stream` subcommand streams object bytes to stdout with a JSON header
+- Next.js uses this for ranged/full responses while preserving the same HTTP contract as local files
+
 ## Data Flow
 
 ### Book Ingestion
-1. User drops `book.pdf` into library folder
-2. `notify` crate detects file addition
-3. Watcher debounces until file size is stable for 2 seconds
-4. Watcher reads file, computes SHA-256 hash via `sha2` crate
-5. Check database for duplicate hash (skip if exists)
-6. Extract metadata (title, author, page count) via `lopdf` (PDF) or `quick-xml` (EPUB)
-7. Generate cover image: `pdfium-render` for PDFs, ZIP extraction for EPUBs, synthetic fallback if both fail
-8. Insert book record into SQLite via `rusqlite`
-9. Increment `library_version` in settings table
-10. SSE endpoint detects version change within 2 seconds
-11. All connected clients receive update event
-12. Clients refresh their library view
+1. Runtime starts watcher in local mode or S3 mode.
+2. Local mode: `notify` detects file events from library folder.  
+   S3 mode: poller computes added/changed/removed object diff.
+3. Handler reads file/object bytes, computes SHA-256, and checks duplicates.
+4. Extract metadata via `lopdf` (PDF) or `quick-xml` + `zip` (EPUB).
+5. Generate cover (`pdfium-render`, EPUB extraction, or synthetic fallback).
+6. Insert/update/delete `books` rows (including `source`, `s3_bucket`, `s3_etag` for S3 records).
+7. Increment `settings.library_version`.
+8. SSE endpoint detects the version bump and clients refresh.
 
 ### Reading Experience
 1. User clicks book card in library
@@ -318,7 +377,7 @@ The watcher is a standalone Rust binary that handles file monitoring, metadata e
 3. Fetch book metadata from API
 4. Fetch reading progress for current user
 5. Load appropriate reader (PDF.js or epub.js)
-6. Stream book file from API
+6. API resolves `books.source` through source drivers (local disk vs S3 stream)
 7. Render at last saved position
 8. For EPUB, restore saved scroll fraction when viewport dimensions still match
 9. On page/location change, debounce progress update
@@ -367,22 +426,24 @@ The watcher is a standalone Rust binary that handles file monitoring, metadata e
 ### Development
 - Next.js dev server on port 3000
 - Rust watcher (`watcher-rs`) runs in a separate terminal via `pnpm watcher`
+- `pnpm watcher` auto-selects local vs S3 mode based on env vars
 - SQLite database in `./data/library.db`
 - Requires a Rust toolchain (`rustup`) for building the watcher binary
 - Hot module replacement for fast iteration
 
 ### Production (Docker)
 - Single container with Node.js 22 and the pre-compiled `watcher-rs` binary
-- Watcher runs as a backgrounded process alongside the Next.js server
+- Watcher runs as a backgrounded process alongside the Next.js server (local or S3 mode)
 - Next.js production server (standalone mode)
 - Persistent Docker volume for `/app/data`
-- Environment variables for configuration (`DATABASE_PATH`, `LIBRARY_PATH`, `COVERS_PATH`)
+- Environment variables for configuration (`DATABASE_PATH`, `LIBRARY_PATH`, `COVERS_PATH`, `S3_*`)
 
 ### Desktop (Electron)
 - Cross-platform desktop application for macOS, Windows, and Linux
 - Embedded Next.js server running on localhost:3210
-- Rust watcher (`watcher-rs`) binary bundled as a resource, spawned as a child process by Electron
+- Rust watcher (`watcher-rs`) binary bundled as a resource, spawned and supervised by Electron
 - SQLite database and library stored in platform-specific app data directory
+- User-selectable storage mode in onboarding/admin (`Local Folder` or `S3 / R2 Bucket`)
 - Auto-updater support for seamless updates
 - Platform-specific builds:
   - macOS: .app bundle (Apple Silicon)
@@ -399,7 +460,8 @@ The watcher is a standalone Rust binary that handles file monitoring, metadata e
 | Styling | Tailwind CSS v4, shadcn/ui |
 | Authentication | NextAuth.js v5 |
 | Database | SQLite via Rust (`rusqlite`, statically linked); Next.js accesses DB through the `watcher-rs` binary bridge |
-| File Watching | Rust `notify` crate (via `watcher-rs` binary) |
+| Ingestion | Rust `notify` (local mode) or S3 poller (S3 mode), both in `watcher-rs` |
+| File Serving | Source-driver pipeline (`serveBookFile` + `SOURCE_HANDLERS`) |
 | PDF Rendering | PDF.js (browser) |
 | EPUB Rendering | epub.js, react-reader |
 | PDF/EPUB Metadata | `lopdf`, `quick-xml` + `zip` (Rust, in `watcher-rs`) |
