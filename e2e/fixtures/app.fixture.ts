@@ -176,6 +176,12 @@ export const test = base.extend<AppFixture>({
     const launchArgs = [electronEntry, `--user-data-dir=${testUserDataDir}`];
     if (process.env.CI) {
       launchArgs.push('--no-sandbox');
+      // Avoid noisy GPU process initialization failures in headless/Xvfb CI.
+      launchArgs.push('--disable-gpu');
+      launchArgs.push('--disable-dev-shm-usage');
+      if (process.env.E2E_USE_SWIFTSHADER === '1') {
+        launchArgs.push('--use-gl=swiftshader');
+      }
     }
 
     const app = await electron.launch({
