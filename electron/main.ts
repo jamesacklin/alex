@@ -423,6 +423,7 @@ function startServer(libraryPath: string) {
   const serverEnv = useStandaloneServerForE2E
     ? {
         ...env,
+        ELECTRON_RUN_AS_NODE: '1',
         HOSTNAME: '127.0.0.1',
       }
     : isDev

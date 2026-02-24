@@ -62,7 +62,9 @@ jobs:
       - run: mkdir -p data && pnpm db:push && pnpm db:seed
       # xvfb-run provides a virtual framebuffer on Linux, which has no
       # display server. Electron requires a display to launch windows.
-      - run: xvfb-run --auto-servernum pnpm exec playwright test --config=e2e/playwright.config.ts
+      # dbus-run-session provides a valid D-Bus session bus so Electron/Chromium
+      # does not emit repeated bus connection errors under CI.
+      - run: env -u DBUS_SESSION_BUS_ADDRESS dbus-run-session -- xvfb-run --auto-servernum pnpm exec playwright test --config=e2e/playwright.config.ts
         env:
           E2E_PLATFORM: electron
       - uses: actions/upload-artifact@v4
