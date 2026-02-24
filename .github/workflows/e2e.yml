@@ -17,8 +17,28 @@ env:
   NEXTAUTH_SECRET: e2e-test-secret-do-not-use-in-production
 
 jobs:
+  build-watcher:
+    name: build-watcher
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: watcher-rs -> target
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+      - run: cargo build --manifest-path watcher-rs/Cargo.toml --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: watcher-rs-binary
+          path: watcher-rs/target/release/watcher-rs
+          retention-days: 1
+
   e2e-web:
     name: e2e-web
+    needs: build-watcher
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +58,13 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
       - run: pnpm exec playwright install-deps chromium
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-      - run: pnpm build:native
+      - uses: actions/download-artifact@v4
+        with:
+          name: watcher-rs-binary
+          path: watcher-rs/target/release
+      - run: chmod +x watcher-rs/target/release/watcher-rs
       - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      - run: pnpm build
       - run: pnpm exec playwright test --config=e2e/playwright.config.ts
         env:
           E2E_PLATFORM: web
@@ -51,6 +76,7 @@ jobs:
 
   e2e-electron:
     name: e2e-electron
+    needs: build-watcher
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +98,11 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
       - run: pnpm exec playwright install-deps chromium
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-      - run: pnpm build:native
+      - uses: actions/download-artifact@v4
+        with:
+          name: watcher-rs-binary
+          path: watcher-rs/target/release
+      - run: chmod +x watcher-rs/target/release/watcher-rs
       # Build Next.js with ALEX_DESKTOP=true so the client bundle knows
       # it is running in desktop mode (NEXT_PUBLIC_ALEX_DESKTOP).
       - run: pnpm build
