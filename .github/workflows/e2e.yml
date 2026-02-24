@@ -26,10 +26,18 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Get Playwright version
+        id: pw-version
+        run: echo "version=$(pnpm exec playwright --version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - run: pnpm exec playwright install --with-deps chromium
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      - run: pnpm exec playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
       - run: pnpm build:native
       - run: mkdir -p data && pnpm db:push && pnpm db:seed
       - run: pnpm exec playwright test --config=e2e/playwright.config.ts
@@ -50,12 +58,20 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Get Playwright version
+        id: pw-version
+        run: echo "version=$(pnpm exec playwright --version)" >> "$GITHUB_OUTPUT"
       # Playwright needs chromium even for Electron tests because the
       # default browser context is chromium-backed.
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - run: pnpm exec playwright install --with-deps chromium
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      - run: pnpm exec playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
       - run: pnpm build:native
       # Build Next.js with ALEX_DESKTOP=true so the client bundle knows
       # it is running in desktop mode (NEXT_PUBLIC_ALEX_DESKTOP).
