@@ -5,7 +5,6 @@ import { _electron as electron, type ElectronApplication } from 'playwright';
 import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
 import { createServer } from 'net';
 
 type AppFixture = {
@@ -167,7 +166,7 @@ export const test = base.extend<AppFixture>({
     const configPath = path.join(testUserDataDir, 'config.json');
     const storeConfig = {
       libraryPath: testLibraryPath,
-      nextauthSecret: crypto.randomBytes(32).toString('hex'),
+      nextauthSecret: process.env.NEXTAUTH_SECRET || 'e2e-test-secret-do-not-use-in-production',
     };
     fs.writeFileSync(configPath, JSON.stringify(storeConfig, null, 2), 'utf8');
     console.log('[Fixture] Created Electron store config');

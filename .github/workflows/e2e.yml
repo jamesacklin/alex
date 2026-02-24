@@ -41,8 +41,8 @@ jobs:
           name: e2e-web-report
           path: playwright-report/
 
-  e2e-electron-linux:
-    name: e2e-electron-linux
+  e2e-electron:
+    name: e2e-electron
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,43 +57,36 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential
       - run: pnpm build:native
+      # Build Next.js with ALEX_DESKTOP=true so the client bundle knows
+      # it is running in desktop mode (NEXT_PUBLIC_ALEX_DESKTOP).
       - run: pnpm build
+        env:
+          ALEX_DESKTOP: 'true'
+      # The standalone output requires static assets and public files to
+      # be copied alongside the server entry point.
+      - run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
       - run: npx tsc -p electron/tsconfig.json
       - run: mkdir -p data && pnpm db:push && pnpm db:seed
-      # xvfb-run provides a virtual framebuffer on Linux, which has no
-      # display server. Electron requires a display to launch windows.
-      # dbus-run-session provides a valid D-Bus session bus so Electron/Chromium
-      # does not emit repeated bus connection errors under CI.
-      - run: env -u DBUS_SESSION_BUS_ADDRESS dbus-run-session -- xvfb-run --auto-servernum pnpm exec playwright test --config=e2e/playwright.config.ts
+      # Only run specs that test Electron-specific behaviour.  Web-UI
+      # tests (library, epub-reader, pdf-reader, collections, progress)
+      # are already fully covered by the e2e-web job above.
+      #
+      # xvfb-run provides a virtual framebuffer on Linux.
+      # dbus-run-session provides a valid D-Bus session bus for Chromium.
+      - run: >-
+          env -u DBUS_SESSION_BUS_ADDRESS
+          dbus-run-session --
+          xvfb-run --auto-servernum
+          pnpm exec playwright test --config=e2e/playwright.config.ts
+          e2e/specs/smoke.spec.ts
+          e2e/specs/desktop.spec.ts
+          e2e/specs/admin.spec.ts
         env:
           E2E_PLATFORM: electron
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: e2e-linux-report
-          path: playwright-report/
-
-  e2e-electron-macos:
-    name: e2e-electron-macos
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: corepack enable
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      # Playwright needs chromium even for Electron tests.
-      - run: pnpm exec playwright install --with-deps chromium
-      # macOS has a native display server (Aqua), so no xvfb-run needed.
-      - run: pnpm build:native
-      - run: pnpm build
-      - run: npx tsc -p electron/tsconfig.json
-      - run: mkdir -p data && pnpm db:push && pnpm db:seed
-      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
-        env:
-          E2E_PLATFORM: electron
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: e2e-macos-report
+          name: e2e-electron-report
           path: playwright-report/
