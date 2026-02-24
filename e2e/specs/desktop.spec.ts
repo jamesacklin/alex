@@ -2,6 +2,8 @@ import { test, expect } from '../fixtures/app.fixture';
 import type { ElectronApplication } from 'playwright';
 import type { Page } from '@playwright/test';
 
+test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
+
 function ensureElectronApp(
   electronApp: ElectronApplication | null,
 ): asserts electronApp is ElectronApplication {
@@ -29,7 +31,6 @@ function appUrl(page: Page, path: string): string {
 }
 
 test('electron creates a system tray icon (US-009)', async ({ electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   await expect.poll(
@@ -43,7 +44,6 @@ test('electron creates a system tray icon (US-009)', async ({ electronApp }) => 
 });
 
 test('electron tray menu includes expected actions (US-010)', async ({ electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   let trayState: { exists: boolean; menuLabels: string[] } = {
@@ -83,7 +83,6 @@ test('electron tray menu includes expected actions (US-010)', async ({ electronA
 });
 
 test('electron can change library path via mocked IPC (US-011)', async ({ appPage, electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   await electronApp.evaluate(({ ipcMain }) => {
@@ -101,7 +100,6 @@ test('electron can change library path via mocked IPC (US-011)', async ({ appPag
 });
 
 test('electron rescan action triggers watcher restart IPC (US-012)', async ({ appPage, electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   await electronApp.evaluate(({ ipcMain }) => {
@@ -131,7 +129,6 @@ test('electron rescan action triggers watcher restart IPC (US-012)', async ({ ap
 });
 
 test('electron close action hides window and keeps app running (US-013)', async ({ electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   await electronApp.evaluate(({ BrowserWindow }) => {
@@ -164,7 +161,6 @@ test('electron close action hides window and keeps app running (US-013)', async 
 });
 
 test('electron onboarding flow completes with mocked IPC (US-014)', async ({ appPage, electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   await electronApp.evaluate(({ ipcMain }) => {
@@ -188,7 +184,6 @@ test('electron onboarding flow completes with mocked IPC (US-014)', async ({ app
 });
 
 test('electron reset app returns user to onboarding (US-015)', async ({ appPage, electronApp }) => {
-  test.skip(process.env.E2E_PLATFORM !== 'electron', 'Electron-only desktop behavior');
   ensureElectronApp(electronApp);
 
   await electronApp.evaluate(({ ipcMain }) => {

@@ -3,6 +3,9 @@ import type { Page } from '@playwright/test';
 import { LibraryPage } from '../page-objects/library.page';
 import { resetDatabase, seedDatabase, seedManyBooks } from '../helpers/db';
 
+const isElectronPlatform = process.env.E2E_PLATFORM === 'electron';
+const webOnlyTest = isElectronPlatform ? test.skip : test;
+
 function resolveAppBaseUrl(page: Page): string {
   const currentUrl = page.url();
   if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
@@ -229,12 +232,7 @@ test.describe('Library Page', () => {
     await expect(pageTitle).toBeVisible();
   });
 
-  test('loads more books with pagination (US-011)', async ({ authenticatedPage }) => {
-    test.skip(
-      process.env.E2E_PLATFORM === 'electron',
-      'Pagination stress coverage is validated in web mode',
-    );
-
+  webOnlyTest('loads more books with pagination (US-011)', async ({ authenticatedPage }) => {
     // Seed many books for pagination
     await resetDatabase();
     await seedDatabase();
@@ -273,12 +271,7 @@ test.describe('Library Page', () => {
     }
   });
 
-  test('resets pagination when filters change (US-012)', async ({ authenticatedPage }) => {
-    test.skip(
-      process.env.E2E_PLATFORM === 'electron',
-      'Pagination stress coverage is validated in web mode',
-    );
-
+  webOnlyTest('resets pagination when filters change (US-012)', async ({ authenticatedPage }) => {
     // Seed many books for pagination
     await resetDatabase();
     await seedDatabase();
