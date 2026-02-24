@@ -105,7 +105,10 @@ async function waitForRouteReady(url: string, timeoutMs = 60000): Promise<void> 
   throw new Error(`Timed out waiting ${timeoutMs}ms for ${url}. Last error: ${String(lastError)}`);
 }
 
-async function waitForElectronWindow(electronApp: ElectronApplication, timeoutMs = 90000): Promise<void> {
+async function waitForElectronWindow(
+  electronApp: ElectronApplication,
+  timeoutMs = process.env.CI ? 30_000 : 90_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -221,9 +224,11 @@ export const test = base.extend<AppFixture>({
           return false;
         },
       );
+      const closeTimeoutMs = process.env.CI ? 1_500 : 4_000;
+      const postKillCloseTimeoutMs = process.env.CI ? 1_000 : 2_000;
       let closeCompleted = await Promise.race<boolean>([
         closePromise,
-        sleep(4_000).then(() => false),
+        sleep(closeTimeoutMs).then(() => false),
       ]);
 
       if (!closeCompleted && electronProcess.pid != null) {
@@ -231,7 +236,7 @@ export const test = base.extend<AppFixture>({
         forceKillProcessTree(electronProcess.pid);
         closeCompleted = await Promise.race<boolean>([
           closePromise,
-          sleep(2_000).then(() => false),
+          sleep(postKillCloseTimeoutMs).then(() => false),
         ]);
       }
 
