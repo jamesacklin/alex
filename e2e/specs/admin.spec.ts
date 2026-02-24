@@ -99,7 +99,7 @@ test.describe('Admin Settings', () => {
     }
   });
 
-  test('admin can clear the library (US-008)', async ({ authenticatedPage }) => {
+  webOnlyTest('admin can clear the library (US-008)', async ({ authenticatedPage }) => {
     const adminLibraryPage = new AdminLibraryPage(authenticatedPage);
     const libraryPage = new LibraryPage(authenticatedPage);
 
