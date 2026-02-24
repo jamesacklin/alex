@@ -7,6 +7,10 @@ import { LoginPage } from '../page-objects/login.page';
 import { LibraryPage } from '../page-objects/library.page';
 import { resetDatabase, seedDatabase } from '../helpers/db';
 
+const isElectronPlatform = process.env.E2E_PLATFORM === 'electron';
+const webOnlyTest = isElectronPlatform ? test.skip : test;
+const webOnlyAppTest = isElectronPlatform ? appTest.skip : appTest;
+
 function appUrl(page: Page, path: string): string {
   const defaultOrigin = process.env.E2E_PLATFORM === 'electron'
     ? 'http://127.0.0.1:3210'
@@ -27,9 +31,7 @@ function appUrl(page: Page, path: string): string {
 }
 
 test.describe('Admin Settings', () => {
-  test('admin can create users (US-003)', async ({ authenticatedPage }) => {
-    test.skip(process.env.E2E_PLATFORM === 'electron', 'User CRUD flows are validated in web mode');
-
+  webOnlyTest('admin can create users (US-003)', async ({ authenticatedPage }) => {
     const adminUsersPage = new AdminUsersPage(authenticatedPage);
     const nonce = Date.now();
     const email = `newuser-${nonce}@localhost`;
@@ -43,9 +45,7 @@ test.describe('Admin Settings', () => {
     await expect(adminUsersPage.userRowByEmail(email)).toContainText('user');
   });
 
-  test('admin can edit users (US-004)', async ({ authenticatedPage }) => {
-    test.skip(process.env.E2E_PLATFORM === 'electron', 'User CRUD flows are validated in web mode');
-
+  webOnlyTest('admin can edit users (US-004)', async ({ authenticatedPage }) => {
     const adminUsersPage = new AdminUsersPage(authenticatedPage);
     const nonce = Date.now();
     const email = `edit-user-${nonce}@localhost`;
@@ -68,9 +68,7 @@ test.describe('Admin Settings', () => {
     await expect(adminUsersPage.userRowByEmail(email)).toContainText('admin');
   });
 
-  test('admin can delete users (US-005)', async ({ authenticatedPage }) => {
-    test.skip(process.env.E2E_PLATFORM === 'electron', 'User CRUD flows are validated in web mode');
-
+  webOnlyTest('admin can delete users (US-005)', async ({ authenticatedPage }) => {
     const adminUsersPage = new AdminUsersPage(authenticatedPage);
     const nonce = Date.now();
     const email = `delete-user-${nonce}@localhost`;
@@ -121,12 +119,7 @@ test.describe('Admin Settings', () => {
   });
 });
 
-appTest('non-admin cannot access admin routes (US-006)', async ({ appPage }) => {
-  appTest.skip(
-    process.env.E2E_PLATFORM === 'electron',
-    'Electron desktop mode always uses synthetic admin auth',
-  );
-
+webOnlyAppTest('non-admin cannot access admin routes (US-006)', async ({ appPage }) => {
   const loginPage = new LoginPage(appPage);
 
   await appPage.goto(appUrl(appPage, '/login'));

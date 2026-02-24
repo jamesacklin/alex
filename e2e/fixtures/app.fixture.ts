@@ -183,6 +183,7 @@ export const test = base.extend<AppFixture>({
       env: {
         ...process.env,
         ALEX_E2E: 'true',
+        E2E_USER_DATA_DIR: testUserDataDir,
         DATABASE_PATH: path.join(process.cwd(), 'data/library.db'),
         LIBRARY_PATH: testLibraryPath,
       },

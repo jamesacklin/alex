@@ -432,7 +432,11 @@ function startServer(libraryPath: string) {
           ...env,
           ELECTRON_RUN_AS_NODE: '1',
         };
-  const workingDir = isDev ? app.getAppPath() : process.resourcesPath;
+  const workingDir = useStandaloneServerForE2E
+    ? standaloneBasePath
+    : isDev
+      ? process.cwd()
+      : process.resourcesPath;
 
   if (runProdLikeServerForE2E) {
     console.log('[Electron] E2E mode: starting production Next.js server');

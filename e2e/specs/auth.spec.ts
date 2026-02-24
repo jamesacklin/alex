@@ -3,11 +3,13 @@ import { test as authTest } from '../fixtures/auth.fixture';
 import { LoginPage } from '../page-objects/login.page';
 import { OnboardingPage } from '../page-objects/onboarding.page';
 
-test.describe('Authentication', () => {
-  test('should login successfully with valid credentials', async ({ appPage }) => {
-    // Skip in Electron mode where desktop auth bypasses login
-    test.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode bypasses login');
+const isElectronPlatform = process.env.E2E_PLATFORM === 'electron';
+const electronOnlyTest = isElectronPlatform ? test : test.skip;
+const webOnlyTest = isElectronPlatform ? test.skip : test;
+const webOnlyAuthTest = isElectronPlatform ? authTest.skip : authTest;
 
+test.describe('Authentication', () => {
+  webOnlyTest('should login successfully with valid credentials', async ({ appPage }) => {
     // Navigate to login page
     await appPage.goto('/login');
 
@@ -24,10 +26,7 @@ test.describe('Authentication', () => {
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should show error with invalid credentials', async ({ appPage }) => {
-    // Skip in Electron mode where desktop auth bypasses login
-    test.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode bypasses login');
-
+  webOnlyTest('should show error with invalid credentials', async ({ appPage }) => {
     // Navigate to login page
     await appPage.goto('/login');
 
@@ -42,10 +41,7 @@ test.describe('Authentication', () => {
     await expect(appPage).toHaveURL(/\/login/);
   });
 
-  authTest('should logout successfully', async ({ authenticatedPage }) => {
-    // Skip in Electron mode where desktop auth has no logout button
-    authTest.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode has no logout button');
-
+  webOnlyAuthTest('should logout successfully', async ({ authenticatedPage }) => {
     // Navigate to settings page
     await authenticatedPage.goto('/admin/general');
 
@@ -81,10 +77,7 @@ test.describe('Authentication', () => {
     ).toBe(401);
   });
 
-  test('should persist session after page reload', async ({ appPage }) => {
-    // Skip in Electron mode where desktop auth bypasses login
-    test.skip(process.env.E2E_PLATFORM === 'electron', 'Desktop mode bypasses login');
-
+  webOnlyTest('should persist session after page reload', async ({ appPage }) => {
     // Navigate to login page and login
     await appPage.goto('/login');
     const loginPage = new LoginPage(appPage);
@@ -104,10 +97,7 @@ test.describe('Authentication', () => {
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should bypass login in Electron desktop mode', async ({ appPage }) => {
-    // Skip this test if not running in Electron
-    test.skip(process.env.E2E_PLATFORM !== 'electron', 'Only applicable in Electron mode');
-
+  electronOnlyTest('should bypass login in Electron desktop mode', async ({ appPage }) => {
     // In Electron desktop mode, app starts on /library with synthetic auth
     // Verify we're already authenticated
     await expect(appPage).toHaveURL(/\/library/, { timeout: 10000 });
@@ -117,10 +107,7 @@ test.describe('Authentication', () => {
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should show onboarding page when library path not set (Electron)', async ({ appPage }) => {
-    // Skip this test if not running in Electron
-    test.skip(process.env.E2E_PLATFORM !== 'electron', 'Only applicable in Electron mode');
-
+  electronOnlyTest('should show onboarding page when library path not set (Electron)', async ({ appPage }) => {
     // Note: Current test fixture sets library path automatically, so onboarding
     // is skipped. This test verifies the OnboardingPage page object is properly
     // constructed and can detect the onboarding page.

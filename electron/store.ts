@@ -36,7 +36,9 @@ const DEFAULT_STORE: StoreSchema = {
   storageMode: 'local',
 };
 
-const storePath = path.join(app.getPath('userData'), 'config.json');
+const explicitUserDataPath = process.env.E2E_USER_DATA_DIR || process.env.ALEX_USER_DATA_DIR;
+const resolvedUserDataPath = explicitUserDataPath || app.getPath('userData');
+const storePath = path.join(resolvedUserDataPath, 'config.json');
 
 function writeStore(data: StoreSchema): void {
   const storeDir = path.dirname(storePath);
