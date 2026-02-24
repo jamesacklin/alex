@@ -1,0 +1,307 @@
+name: Dev Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      docker:
+        description: Build and push Docker dev images
+        type: boolean
+        default: true
+      electron_macos:
+        description: Build Electron for macOS (arm64)
+        type: boolean
+        default: false
+      electron_linux:
+        description: Build Electron for Linux (x64/arm64)
+        type: boolean
+        default: false
+
+env:
+  REGISTRY_IMAGE_DOCKERHUB: jamesacklin/alex
+  REGISTRY_IMAGE_GHCR: ghcr.io/jamesacklin/alex
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      build_docker: ${{ steps.flags.outputs.docker }}
+      build_electron_macos: ${{ steps.flags.outputs.electron_macos }}
+      build_electron_linux: ${{ steps.flags.outputs.electron_linux }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA="${GITHUB_SHA::7}"
+          VERSION="${BASE_VERSION}-dev+${SHORT_SHA}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "Dev build version: $VERSION"
+
+      - name: Resolve build flags
+        id: flags
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            echo "electron_macos=false" >> "$GITHUB_OUTPUT"
+            echo "electron_linux=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docker=${{ inputs.docker }}" >> "$GITHUB_OUTPUT"
+            echo "electron_macos=${{ inputs.electron_macos }}" >> "$GITHUB_OUTPUT"
+            echo "electron_linux=${{ inputs.electron_linux }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Docker dev build (multi-arch)
+  # ---------------------------------------------------------------------------
+  docker-build:
+    needs: prepare
+    if: needs.prepare.outputs.build_docker == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          outputs: type=image,"name=${{ env.REGISTRY_IMAGE_DOCKERHUB }},${{ env.REGISTRY_IMAGE_GHCR }}",name-canonical=true,push-by-digest=true
+          cache-from: type=gha,scope=docker-dev-${{ matrix.arch }}
+          cache-to: type=gha,scope=docker-dev-${{ matrix.arch }},mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          DIGEST="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-manifest:
+    needs: [prepare, docker-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifests
+        run: |
+          set -eux
+          cd /tmp/digests
+          mapfile -t DIGESTS < <(ls -1)
+
+          SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
+
+          # Tag as dev (rolling) and dev-<sha> (pinnable)
+          for REGISTRY in "${{ env.REGISTRY_IMAGE_DOCKERHUB }}" "${{ env.REGISTRY_IMAGE_GHCR }}"; do
+            SOURCES=()
+            for digest in "${DIGESTS[@]}"; do
+              SOURCES+=("${REGISTRY}@sha256:${digest}")
+            done
+            docker buildx imagetools create \
+              -t "${REGISTRY}:dev" \
+              -t "${REGISTRY}:dev-${SHORT_SHA}" \
+              "${SOURCES[@]}"
+          done
+
+      - name: Image summary
+        run: |
+          SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          {
+            echo "## Dev Docker Images Published"
+            echo ""
+            echo "**Version:** \`${VERSION}\`"
+            echo "**Commit:** \`${GITHUB_SHA}\`"
+            echo ""
+            echo "### Pull commands"
+            echo "\`\`\`bash"
+            echo "docker pull ${{ env.REGISTRY_IMAGE_DOCKERHUB }}:dev"
+            echo "docker pull ${{ env.REGISTRY_IMAGE_DOCKERHUB }}:dev-${SHORT_SHA}"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Electron dev builds
+  # ---------------------------------------------------------------------------
+  electron-macos:
+    needs: prepare
+    if: needs.prepare.outputs.build_electron_macos == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Electron app
+        run: pnpm electron:build:mac
+        env:
+          ALEX_DESKTOP: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-macos-dev-${{ needs.prepare.outputs.short_sha }}
+          path: dist/*.zip
+          retention-days: 14
+
+      - name: Build summary
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          {
+            echo "## Dev macOS Electron Build"
+            echo ""
+            echo "**Version:** \`${VERSION}\`"
+            echo ""
+            echo "### Artifacts"
+            echo "\`\`\`"
+            ls -1 dist/*.zip 2>/dev/null | sed 's|dist/||' || echo "No ZIP files found"
+            echo "\`\`\`"
+            echo ""
+            echo "Download from the Artifacts section of this workflow run (retained 14 days)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  electron-linux:
+    needs: prepare
+    if: needs.prepare.outputs.build_electron_linux == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Electron app
+        run: pnpm electron:build:linux
+        env:
+          ALEX_DESKTOP: 'true'
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-linux-dev-${{ needs.prepare.outputs.short_sha }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+          retention-days: 14
+
+      - name: Build summary
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          {
+            echo "## Dev Linux Electron Build"
+            echo ""
+            echo "**Version:** \`${VERSION}\`"
+            echo ""
+            echo "### Artifacts"
+            echo "\`\`\`"
+            ls -1 dist/*.AppImage dist/*.deb 2>/dev/null | sed 's|dist/||' || echo "No package files found"
+            echo "\`\`\`"
+            echo ""
+            echo "Download from the Artifacts section of this workflow run (retained 14 days)."
+          } >> "$GITHUB_STEP_SUMMARY"
