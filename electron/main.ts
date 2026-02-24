@@ -383,7 +383,8 @@ function runDbSetup(libraryPath: string) {
 function startServer(libraryPath: string) {
   const env = getEnvVars(libraryPath);
   const runProdLikeServerForE2E = isDev && isE2E;
-  const standaloneServerPath = path.join(app.getAppPath(), '.next', 'standalone', 'server.js');
+  const standaloneBasePath = isDev ? process.cwd() : app.getAppPath();
+  const standaloneServerPath = path.join(standaloneBasePath, '.next', 'standalone', 'server.js');
   const useStandaloneServerForE2E = runProdLikeServerForE2E && fs.existsSync(standaloneServerPath);
   const packagedBootstrapScript = [
     "const Module=require('node:module')",
@@ -399,6 +400,8 @@ function startServer(libraryPath: string) {
   ].join(';');
   if (runProdLikeServerForE2E && !useStandaloneServerForE2E) {
     console.warn(`[Electron] E2E standalone server not found at ${standaloneServerPath}; falling back to pnpm start`);
+  } else if (useStandaloneServerForE2E) {
+    console.log(`[Electron] E2E mode: starting standalone Next.js server at ${standaloneServerPath}`);
   }
 
   const command = useStandaloneServerForE2E
