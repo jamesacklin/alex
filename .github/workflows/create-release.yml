@@ -1,0 +1,82 @@
+name: Create v0.5.0 Release
+
+on:
+  push:
+    branches:
+      - claude/review-main-preproduction-4YjDT
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Create release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: "v0.5.0",
+              target_commitish: "main",
+              name: "v0.5.0",
+              body: [
+                "## What's New",
+                "",
+                "### Rust Watcher Migration",
+                "- Migrated the SQLite database layer to a Rust bridge (`watcher-rs`) for improved performance and reliability",
+                "- Implemented Rust-native PDF and EPUB cover generation",
+                "- Added startup scan and file watching in Rust",
+                "- Removed legacy TypeScript watcher and dependencies",
+                "",
+                "### S3/R2 Storage Backend",
+                "- Added S3-compatible (including Cloudflare R2) storage backend for book files",
+                "- Unified file serving across local and S3 sources",
+                "- Added admin UI for S3 settings in both web and Electron desktop",
+                "- Adjusted DB schema for source metadata",
+                "",
+                "### Google Drive Integration",
+                "- Added Google Drive as a book source",
+                "- Implemented sync logic for Drive and S3",
+                "- Maintained reader contract across all storage backends",
+                "",
+                "### Storybook + Visual Regression",
+                "- Added Storybook UI library with stories for all components",
+                "- Integrated Chromatic CI for visual regression testing",
+                "",
+                "### Desktop (Electron) Improvements",
+                "- Show server URL on Users page",
+                "- Cleaned up Electron admin settings",
+                "- Desktop sessions treat as admin-only: Settings opens at Users and hides General/Log out",
+                "- Added password reset from Settings > Users",
+                "",
+                "### Docker & CI/CD",
+                "- Split Docker release builds by native architecture",
+                "- Hardened credentials auth DB bootstrap",
+                "- Added dev build workflow for integration testing",
+                "- Improved e2e test stability (Electron startup, platform skips, port management)",
+                "- Added rust-cache action to CI and e2e workflows",
+                "- Cached Playwright dependencies",
+                "",
+                "### Bug Fixes",
+                "- Fixed standalone server binding to 0.0.0.0 for Docker ingress",
+                "- Fixed Docker runtime DB initialization",
+                "- Fixed Rust binary copy with target cache mount",
+                "- Fixed absolute ENV paths to survive standalone cwd change",
+                "- Fixed static and public asset placement for standalone server",
+                "- Fixed navItems typing for Next.js build",
+                "",
+                "---",
+                "",
+                "**Full Changelog**: https://github.com/jamesacklin/alex/compare/v0.3.4...v0.5.0",
+              ].join("\n"),
+              draft: false,
+              prerelease: false,
+            });
+            console.log("Created release:", release.html_url);
