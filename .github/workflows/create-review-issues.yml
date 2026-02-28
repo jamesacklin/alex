@@ -1,0 +1,521 @@
+name: Create Pre-Production Review Issues
+
+on:
+  push:
+    branches:
+      - claude/review-main-preproduction-4YjDT
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create CRITICAL issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = [
+              {
+                title: "[CRITICAL] Hardcoded default admin credentials in source code",
+                labels: ["security", "critical"],
+                body: `## Priority: CRITICAL (P1)
+
+            ## Description
+
+            Default admin credentials are hardcoded in \`src/lib/auth/config.ts:108-110\`:
+
+            \`\`\`typescript
+            const ADMIN_EMAIL = "admin@localhost";
+            const ADMIN_PASSWORD = "admin123";
+            \`\`\`
+
+            Anyone who reads the repository source code knows the default admin password. If users don't change it after setup, their instance is open to unauthorized access.
+
+            ## Impact
+
+            - Full admin access to any instance where the default password hasn't been changed
+            - Credential is visible in public source code
+
+            ## Suggested Fix
+
+            - Generate a random password during first-run setup and display it once to the user, OR
+            - Force a password change on first login via the onboarding flow
+            - Remove hardcoded credentials from source code
+
+            ## Files
+
+            - \`src/lib/auth/config.ts\``
+              },
+              {
+                title: "[CRITICAL] Desktop mode authentication bypass allows local access",
+                labels: ["security", "critical"],
+                body: `## Priority: CRITICAL
+
+            ## Description
+
+            When \`ALEX_DESKTOP=true\`, every API request gets a hardcoded admin session with no actual authentication (\`src/lib/auth/config.ts:83-97\`). This means any process on the same machine can make admin API calls to \`localhost:3210\`.
+
+            ## Impact
+
+            - Any local process can access/modify/delete the entire library
+            - No session tokens, no CSRF protection in desktop mode
+
+            ## Suggested Fix
+
+            - Bind to \`127.0.0.1\` only (already done)
+            - Add a per-session random token that the Electron app passes via a custom header, so only the Electron process can authenticate
+
+            ## Files
+
+            - \`src/lib/auth/config.ts\`
+            - \`electron/main.ts\``
+              },
+              {
+                title: "[CRITICAL] Missing authentication on SSE /api/library/events endpoint",
+                labels: ["security", "critical"],
+                body: `## Priority: CRITICAL (P0)
+
+            ## Description
+
+            The Server-Sent Events endpoint for library updates at \`src/app/api/library/events/route.ts\` has **no authentication check**. Any unauthenticated client can connect and receive real-time notifications about library changes (book additions, deletions, metadata updates).
+
+            ## Impact
+
+            - Information disclosure: unauthenticated users can monitor all library activity
+            - Potential resource exhaustion: unlimited SSE connections with no auth gate
+
+            ## Suggested Fix
+
+            Add \`authSession()\` check at the top of the GET handler, returning 401 for unauthenticated requests:
+
+            \`\`\`typescript
+            const session = await authSession();
+            if (!session) {
+              return new Response("Unauthorized", { status: 401 });
+            }
+            \`\`\`
+
+            ## Files
+
+            - \`src/app/api/library/events/route.ts\``
+              },
+              {
+                title: "[CRITICAL] Docker container runs as root",
+                labels: ["security", "critical"],
+                body: `## Priority: CRITICAL (P0)
+
+            ## Description
+
+            The \`Dockerfile\` has no \`USER\` directive in the final runtime stage. The Next.js server and \`watcher-rs\` processes run as UID 0 (root) inside the container. If either process is compromised, the attacker has full root access within the container.
+
+            ## Impact
+
+            - Container escape risk is elevated when running as root
+            - Violates principle of least privilege
+            - Many container orchestrators (EKS, GKE) flag or block root containers by default
+
+            ## Suggested Fix
+
+            Add a non-root user before the \`CMD\` instruction:
+
+            \`\`\`dockerfile
+            USER node
+            CMD ["node", "server.js"]
+            \`\`\`
+
+            Ensure file permissions are set correctly for the \`node\` user on the \`/app\` directory and data volumes.
+
+            ## Files
+
+            - \`Dockerfile\``
+              },
+              {
+                title: "[CRITICAL] No security headers (CSP, X-Frame-Options, HSTS)",
+                labels: ["security", "critical"],
+                body: `## Priority: CRITICAL (P0)
+
+            ## Description
+
+            No security headers are set on HTTP responses. The app is missing:
+
+            - \`Content-Security-Policy\` — no XSS mitigation
+            - \`X-Frame-Options\` / \`frame-ancestors\` — vulnerable to clickjacking
+            - \`X-Content-Type-Options\` — MIME sniffing attacks possible
+            - \`Strict-Transport-Security\` — no HSTS for HTTPS deployments
+            - \`Referrer-Policy\` — potential information leakage
+
+            The proxy middleware (\`src/proxy.ts\`) and Next.js config (\`next.config.ts\`) do not add any of these headers.
+
+            ## Impact
+
+            - Clickjacking attacks possible
+            - XSS attacks not mitigated by browser CSP
+            - MIME type confusion attacks possible
+            - HTTPS downgrade attacks possible
+
+            ## Suggested Fix
+
+            Add security headers in \`next.config.ts\` via the \`headers()\\` config:
+
+            \`\`\`typescript
+            async headers() {
+              return [{
+                source: "/(.*)",
+                headers: [
+                  { key: "X-Content-Type-Options", value: "nosniff" },
+                  { key: "X-Frame-Options", value: "DENY" },
+                  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+                  { key: "X-XSS-Protection", value: "0" },
+                ],
+              }];
+            }
+            \`\`\`
+
+            ## Files
+
+            - \`next.config.ts\`
+            - \`src/proxy.ts\``
+              },
+              {
+                title: "[HIGH] File path traversal risk in book file/cover serving routes",
+                labels: ["security", "high"],
+                body: `## Priority: HIGH (P1)
+
+            ## Description
+
+            File paths are read from the database and served directly via \`fs.readFileSync()\` without validating that the resolved path is within an allowed directory.
+
+            In \`src/app/api/books/[id]/cover/route.ts\` and \`src/app/api/books/[id]/file/route.ts\`, the \`filePath\` from the DB is used directly:
+
+            \`\`\`typescript
+            const data = fs.readFileSync(filePath);
+            \`\`\`
+
+            If database contents are ever manipulated (e.g., via a future bug, corrupted DB, or API misuse), arbitrary files on the filesystem could be read and served to users.
+
+            ## Impact
+
+            - Potential arbitrary file read (\`/etc/passwd\`, \`.env\`, private keys)
+            - Especially dangerous in Docker where the container runs as root
+
+            ## Suggested Fix
+
+            Validate resolved paths against allowed base directories:
+
+            \`\`\`typescript
+            const resolvedPath = path.resolve(filePath);
+            const allowedBase = path.resolve(process.env.LIBRARY_PATH || "./library");
+            if (!resolvedPath.startsWith(allowedBase)) {
+              return new Response("Forbidden", { status: 403 });
+            }
+            \`\`\`
+
+            ## Files
+
+            - \`src/app/api/books/[id]/cover/route.ts\`
+            - \`src/app/api/books/[id]/file/route.ts\``
+              },
+              {
+                title: "[HIGH] Weak localhost check on Electron clear-books endpoint",
+                labels: ["security", "high"],
+                body: `## Priority: HIGH
+
+            ## Description
+
+            The \`/api/electron/clear-books\` endpoint at \`src/app/api/electron/clear-books/route.ts:10-13\` uses \`host?.includes('localhost')\` to verify the request is local. This substring check would match hostnames like \`mylocalhost.com\` or \`localhost.evil.com\`.
+
+            \`\`\`typescript
+            if (!host?.includes('localhost') && !host?.includes('127.0.0.1')) {
+            \`\`\`
+
+            ## Impact
+
+            - In non-desktop deployments, a DNS rebinding or crafted Host header could bypass the localhost-only restriction
+            - Allows a remote attacker to trigger the destructive "clear all books" operation
+
+            ## Suggested Fix
+
+            Use exact host comparison:
+
+            \`\`\`typescript
+            const hostname = host?.split(':')[0];
+            if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+              return new Response("Forbidden", { status: 403 });
+            }
+            \`\`\`
+
+            ## Files
+
+            - \`src/app/api/electron/clear-books/route.ts\``
+              },
+              {
+                title: "[HIGH] S3 credentials stored as plaintext in electron-store",
+                labels: ["security", "high"],
+                body: `## Priority: HIGH
+
+            ## Description
+
+            S3 access keys and secret keys are stored as plaintext JSON in the user's config directory via \`electron/store.ts\`. On shared systems or if the user's home directory is compromised, cloud storage credentials are exposed in plaintext.
+
+            ## Impact
+
+            - S3 credentials readable by any process with access to the user's config directory
+            - On multi-user systems, other users may be able to read the config file
+
+            ## Suggested Fix
+
+            Use Electron's \`safeStorage\` API or OS keychain (\`keytar\`) for sensitive credentials:
+
+            \`\`\`typescript
+            import { safeStorage } from 'electron';
+            const encrypted = safeStorage.encryptString(secretKey);
+            \`\`\`
+
+            ## Files
+
+            - \`electron/store.ts\``
+              },
+              {
+                title: "[HIGH] Missing React error boundaries around reader components",
+                labels: ["bug", "high"],
+                body: `## Priority: HIGH
+
+            ## Description
+
+            No React error boundaries wrap the \`EpubReader\` or \`PdfReader\` components. If a malformed EPUB or PDF causes a rendering crash (e.g., invalid content structure, corrupt file), the entire app page goes blank with no recovery option. The user must manually navigate away.
+
+            ## Impact
+
+            - Complete UI crash with no user feedback
+            - No way to recover without manual navigation
+            - Bad UX for users with corrupt or malformed book files
+
+            ## Suggested Fix
+
+            Wrap reader components in error boundaries with user-friendly fallback UI:
+
+            \`\`\`tsx
+            <ErrorBoundary fallback={<ReaderErrorFallback bookId={id} />}>
+              <EpubReader ... />
+            </ErrorBoundary>
+            \`\`\`
+
+            ## Files
+
+            - \`src/components/readers/EpubReader.tsx\`
+            - \`src/components/readers/PdfReader.tsx\`
+            - \`src/app/(dashboard)/read/[id]/page.tsx\``
+              },
+              {
+                title: "[HIGH] Race condition in reading progress upsert",
+                labels: ["bug", "high"],
+                body: `## Priority: HIGH
+
+            ## Description
+
+            The PUT handler in \`src/app/api/books/[id]/progress/route.ts\` does a SELECT followed by a conditional INSERT or UPDATE. Between these two queries, a concurrent request could create a duplicate row, causing a unique constraint violation or data inconsistency.
+
+            \`\`\`typescript
+            const existing = await db.get("SELECT ...");
+            if (existing) {
+              await db.run("UPDATE ...");
+            } else {
+              await db.run("INSERT ...");
+            }
+            \`\`\`
+
+            While unlikely in single-user desktop mode, shared/multi-user deployments could trigger this.
+
+            ## Suggested Fix
+
+            Use SQLite \`INSERT ... ON CONFLICT\` (upsert):
+
+            \`\`\`sql
+            INSERT INTO reading_progress (user_id, book_id, ...)
+            VALUES (?, ?, ...)
+            ON CONFLICT (user_id, book_id)
+            DO UPDATE SET percent_complete = excluded.percent_complete, ...
+            \`\`\`
+
+            ## Files
+
+            - \`src/app/api/books/[id]/progress/route.ts\``
+              },
+              {
+                title: "[MEDIUM] Weak password policy — minimum 6 characters with no complexity",
+                labels: ["security", "medium"],
+                body: `## Priority: MEDIUM (P2)
+
+            ## Description
+
+            The user creation endpoint at \`src/app/api/users/route.ts:57\` enforces a minimum password length of 6 characters with no complexity requirements. NIST SP 800-63B recommends a minimum of 8 characters.
+
+            ## Suggested Fix
+
+            Increase minimum to 8 characters. Optionally check against a common password list.
+
+            ## Files
+
+            - \`src/app/api/users/route.ts\``
+              },
+              {
+                title: "[MEDIUM] No rate limiting on login and API endpoints",
+                labels: ["security", "medium"],
+                body: `## Priority: MEDIUM (P2)
+
+            ## Description
+
+            No rate limiting exists on the login endpoint (\`/api/auth/login\`), user creation, or any other API routes. This allows unlimited brute-force attempts against user passwords.
+
+            ## Suggested Fix
+
+            Add rate limiting middleware, at minimum on auth endpoints. Consider using a library like \`rate-limiter-flexible\` or implementing a simple in-memory/Redis-backed rate limiter.
+
+            ## Files
+
+            - \`src/app/api/auth/login/route.ts\`
+            - \`src/proxy.ts\``
+              },
+              {
+                title: "[MEDIUM] EventSource connection leak on rapid navigation",
+                labels: ["bug", "medium"],
+                body: `## Priority: MEDIUM
+
+            ## Description
+
+            In \`src/app/(dashboard)/library/library-client.tsx:174-250\`, the EventSource is recreated when dependencies change. During rapid navigation between pages, the cleanup function may not fire before a new connection is established, leading to accumulated leaked SSE connections.
+
+            ## Suggested Fix
+
+            Add connection deduplication or use a singleton pattern for the EventSource. Ensure cleanup is synchronous and happens before reconnection.
+
+            ## Files
+
+            - \`src/app/(dashboard)/library/library-client.tsx\``
+              },
+              {
+                title: "[MEDIUM] SSE polling interval too aggressive (2s)",
+                labels: ["performance", "medium"],
+                body: `## Priority: MEDIUM (P2)
+
+            ## Description
+
+            The SSE endpoint at \`src/app/api/library/events/route.ts\` polls the library version every 2 seconds. For a book library application where changes are infrequent, this creates unnecessary server load.
+
+            ## Suggested Fix
+
+            Increase polling interval to 10-15 seconds, or switch to a push-based notification model where the watcher process signals changes directly.
+
+            ## Files
+
+            - \`src/app/api/library/events/route.ts\``
+              },
+              {
+                title: "[MEDIUM] S3 file serving accumulates entire file in memory",
+                labels: ["performance", "medium"],
+                body: `## Priority: MEDIUM
+
+            ## Description
+
+            In \`src/lib/files/serve-book-file.ts\`, S3 file serving collects all body chunks into an array before sending the response. For large files (100MB+ EPUBs or PDFs), this causes significant memory pressure and could lead to OOM crashes.
+
+            \`\`\`typescript
+            const bodyChunks: Uint8Array[] = [];
+            for await (const chunk of body) {
+              bodyChunks.push(chunk);
+            }
+            \`\`\`
+
+            ## Suggested Fix
+
+            Stream the S3 response directly to the HTTP response using a \`ReadableStream\` or pipe pattern instead of buffering.
+
+            ## Files
+
+            - \`src/lib/files/serve-book-file.ts\``
+              },
+              {
+                title: "[MEDIUM] Console statements in production code",
+                labels: ["code-quality", "medium"],
+                body: `## Priority: MEDIUM
+
+            ## Description
+
+            There are ~15+ \`console.error\` and \`console.log\` calls across reader components and the library client. These will appear in production browser consoles and server logs without structure or log levels.
+
+            ## Suggested Fix
+
+            Replace with a structured logger that respects environment-aware log levels (e.g., suppress debug/info in production). At minimum, guard console statements behind a \`process.env.NODE_ENV !== 'production'\` check.
+
+            ## Files
+
+            - \`src/components/readers/EpubReader.tsx\`
+            - \`src/components/readers/PdfReader.tsx\`
+            - \`src/app/(dashboard)/library/library-client.tsx\`
+            - Various API routes`
+              },
+              {
+                title: "[MEDIUM] Missing database indexes on frequently queried columns",
+                labels: ["performance", "medium"],
+                body: `## Priority: MEDIUM (P2)
+
+            ## Description
+
+            No explicit indexes exist on \`reading_progress.user_id\`, \`reading_progress.book_id\`, or other frequently queried columns. Additionally, \`LIKE\` searches on \`books.title\` and \`books.author\` will become slow as the library grows beyond a few hundred entries.
+
+            ## Suggested Fix
+
+            Add indexes in the schema initialization:
+
+            \`\`\`sql
+            CREATE INDEX IF NOT EXISTS idx_reading_progress_user_book
+              ON reading_progress(user_id, book_id);
+            CREATE INDEX IF NOT EXISTS idx_books_title
+              ON books(title COLLATE NOCASE);
+            \`\`\`
+
+            ## Files
+
+            - \`src/lib/db/schema.ts\` or equivalent schema definition`
+              },
+              {
+                title: "[MEDIUM] Google Fonts dependency at build time prevents offline builds",
+                labels: ["build", "medium"],
+                body: `## Priority: MEDIUM
+
+            ## Description
+
+            \`src/app/layout.tsx\` uses \`next/font/google\` to load Hanken Grotesk and IBM Plex Mono. This requires network access during \`next build\`, making offline builds impossible and introducing an external build-time dependency.
+
+            Build fails with:
+            \`\`\`
+            next/font: error: Failed to fetch \\\`Hanken Grotesk\\\` from Google Fonts.
+            \`\`\`
+
+            ## Suggested Fix
+
+            Switch to \`next/font/local\` with self-hosted font files, or add the font files to the repository. This ensures builds work in air-gapped environments and removes the Google Fonts dependency.
+
+            ## Files
+
+            - \`src/app/layout.tsx\``
+              }
+            ];
+
+            for (const issue of issues) {
+              try {
+                const result = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: issue.title,
+                  body: issue.body,
+                  labels: issue.labels
+                });
+                console.log(`Created issue #${result.data.number}: ${issue.title}`);
+              } catch (error) {
+                console.error(`Failed to create issue "${issue.title}": ${error.message}`);
+              }
+              // Small delay to avoid rate limiting
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
