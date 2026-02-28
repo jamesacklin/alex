@@ -156,7 +156,7 @@ jobs:
 
             ## Suggested Fix
 
-            Add security headers in \`next.config.ts\` via the \`headers()\\` config:
+            Add security headers in \`next.config.ts\` via the \`headers()\` config:
 
             \`\`\`typescript
             async headers() {
@@ -490,7 +490,7 @@ jobs:
 
             Build fails with:
             \`\`\`
-            next/font: error: Failed to fetch \\\`Hanken Grotesk\\\` from Google Fonts.
+            next/font: error: Failed to fetch Hanken Grotesk from Google Fonts.
             \`\`\`
 
             ## Suggested Fix
