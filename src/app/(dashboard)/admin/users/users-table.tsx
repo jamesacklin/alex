@@ -100,10 +100,12 @@ export default function UsersTable({
   users,
   currentUserId,
   actionsContainerId,
+  webServerUrl,
 }: {
   users: UserRow[];
   currentUserId: string;
   actionsContainerId?: string;
+  webServerUrl?: string | null;
 }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
@@ -116,11 +118,26 @@ export default function UsersTable({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteEmail, setDeleteEmail] = useState("");
   const [actionsContainer, setActionsContainer] = useState<HTMLElement | null>(null);
+  const [localIps, setLocalIps] = useState<string[]>([]);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!actionsContainerId) return;
     setActionsContainer(document.getElementById(actionsContainerId));
   }, [actionsContainerId]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electronAPI?.getLocalIps) {
+      window.electronAPI.getLocalIps().then(setLocalIps).catch(() => {});
+    }
+  }, []);
+
+  function copyUrl(url: string) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedUrl(url);
+      setTimeout(() => setCopiedUrl(null), 2000);
+    });
+  }
 
   const createForm = useForm<CreateUserValues>({
     resolver: zodResolver(createUserSchema),
@@ -219,6 +236,8 @@ export default function UsersTable({
     </Button>
   );
 
+  const serverUrls = localIps.length > 0 ? localIps : webServerUrl ? [webServerUrl] : [];
+
   return (
     <TooltipProvider>
       {actionsContainerId
@@ -230,6 +249,32 @@ export default function UsersTable({
               {addUserButton}
             </div>
           )}
+
+      {serverUrls.length > 0 && (
+        <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+          <p className="text-sm font-medium">Server URL</p>
+          <p className="text-xs text-muted-foreground">
+            Share this address so others can access the server from their devices.
+          </p>
+          <div className="space-y-1.5">
+            {serverUrls.map((url) => (
+              <div key={url} className="flex items-center gap-2">
+                <code className="flex-1 rounded bg-background px-2 py-1 text-xs font-mono border border-border">
+                  {url}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyUrl(url)}
+                  className="shrink-0 text-xs h-7"
+                >
+                  {copiedUrl === url ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Table>
         <TableHeader>

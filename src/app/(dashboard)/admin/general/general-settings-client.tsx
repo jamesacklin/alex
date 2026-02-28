@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +14,7 @@ export function GeneralSettingsClient({
   displayName,
   email,
 }: GeneralSettingsClientProps) {
+  const router = useRouter();
   const [isElectron, setIsElectron] = useState(
     process.env.NEXT_PUBLIC_ALEX_DESKTOP === "true",
   );
@@ -21,8 +23,11 @@ export function GeneralSettingsClient({
     const electron = typeof window !== "undefined" && !!window.electronAPI;
     if (electron) {
       setIsElectron(true);
+      router.replace("/admin/users");
     }
-  }, []);
+  }, [router]);
+
+  if (isElectron) return null;
 
   return (
     <div className="space-y-8">
@@ -35,17 +40,15 @@ export function GeneralSettingsClient({
       </div>
 
       {/* Logout */}
-      {!isElectron && (
-        <div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => signOut({ redirectTo: "/login" })}
-          >
-            Log out
-          </Button>
-        </div>
-      )}
+      <div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => signOut({ redirectTo: "/login" })}
+        >
+          Log out
+        </Button>
+      </div>
     </div>
   );
 }

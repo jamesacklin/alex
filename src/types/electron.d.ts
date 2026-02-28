@@ -18,6 +18,7 @@ export interface ElectronAPI {
   getAppVersion: () => Promise<string>;
   getLibraryPath: () => Promise<string>;
   getStorageMode: () => Promise<'local' | 's3'>;
+  getLocalIps: () => Promise<string[]>;
   getS3Config: () => Promise<S3Config | null>;
   saveS3Config: (config: S3Config) => Promise<{ success: boolean; error?: string }>;
   switchToLocalStorage: () => Promise<{ success: boolean; error?: string }>;

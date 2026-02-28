@@ -26,11 +26,19 @@ export default async function UsersPage() {
     `
   );
 
+  // For web/docker deployments, expose the configured server URL.
+  // In Electron mode, the client-side component fetches LAN IPs via electronAPI.
+  const isElectron = process.env.ALEX_DESKTOP === "true";
+  const webServerUrl = isElectron
+    ? null
+    : (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? null);
+
   return (
     <UsersTable
       users={allUsers}
       currentUserId={session?.user?.id ?? ""}
       actionsContainerId="settings-actions"
+      webServerUrl={webServerUrl}
     />
   );
 }
