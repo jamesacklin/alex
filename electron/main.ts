@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import { spawn, ChildProcess, spawnSync } from 'child_process';
@@ -1021,6 +1022,20 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle('get-local-ips', () => {
+    const interfaces = os.networkInterfaces();
+    const urls: string[] = [];
+    for (const addrs of Object.values(interfaces)) {
+      if (!addrs) continue;
+      for (const addr of addrs) {
+        if (addr.family === 'IPv4' && !addr.internal) {
+          urls.push(`http://${addr.address}:${PORT}`);
+        }
+      }
+    }
+    return urls;
   });
 
   ipcMain.handle('get-library-path', () => {

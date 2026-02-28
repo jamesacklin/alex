@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getLibraryPath: () => ipcRenderer.invoke('get-library-path'),
   getStorageMode: () => ipcRenderer.invoke('get-storage-mode'),
+  getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
   getS3Config: () => ipcRenderer.invoke('get-s3-config'),
   saveS3Config: (config: Record<string, unknown>) => ipcRenderer.invoke('save-s3-config', config),
   switchToLocalStorage: () => ipcRenderer.invoke('switch-to-local-storage'),
