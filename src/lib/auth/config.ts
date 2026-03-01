@@ -1,8 +1,10 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 import { queryOne } from "@/lib/db/rust";
 import { execute } from "@/lib/db/rust";
+import { isDesktopMode, isDesktopRequestAuthorized } from "@/lib/auth/desktop-auth";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -80,7 +82,7 @@ const nextAuthResult = NextAuth({
 
 export const { handlers, signIn, signOut } = nextAuthResult;
 
-// Desktop mode bypass: return a synthetic admin session without requiring login
+// Desktop mode uses a synthetic admin session only when Electron presents a valid session token.
 async function desktopSession() {
   return {
     user: { id: '1', email: 'admin@localhost', displayName: 'Admin', role: 'admin' },
@@ -88,12 +90,26 @@ async function desktopSession() {
   };
 }
 
-// Dynamic auth session that checks ALEX_DESKTOP at runtime
-export async function authSession() {
-  if (process.env.ALEX_DESKTOP === 'true') {
-    return desktopSession();
+async function getRequestHeadersForDesktopAuth(): Promise<Headers | null> {
+  try {
+    return await headers();
+  } catch {
+    return null;
   }
-  return nextAuthResult.auth();
+}
+
+// Dynamic auth session that checks desktop mode and validates Electron's auth token.
+export async function authSession() {
+  if (!isDesktopMode()) {
+    return nextAuthResult.auth();
+  }
+
+  const requestHeaders = await getRequestHeadersForDesktopAuth();
+  if (!requestHeaders || !isDesktopRequestAuthorized(requestHeaders)) {
+    return null;
+  }
+
+  return desktopSession();
 }
 
 type AuthUser = {
