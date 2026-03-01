@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};
 
@@ -62,7 +63,7 @@ impl RelayState {
 }
 
 /// Handle a new WebSocket connection from a tunnel client.
-pub async fn handle_tunnel_ws(state: Arc<RelayState>, ws: WebSocket) {
+pub async fn handle_tunnel_ws(state: Arc<RelayState>, ws: WebSocket, client_ip: String) {
     let (mut ws_tx, mut ws_rx) = ws.split();
 
     // Wait for the Register frame
@@ -86,6 +87,12 @@ pub async fn handle_tunnel_ws(state: Arc<RelayState>, ws: WebSocket) {
 
     // Check if subdomain is already taken
     if state.clients.contains_key(&subdomain) {
+        warn!(
+            event = "register_rejected",
+            subdomain = %subdomain,
+            client_ip = %client_ip,
+            reason = "subdomain already in use",
+        );
         let ack = Frame::RegisterAck {
             success: false,
             message: "subdomain already in use".to_string(),
@@ -109,7 +116,12 @@ pub async fn handle_tunnel_ws(state: Arc<RelayState>, ws: WebSocket) {
         return;
     }
 
-    info!(subdomain = %subdomain, "client registered");
+    let connected_at = Instant::now();
+    info!(
+        event = "client_connected",
+        subdomain = %subdomain,
+        client_ip = %client_ip,
+    );
 
     // Set up channels
     let (frame_tx, mut frame_rx) = mpsc::channel::<Frame>(256);
@@ -198,7 +210,13 @@ pub async fn handle_tunnel_ws(state: Arc<RelayState>, ws: WebSocket) {
     }
 
     // Clean up
-    info!(subdomain = %subdomain, "client disconnected");
+    let duration_secs = connected_at.elapsed().as_secs();
+    info!(
+        event = "client_disconnected",
+        subdomain = %subdomain,
+        client_ip = %client_ip,
+        duration_secs,
+    );
     state.clients.remove(&subdomain);
     writer_task.abort();
 }
