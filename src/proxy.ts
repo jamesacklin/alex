@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/middleware-auth";
+import { isDesktopMode, isDesktopRequestAuthorized } from "@/lib/auth/desktop-auth";
 
 export default auth((req) => {
   const { nextUrl } = req;
   const session = req.auth;
-  const isAuthenticated = !!session;
-
-  // Desktop mode: skip all auth checks — session is synthetic
-  if (process.env.ALEX_DESKTOP === 'true') {
-    return NextResponse.next();
-  }
+  const isApiRoute = nextUrl.pathname.startsWith("/api/");
+  const isDesktop = isDesktopMode();
+  const isDesktopAuthorized = isDesktop && isDesktopRequestAuthorized(req.headers);
 
   // Public pages — no auth required.
   // /setup's own page checks whether users exist and redirects if so.
@@ -34,17 +32,23 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  // Electron IPC API endpoints — localhost only, no auth required.
-  if (nextUrl.pathname.startsWith("/api/electron/")) {
-    return NextResponse.next();
+  // In desktop mode, non-public requests must carry a valid Electron auth token.
+  if (isDesktop && !isDesktopAuthorized) {
+    if (isApiRoute) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return new NextResponse("Unauthorized", { status: 401 });
   }
 
+  const isAuthenticated = isDesktopAuthorized || !!session;
+  const isAdmin = isDesktopAuthorized || session?.user?.role === "admin";
+
   // Other API routes — return JSON errors instead of redirecting.
-  if (nextUrl.pathname.startsWith("/api/")) {
+  if (isApiRoute) {
     if (!isAuthenticated) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (nextUrl.pathname.startsWith("/api/admin") && session?.user?.role !== "admin") {
+    if (nextUrl.pathname.startsWith("/api/admin") && !isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     return NextResponse.next();
@@ -56,7 +60,7 @@ export default auth((req) => {
   }
 
   // /admin/* pages require role='admin'; non-admins land on /library
-  if (nextUrl.pathname.startsWith("/admin") && session?.user?.role !== "admin") {
+  if (nextUrl.pathname.startsWith("/admin") && !isAdmin) {
     return NextResponse.redirect(new URL("/library", req.url));
   }
 

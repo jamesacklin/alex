@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, session } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
+import { randomBytes } from 'crypto';
 import { spawn, ChildProcess, spawnSync } from 'child_process';
 import { store } from './store';
 import { getDataPaths } from './paths';
@@ -19,12 +20,35 @@ const RELAY_URL = 'wss://relay.alexreader.app/_tunnel/ws';
 const TUNNEL_DOMAIN = 'alexreader.app';
 
 const PORT = 3210;
+const DESKTOP_AUTH_HEADER = 'x-alex-desktop-auth';
 const isDev = !app.isPackaged;
 const isE2E = process.env.ALEX_E2E === 'true';
 const detachChildProcesses = process.platform !== 'win32' && !isDev;
+const desktopAuthToken = process.env.ALEX_DESKTOP_AUTH_TOKEN || randomBytes(32).toString('hex');
+let desktopAuthHeaderInjectionConfigured = false;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function configureDesktopAuthHeaderInjection() {
+  if (desktopAuthHeaderInjectionConfigured) {
+    return;
+  }
+
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: [`http://127.0.0.1:${PORT}/*`] },
+    (details, callback) => {
+      callback({
+        requestHeaders: {
+          ...details.requestHeaders,
+          [DESKTOP_AUTH_HEADER]: desktopAuthToken,
+        },
+      });
+    },
+  );
+
+  desktopAuthHeaderInjectionConfigured = true;
 }
 
 function getPackagedNodeCommand(): string {
@@ -110,6 +134,7 @@ function getEnvVars(libraryPath: string) {
     COVERS_PATH: paths.coversPath,
     PORT: PORT.toString(),
     ALEX_DESKTOP: 'true',
+    ALEX_DESKTOP_AUTH_TOKEN: desktopAuthToken,
     NEXTAUTH_SECRET: nextauthSecret,
     NEXTAUTH_URL: `http://127.0.0.1:${PORT}`,
   };
@@ -905,6 +930,7 @@ async function clearBooksTable(): Promise<boolean> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        [DESKTOP_AUTH_HEADER]: desktopAuthToken,
       },
     });
 
@@ -1083,6 +1109,7 @@ function setMacAppIcon() {
 
 app.whenReady().then(async () => {
   setMacAppIcon();
+  configureDesktopAuthHeaderInjection();
 
   // Set up IPC handlers
   ipcMain.handle('select-library-path', async () => {

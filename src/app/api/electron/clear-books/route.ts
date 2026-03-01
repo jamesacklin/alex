@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execute, queryOne } from '@/lib/db/rust';
+import { isDesktopMode, isDesktopRequestAuthorized } from '@/lib/auth/desktop-auth';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  if (isDesktopMode() && !isDesktopRequestAuthorized(request.headers)) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
   // Only allow requests from localhost (Electron)
   const host = request.headers.get('host');
   if (!host?.includes('localhost') && !host?.includes('127.0.0.1')) {
