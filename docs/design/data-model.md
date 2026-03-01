@@ -96,7 +96,8 @@ Stores user accounts with authentication credentials and profile information.
 - Unique index on `email`
 
 **Default Data:**
-- System creates default admin account: `admin@localhost` / `admin123`
+- System seeds a default admin account: `admin@localhost` / `admin123` with a fixed ID of `"1"` (for desktop auth compatibility)
+- Seed uses `INSERT...ON CONFLICT DO UPDATE` (upsert) so it is idempotent and safe to re-run on every app launch
 - Users should change default password on first login
 
 **Roles:**
@@ -432,8 +433,11 @@ WHERE key = 'library_version';
 
 - **Rust side**: `rusqlite` with statically linked SQLite (bundled feature). The `watcher-rs` binary opens the database directly for file watching operations and also exposes a `db` subcommand for use by Node.js.
 - **Next.js side**: All database queries go through `src/lib/db/rust.ts`, which spawns the `watcher-rs` binary with `db <mode>` (where mode is `query-all`, `query-one`, or `execute`). Requests are sent as JSON over stdin; responses are read from stdout.
-- **Migrations**: SQL migration files in `src/lib/db/migrations/` are applied by `scripts/db-push.js`, which uses the Rust binary bridge to execute each statement.
+- **Migrations**: SQL migration files in `src/lib/db/migrations/` are applied by `scripts/db-push.js`, which uses the Rust binary bridge to execute each statement. Current migrations:
+  - `0000_wide_expediter.sql` — Initial schema (users, books, reading_progress, collections, collection_books, settings)
+  - `0001_s3_source_columns.sql` — Adds `source`, `s3_bucket`, `s3_etag` columns to the `books` table
 - **Schema**: Defined in the SQL migration files (the canonical Drizzle schema file `src/lib/db/schema.ts` still exists for reference but is no longer used at runtime by Drizzle ORM).
+- **Seeding**: `pnpm db:seed` (runs `src/lib/db/seed.ts`) inserts the default admin user using `INSERT...ON CONFLICT DO UPDATE` for idempotent re-runs.
 
 ### Schema Updates
 

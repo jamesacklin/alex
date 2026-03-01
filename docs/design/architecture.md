@@ -12,6 +12,8 @@ Alex is built as a modern web application with the following key components:
 - **Source-aware File Serving** - Unified source driver pipeline for local and S3-backed book streaming
 - **Real-time Updates** - Server-Sent Events (SSE) for live library updates
 - **Multi-format Readers** - PDF.js for PDFs, epub.js for EPUBs
+- **Dual Authentication** - NextAuth.js credential auth for web, header-based token auth for Electron desktop
+- **Relay Service** - Optional reverse tunnel (`alex-relay`) for public access without port forwarding
 
 ## Architecture Diagram
 
@@ -46,6 +48,11 @@ graph TB
         DB[(SQLite Database<br/>library.db)]
     end
 
+    subgraph "Alex Relay (optional)"
+        RelayService[Relay Service<br/>relay.alexreader.app]
+        TunnelWS[WebSocket Tunnel]
+    end
+
     subgraph "Rust Watcher (watcher-rs)"
         Notify[notify crate<br/>File Watcher]
         S3Poll[S3 Poller]
@@ -58,6 +65,11 @@ graph TB
         Extract[Metadata Extractors<br/>lopdf / quick-xml]
         CoverGen[Cover Generator<br/>pdfium-render / ab_glyph]
     end
+
+    %% Relay / Tunnel Flow
+    RelayService -->|Proxy requests| API
+    TunnelWS <-->|Binary WebSocket| Watcher
+    RelayService -->|Route via tunnel| TunnelWS
 
     %% User Interactions
     UI -->|Login| Auth
@@ -186,6 +198,9 @@ graph TB
     class Pages,API,SourceDriver,Auth,SSEEndpoint server
     class LibFolder,S3Bucket,Covers,DB,Users,Books,Progress,Collections,Settings storage
     class Notify,S3Poll,HandleAdd,HandleChange,HandleDelete,S3HandleAdd,S3HandleChange,S3HandleDelete,Extract,CoverGen process
+
+    classDef relay fill:#fce4ec,stroke:#880e4f
+    class RelayService,TunnelWS relay
 ```
 
 ## Component Descriptions
@@ -243,6 +258,8 @@ Authenticated:
 - `GET /api/books` - List books with pagination, search, filters
 - `GET /api/books/now-reading` - List current user's books where `reading_progress.status='reading'`
 - `GET /api/books/[id]` - Get book metadata
+- `DELETE /api/books/[id]` - Delete a book
+- `PATCH /api/books/[id]` - Update book metadata
 - `GET /api/books/[id]/file` - Serve book file (PDF or EPUB)
 - `GET /api/books/[id]/book.epub` - Serve EPUB file
 - `GET /api/books/[id]/cover` - Serve cover image
@@ -251,28 +268,41 @@ Authenticated:
 - `GET /api/collections` - List user's collections
 - `POST /api/collections` - Create collection
 - `GET /api/collections/[id]` - Get collection with books
-- `GET /api/collections/[id]/now-reading` - List currently reading books in a specific collection
-- `PUT /api/collections/[id]` - Update collection
+- `PATCH /api/collections/[id]` - Update collection
 - `DELETE /api/collections/[id]` - Delete collection
+- `GET /api/collections/[id]/books` - List books in a collection
+- `POST /api/collections/[id]/books` - Add a book to a collection
+- `DELETE /api/collections/[id]/books/[bookId]` - Remove a book from a collection
+- `GET /api/collections/[id]/now-reading` - List currently reading books in a specific collection
 - `POST /api/collections/[id]/share` - Enable sharing (generates token)
 - `DELETE /api/collections/[id]/share` - Disable sharing (revokes token)
-- `GET /api/collections/[id]/share` - Check share status
 - `GET /api/library/events` - SSE endpoint for real-time updates
+- `GET /api/users` - List users (admin only)
+- `POST /api/users` - Create user (admin only)
+- `PATCH /api/users/[id]` - Update user (admin only)
+- `POST /api/admin/library/clear` - Clear all books from library (admin only)
+- `POST /api/electron/clear-books` - Clear books for Electron reset (desktop only)
 
 Public (no auth):
 - `GET /api/shared/[token]` - Public collection metadata and paginated book list
+- `GET /api/shared/[token]/books` - Public paginated book list for collection
 - `GET /api/shared/[token]/covers/[bookId]` - Public cover image (scoped to collection)
 - `GET /api/shared/[token]/books/[bookId]/file` - Public book file streaming (scoped to collection)
 - `GET /api/shared/[token]/books/[bookId]/book.epub` - Public EPUB file (scoped to collection)
 
 All four book-file endpoints (authenticated + public, PDF + EPUB) delegate to the same source-aware helper: `src/lib/files/serve-book-file.ts`.
 
-**NextAuth.js**
-- Credential-based authentication
-- JWT sessions
+**NextAuth.js (Dual Auth System)**
+- Credential-based authentication (email + bcrypt password)
+- JWT sessions (30-day expiry, stateless)
 - Role-based access control (admin/user)
-- Bcrypt password hashing
+- Two NextAuth instances share the same secret and pinned cookie config (`src/lib/auth/cookies.ts`):
+  - **Full config** (`src/lib/auth/config.ts`): Used by API route handlers; includes credential provider and DB queries
+  - **Middleware config** (`src/lib/auth/middleware-auth.ts`): Lightweight Edge-runtime instance; JWT decode only, no providers
+- Cookie names are pinned (with `__Secure-` prefix when `NEXTAUTH_URL` starts with `https://`) to prevent mismatches behind reverse proxies
+- Desktop mode (`ALEX_DESKTOP=true`): Electron injects a per-session `x-alex-desktop-auth` header; middleware validates it via `isDesktopRequestAuthorized()` and grants a synthetic admin session
 - Middleware exempts `/shared/*` and `/api/shared/*` from auth
+- Middleware respects `X-Forwarded-Host` / `X-Forwarded-Proto` headers for correct redirects behind the relay
 
 **SSE Endpoint**
 - Long-lived HTTP connection for Server-Sent Events
@@ -357,6 +387,27 @@ The watcher is a standalone Rust binary that handles ingestion, metadata extract
 **S3 Stream Bridge**
 - The `watcher-rs s3-stream` subcommand streams object bytes to stdout with a JSON header
 - Next.js uses this for ranged/full responses while preserving the same HTTP contract as local files
+
+**Tunnel Client**
+- The `watcher-rs` binary includes a built-in reverse tunnel client (`tunnel/` module)
+- Connects to the relay service via binary WebSocket (`tokio-tungstenite`)
+- Forwards incoming HTTP requests from the relay to the local Next.js server
+- Uses `bincode` for efficient binary serialization of request/response frames
+- Electron spawns the tunnel daemon alongside the watcher and Next.js server
+
+### Alex Relay (`alex-relay`)
+
+The relay is an optional standalone Rust service that enables public access to a desktop Alex instance without port forwarding or dynamic DNS.
+
+- **Architecture**: Axum-based HTTP server with WebSocket upgrade for tunnel connections
+- **Protocol**: Binary WebSocket frames carrying serialized HTTP request/response pairs (`bincode` + `serde`)
+- **Routing**: Incoming HTTP requests to `relay.alexreader.app` are proxied through the WebSocket tunnel to the desktop app's local Next.js server
+- **Key modules**:
+  - `relay.rs` - WebSocket connection management and tunnel session tracking (via `DashMap`)
+  - `proxy.rs` - HTTP request proxying through the tunnel
+  - `protocol.rs` - Shared request/response frame types
+- **Header forwarding**: Preserves `Set-Cookie` and other response headers; injects `X-Forwarded-Host` and `X-Forwarded-Proto` so the app generates correct URLs
+- **Dependencies**: `axum`, `tokio-tungstenite`, `bincode`, `dashmap`, `hyper`
 
 ## Data Flow
 
@@ -451,6 +502,10 @@ The watcher is a standalone Rust binary that handles ingestion, metadata extract
   - Linux: AppImage and .deb packages
 - First-run setup flow for admin account creation
 - Native file system access for library management
+- **Desktop auth**: Electron generates a 32-byte random `ALEX_DESKTOP_AUTH_TOKEN` per session and injects it via `x-alex-desktop-auth` header on all requests to the embedded server; middleware validates this header to grant admin access without browser cookies
+- **Relay tunnel**: Electron can spawn a tunnel daemon that connects to `wss://relay.alexreader.app/_tunnel/ws`, enabling public access to the local library through the relay service
+- **IPC channels**: Two-way communication between main process and renderer for config, auth tokens, and lifecycle events
+- **Persistent config**: `electron-store` persists user settings (library path, S3 config, relay preferences) across sessions
 
 ## Technology Stack
 
@@ -458,7 +513,7 @@ The watcher is a standalone Rust binary that handles ingestion, metadata extract
 |-------|------------|
 | Frontend | React 19, Next.js 16 |
 | Styling | Tailwind CSS v4, shadcn/ui |
-| Authentication | NextAuth.js v5 |
+| Authentication | NextAuth.js v5 (dual-instance: full config + Edge middleware); desktop header-based auth |
 | Database | SQLite via Rust (`rusqlite`, statically linked); Next.js accesses DB through the `watcher-rs` binary bridge |
 | Ingestion | Rust `notify` (local mode) or S3 poller (S3 mode), both in `watcher-rs` |
 | File Serving | Source-driver pipeline (`serveBookFile` + `SOURCE_HANDLERS`) |
@@ -467,4 +522,8 @@ The watcher is a standalone Rust binary that handles ingestion, metadata extract
 | PDF/EPUB Metadata | `lopdf`, `quick-xml` + `zip` (Rust, in `watcher-rs`) |
 | Cover Generation | `pdfium-render` (statically linked PDFium), `ab_glyph` + `imageproc` fallback (Rust, in `watcher-rs`) |
 | Real-time | Server-Sent Events (SSE) |
+| Relay | `alex-relay` (Axum + WebSocket tunnel); `watcher-rs` tunnel client (`tokio-tungstenite`) |
+| Desktop | Electron 34, `electron-store`, system tray |
+| Testing | Playwright (E2E, web + Electron), Jest (unit), Storybook + Chromatic (visual) |
+| CI/CD | GitHub Actions (CI, Docker release, Electron release, E2E, Chromatic, code review) |
 | Deployment | Docker, Electron, Node.js 22, Rust toolchain (build-time) |

@@ -220,12 +220,70 @@ sequenceDiagram
 
 ### Authentication Flow
 
-1. **Session Check**: All protected routes verify JWT session
+1. **Session Check**: All protected routes verify JWT session (or desktop auth header)
 2. **Redirect**: Unauthenticated users sent to `/login`
 3. **Credential Validation**: Email lookup + bcrypt password comparison
 4. **JWT Creation**: Stateless session token (no database storage)
-5. **Cookie Storage**: HttpOnly, secure session cookie
+5. **Cookie Storage**: HttpOnly session cookie; names pinned via `src/lib/auth/cookies.ts` (uses `__Secure-` prefix when NEXTAUTH_URL is HTTPS)
 6. **Role-based Access**: Admin vs. user permissions enforced in middleware
+7. **Desktop Mode**: When `ALEX_DESKTOP=true`, middleware also accepts the `x-alex-desktop-auth` header as admin authentication
+8. **Dual NextAuth Instances**: Full config (route handlers) and lightweight Edge config (middleware) share the same secret and cookie names
+
+---
+
+## Relay Tunnel Flow
+
+This diagram shows how the reverse tunnel enables public access to a desktop Alex instance through the relay service.
+
+```mermaid
+sequenceDiagram
+    participant RemoteUser as Remote User
+    participant Relay as Relay Service<br/>relay.alexreader.app
+    participant Tunnel as Tunnel Client<br/>(in watcher-rs)
+    participant Next as Next.js Server<br/>localhost:3210
+
+    Note over Tunnel,Relay: Tunnel establishment
+    Tunnel->>Relay: Connect WSS /_tunnel/ws
+    Relay->>Relay: Register tunnel session (DashMap)
+    Relay-->>Tunnel: Connection acknowledged
+
+    Note over RemoteUser,Next: Request proxying
+    RemoteUser->>Relay: GET /library
+    Relay->>Relay: Serialize request (bincode)
+    Relay->>Tunnel: Binary WebSocket frame (request)
+    Tunnel->>Tunnel: Deserialize request
+    Tunnel->>Next: Forward HTTP request to localhost:3210
+    Next-->>Tunnel: HTTP response (+ Set-Cookie headers)
+    Tunnel->>Tunnel: Serialize response (bincode)
+    Tunnel->>Relay: Binary WebSocket frame (response)
+    Relay->>Relay: Deserialize response
+    Relay->>Relay: Inject X-Forwarded-Host, X-Forwarded-Proto
+    Relay-->>RemoteUser: HTTP response (Set-Cookie preserved)
+
+    Note over RemoteUser,Next: Auth behind relay
+    RemoteUser->>Relay: POST /api/auth/callback/credentials
+    Relay->>Tunnel: Forward login request
+    Tunnel->>Next: Proxy to localhost
+    Next->>Next: NextAuth validates credentials
+    Next-->>Tunnel: Set-Cookie: __Secure-authjs.session-token=...
+    Tunnel-->>Relay: Response with Set-Cookie
+    Relay-->>RemoteUser: Set-Cookie preserved in response
+    Note over RemoteUser: Browser stores session cookie
+    RemoteUser->>Relay: GET /api/books (with session cookie)
+    Relay->>Tunnel: Forward authenticated request
+    Tunnel->>Next: Proxy with cookie
+    Next->>Next: Middleware decodes JWT from cookie
+    Next-->>RemoteUser: Authorized response
+```
+
+### Relay Architecture Notes
+
+1. **No port forwarding required**: The desktop app initiates the outbound WebSocket connection; no inbound ports need to be opened
+2. **Binary protocol**: `bincode` serialization keeps frame overhead minimal
+3. **Session tracking**: `DashMap` provides concurrent tunnel session management on the relay
+4. **Header preservation**: `Set-Cookie` headers pass through unmodified so auth works transparently
+5. **Forwarded headers**: Relay injects `X-Forwarded-Host` and `X-Forwarded-Proto` so Next.js middleware generates correct redirect URLs
+6. **Cookie pinning**: Pinned cookie names in `src/lib/auth/cookies.ts` prevent mismatch between the login handler (which sees HTTPS via forwarded proto) and subsequent requests
 
 ---
 
@@ -611,7 +669,7 @@ sequenceDiagram
 
 ## Electron Desktop App Flow
 
-This diagram shows how the Electron desktop app initializes and manages the embedded Next.js server.
+This diagram shows how the Electron desktop app initializes and manages the embedded Next.js server, including desktop auth and the optional relay tunnel.
 
 ```mermaid
 sequenceDiagram
@@ -619,24 +677,27 @@ sequenceDiagram
     participant Electron as Electron Main Process
     participant Next as Next.js Server
     participant Watcher as File Watcher
+    participant Tunnel as Tunnel Client
     participant DB as SQLite Database
     participant Browser as BrowserWindow
+    participant Relay as Relay Service
 
     User->>Electron: Launch app
+    Electron->>Electron: Generate ALEX_DESKTOP_AUTH_TOKEN (32 bytes)
     Electron->>Electron: Check for existing database
 
     alt First run (no database)
         Electron->>Browser: Show /setup route
         User->>Browser: Create admin account
         Browser->>Next: POST admin credentials
-        Next->>DB: Insert admin user
+        Next->>DB: INSERT...ON CONFLICT (upsert admin)
         DB-->>Next: Success
         Next-->>Browser: Redirect to /library
     else Existing database
         Electron->>Next: Start embedded server on :3210
         Next->>DB: Run db:push (idempotent)
-        Next->>DB: Run db:seed (idempotent)
-        Next->>Watcher: Start watcher-rs
+        Next->>DB: Run db:seed (upsert admin)
+        Electron->>Watcher: Start watcher-rs
         Watcher->>Watcher: Select local or S3 mode from config
         alt Local mode
             Watcher->>DB: getLibraryPath()
@@ -646,10 +707,25 @@ sequenceDiagram
         end
         Next-->>Electron: Server ready
         Electron->>Browser: Create window → http://localhost:3210
-        Browser->>Next: GET /library
+        Browser->>Next: GET /library (+ x-alex-desktop-auth header)
+        Next->>Next: Middleware validates desktop auth token
         Next->>DB: Fetch books
         DB-->>Next: Book data
         Next-->>Browser: Render library
+    end
+
+    Note over Electron,Relay: Optional relay tunnel
+    alt Relay enabled
+        Electron->>Tunnel: Spawn tunnel daemon
+        Tunnel->>Relay: Connect WSS to relay.alexreader.app/_tunnel/ws
+        Relay-->>Tunnel: Tunnel established
+
+        Note over Relay,Next: Remote user accesses library
+        Relay->>Tunnel: Forward HTTP request (bincode frame)
+        Tunnel->>Next: Proxy to localhost:3210
+        Next-->>Tunnel: HTTP response
+        Tunnel->>Relay: Forward response (+ Set-Cookie, X-Forwarded-*)
+        Relay-->>Relay: Return to remote user
     end
 
     Note over User,DB: User adds book to library
@@ -663,6 +739,7 @@ sequenceDiagram
     Note over Electron,Browser: App lifecycle
     User->>Browser: Close window
     Browser->>Electron: window-all-closed event
+    Electron->>Tunnel: Graceful shutdown
     Electron->>Watcher: Graceful shutdown
     Electron->>Next: Stop server
     Electron->>Electron: Exit app
@@ -681,3 +758,7 @@ sequenceDiagram
 6. **Auto-updates**: Electron-builder provides update checking and installation
 7. **First-run Setup**: Setup route creates initial admin account before library access
 8. **Storage mode selection**: Onboarding/admin lets users switch between local folder and S3 bucket backends
+9. **Desktop Auth**: Per-session random token (`ALEX_DESKTOP_AUTH_TOKEN`) injected via `x-alex-desktop-auth` header; middleware validates the header and grants a synthetic admin session without browser cookies
+10. **Relay Tunnel**: Optional tunnel daemon connects to `wss://relay.alexreader.app/_tunnel/ws` for public access; uses `bincode` serialization over binary WebSocket frames; preserves `Set-Cookie` and forwarded headers
+11. **Persistent Config**: `electron-store` persists library path, S3 settings, and relay preferences across sessions
+12. **Admin Seed**: Uses `INSERT...ON CONFLICT DO UPDATE` so seed is idempotent and safe to re-run on every launch
