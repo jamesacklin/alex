@@ -36,7 +36,10 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - run: pnpm exec playwright install --with-deps chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-      - run: pnpm exec playwright install-deps chromium
+      - run: |
+          # A cache hit can still be incomplete/corrupt; ensure Chromium exists.
+          pnpm exec playwright install chromium
+          pnpm exec playwright install-deps chromium
         if: steps.playwright-cache.outputs.cache-hit == 'true'
       - run: pnpm build:native
       - run: mkdir -p data && pnpm db:push && pnpm db:seed
@@ -70,7 +73,10 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - run: pnpm exec playwright install --with-deps chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-      - run: pnpm exec playwright install-deps chromium
+      - run: |
+          # A cache hit can still be incomplete/corrupt; ensure Chromium exists.
+          pnpm exec playwright install chromium
+          pnpm exec playwright install-deps chromium
         if: steps.playwright-cache.outputs.cache-hit == 'true'
       - run: pnpm build:native
       # Build Next.js with ALEX_DESKTOP=true so the client bundle knows
