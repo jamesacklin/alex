@@ -118,7 +118,7 @@ pub async fn proxy_request(
                 HeaderName::try_from(key.as_str()),
                 HeaderValue::try_from(value.as_str()),
             ) {
-                headers_mut.insert(name, val);
+                headers_mut.append(name, val);
             }
         }
     }

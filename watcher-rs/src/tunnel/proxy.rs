@@ -25,6 +25,12 @@ pub async fn forward_request(
 
     let mut builder = hyper::Request::builder().method(method.as_str()).uri(&url);
 
+    // Capture the original Host for X-Forwarded-Host
+    let original_host = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("host"))
+        .map(|(_, v)| v.clone());
+
     for (key, value) in &headers {
         // Skip the host header since we're rewriting the target
         if key.eq_ignore_ascii_case("host") {
@@ -34,6 +40,17 @@ pub async fn forward_request(
     }
     // Set host to local address
     builder = builder.header("host", local_addr);
+
+    // Tell the app the original protocol and host so NextAuth and redirect
+    // logic work correctly behind the relay.
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("x-forwarded-proto")) {
+        builder = builder.header("x-forwarded-proto", "https");
+    }
+    if let Some(fwd_host) = &original_host {
+        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("x-forwarded-host")) {
+            builder = builder.header("x-forwarded-host", fwd_host.as_str());
+        }
+    }
 
     let req = builder
         .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
