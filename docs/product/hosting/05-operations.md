@@ -12,10 +12,10 @@ The marketing site lives at the apex domain (`alexreader.app`). Tunnel subdomain
 
 Create these DNS records in Cloudflare:
 
-| Type | Name | Content | Proxy | Purpose |
-|------|------|---------|-------|---------|
-| A (or CNAME) | `@` | Marketing host | Per your setup | `alexreader.app` — marketing site |
-| A | `*` | `<VPS_IP>` | DNS only (gray cloud) | `<subdomain>.alexreader.app` — tunnel traffic |
+| Type         | Name | Content        | Proxy                 | Purpose                                       |
+| ------------ | ---- | -------------- | --------------------- | --------------------------------------------- |
+| A (or CNAME) | `@`  | Marketing host | Per your setup        | `alexreader.app` — marketing site             |
+| A            | `*`  | `<VPS_IP>`     | DNS only (gray cloud) | `<subdomain>.alexreader.app` — tunnel traffic |
 
 Caddy handles TLS for the wildcard, so the wildcard record must be DNS-only (gray cloud, no Cloudflare proxy).
 
@@ -23,10 +23,10 @@ Caddy handles TLS for the wildcard, so the wildcard record must be DNS-only (gra
 
 The wildcard catches **all** subdomains not covered by an explicit record. If you use other subdomains (e.g., `www`, `docs`, `api`), add explicit A or CNAME records for them — explicit records take precedence over the wildcard:
 
-| Type | Name | Content | Purpose |
-|------|------|---------|---------|
-| CNAME | `www` | Marketing host | Keeps `www.alexreader.app` on the marketing site |
-| A | `api` | API server IP | Prevents `api.alexreader.app` from hitting the relay |
+| Type  | Name  | Content        | Purpose                                              |
+| ----- | ----- | -------------- | ---------------------------------------------------- |
+| CNAME | `www` | Marketing host | Keeps `www.alexreader.app` on the marketing site     |
+| A     | `api` | API server IP  | Prevents `api.alexreader.app` from hitting the relay |
 
 Any subdomain without an explicit record will route to the relay VPS and be treated as a tunnel subdomain.
 
@@ -49,9 +49,12 @@ If building on macOS for a Linux VPS:
 # Install the target
 rustup target add x86_64-unknown-linux-gnu
 
-# Build (requires a linker — use cross or zig)
-cargo install cross
-cross build --release --target x86_64-unknown-linux-gnu
+# Install zig + cargo-zigbuild
+brew install zig
+cargo install cargo-zigbuild
+
+# Build using Zig as the linker
+cargo zigbuild --release --target x86_64-unknown-linux-gnu
 ```
 
 Copy the binary to the VPS:
@@ -62,18 +65,29 @@ scp target/x86_64-unknown-linux-gnu/release/alex-relay user@vps:/opt/alex-relay/
 
 ## 3. Install and Configure Caddy
 
-Install Caddy with the Cloudflare DNS plugin (required for wildcard certs):
+Install Caddy and add the Cloudflare DNS plugin (required for wildcard certs):
 
 ```bash
 # On the VPS
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudflare.com/apt/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-archive-keyring.gpg
+# If Caddy is installed via snap, remove it to avoid conflicts with apt/systemd setup
+if snap list caddy >/dev/null 2>&1; then sudo snap remove caddy; fi
 
-# Install xcaddy to build Caddy with plugins
-go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-xcaddy build --with github.com/caddy-dns/cloudflare
-sudo mv caddy /usr/bin/caddy
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
+curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+sudo apt update
+sudo apt install -y caddy
+
+# Add the Cloudflare DNS module to the installed Caddy binary
+# Stop running instances first; add-package starts a temporary Caddy process
+sudo systemctl stop caddy 2>/dev/null || true
+sudo pkill -x caddy 2>/dev/null || true
+sudo caddy add-package github.com/caddy-dns/cloudflare
+sudo caddy list-modules | grep dns.providers.cloudflare
 ```
+
+`caddy add-package` is the quickest path and is currently marked experimental by Caddy. If you want strict reproducibility/pinning, use an `xcaddy` build flow instead.
+If `systemctl status caddy` says unit not found, Caddy was not installed as an apt package (or install failed); reinstall with `sudo apt install --reinstall caddy`.
 
 Create `/etc/caddy/Caddyfile`:
 
@@ -89,14 +103,17 @@ Create `/etc/caddy/Caddyfile`:
 Create a Cloudflare API token with **Zone > DNS > Edit** permission for your domain, then set it:
 
 ```bash
-# /etc/systemd/system/caddy.service.d/override.conf
+sudo mkdir -p /etc/systemd/system/caddy.service.d
+sudo tee /etc/systemd/system/caddy.service.d/override.conf > /dev/null <<'EOF'
 [Service]
 Environment=CF_API_TOKEN=your-cloudflare-api-token-here
+EOF
 ```
 
 Start Caddy:
 
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable caddy
 sudo systemctl start caddy
 ```
@@ -154,7 +171,13 @@ cargo build --release
 
 ### Manual test
 
-Start a local Next.js server on port 3210, then:
+Run this mode without Electron (`pnpm electron:dev` should be stopped). Start a local Next.js server on port 3210, then:
+
+```bash
+pnpm next dev -p 3210 -H 127.0.0.1
+```
+
+In a second terminal, run:
 
 ```bash
 ./target/release/watcher-rs tunnel \
@@ -182,13 +205,15 @@ No additional setup is needed for end users. When they toggle "Public Access" in
 
 The tunnel auto-starts on subsequent app launches if it was previously enabled.
 
+For local development, `pnpm electron:dev` starts its own Next.js server on `127.0.0.1:3210`. Do not run a separate `next dev` or manual `watcher-rs tunnel` against the same port at the same time.
+
 ### Changing the relay URL
 
 The relay URL is hardcoded in `electron/main.ts` as `RELAY_URL`. To point to a different relay:
 
 ```typescript
-const RELAY_URL = 'wss://relay.yourdomain.com/_tunnel/ws';
-const TUNNEL_DOMAIN = 'yourdomain.com';
+const RELAY_URL = "wss://relay.yourdomain.com/_tunnel/ws";
+const TUNNEL_DOMAIN = "yourdomain.com";
 ```
 
 Rebuild the Electron app after changing these values.
@@ -202,6 +227,7 @@ sudo journalctl -u alex-relay -f
 ```
 
 Key log lines:
+
 - `client registered` — a tunnel client connected
 - `client disconnected` — a tunnel client dropped
 
@@ -219,10 +245,10 @@ Tunnel output is logged to stderr with `[Tunnel]` prefix in the Electron console
 
 The VPS needs:
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 443 | TCP | HTTPS (Caddy) |
-| 80 | TCP | HTTP (Caddy ACME challenge redirect) |
+| Port | Protocol | Purpose                              |
+| ---- | -------- | ------------------------------------ |
+| 443  | TCP      | HTTPS (Caddy)                        |
+| 80   | TCP      | HTTP (Caddy ACME challenge redirect) |
 
 The relay port (8080) should **not** be exposed publicly — Caddy reverse-proxies to it on localhost.
 
