@@ -1,0 +1,7 @@
+{
+    "scripts": {
+        "setup": "pnpm install\npnpm db:push\npnpm db:seed\nexport NEXTAUTH_SECRET=$(openssl rand -base64 32) && echo \"NEXTAUTH_SECRET=$NEXTAUTH_SECRET\" >> .env",
+        "run": "pnpm watcher & pnpm dev",
+        "archive": "git clean -fdX"
+    }
+}
