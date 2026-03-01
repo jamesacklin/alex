@@ -2,12 +2,24 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/middleware-auth";
 import { isDesktopMode, isDesktopRequestAuthorized } from "@/lib/auth/desktop-auth";
 
+/** Build a base URL that respects X-Forwarded-Host/Proto from the relay. */
+function originUrl(req: Request): string {
+  const fwdHost = req.headers.get("x-forwarded-host");
+  const fwdProto = req.headers.get("x-forwarded-proto");
+  if (fwdHost) {
+    const proto = fwdProto || "https";
+    return `${proto}://${fwdHost}`;
+  }
+  return req.url;
+}
+
 export default auth((req) => {
   const { nextUrl } = req;
   const session = req.auth;
   const isApiRoute = nextUrl.pathname.startsWith("/api/");
   const isDesktop = isDesktopMode();
   const isDesktopAuthorized = isDesktop && isDesktopRequestAuthorized(req.headers);
+  const base = originUrl(req);
 
   // Public pages — no auth required.
   // /setup's own page checks whether users exist and redirects if so.
@@ -48,12 +60,12 @@ export default auth((req) => {
 
   // Unauthenticated page requests → /login
   if (!isAuthenticated) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(new URL("/login", base));
   }
 
   // /admin/* pages require role='admin'; non-admins land on /library
   if (nextUrl.pathname.startsWith("/admin") && !isAdmin) {
-    return NextResponse.redirect(new URL("/library", req.url));
+    return NextResponse.redirect(new URL("/library", base));
   }
 
   return NextResponse.next();
