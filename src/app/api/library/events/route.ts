@@ -1,9 +1,15 @@
+import { authSession } from "@/lib/auth/config";
 import { getLibraryVersion } from "@/lib/db/library-version";
 
 export const dynamic = "force-dynamic";
 
 // Server-Sent Events endpoint for real-time library updates
 export async function GET() {
+  const session = await authSession();
+  if (!session?.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
