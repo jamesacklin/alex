@@ -32,14 +32,6 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  // In desktop mode, non-public requests must carry a valid Electron auth token.
-  if (isDesktop && !isDesktopAuthorized) {
-    if (isApiRoute) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return new NextResponse("Unauthorized", { status: 401 });
-  }
-
   const isAuthenticated = isDesktopAuthorized || !!session;
   const isAdmin = isDesktopAuthorized || session?.user?.role === "admin";
 
