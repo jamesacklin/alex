@@ -2,13 +2,16 @@ mod protocol;
 mod proxy;
 mod relay;
 
+use axum::extract::ConnectInfo;
 use axum::extract::State;
 use axum::extract::ws::WebSocketUpgrade;
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
 use clap::Parser;
 use relay::RelayState;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
@@ -27,6 +30,7 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
+        .json()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "alex_relay=info".parse().unwrap()),
@@ -47,17 +51,30 @@ async fn main() {
 
     info!(addr = %cli.listen_addr, "relay listening");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("server error");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("server error");
 }
 
 async fn ws_handler(
     State(state): State<Arc<RelayState>>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| relay::handle_tunnel_ws(state, socket))
+    // Prefer X-Forwarded-For (set by Caddy) over the raw TCP peer address.
+    let client_ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| peer_addr.ip().to_string());
+
+    ws.on_upgrade(move |socket| relay::handle_tunnel_ws(state, socket, client_ip))
 }
 
 async fn shutdown_signal() {
