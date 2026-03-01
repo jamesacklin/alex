@@ -14,4 +14,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getS3Config: () => ipcRenderer.invoke('get-s3-config'),
   saveS3Config: (config: Record<string, unknown>) => ipcRenderer.invoke('save-s3-config', config),
   switchToLocalStorage: () => ipcRenderer.invoke('switch-to-local-storage'),
+  getTunnelStatus: () => ipcRenderer.invoke('get-tunnel-status'),
+  enableTunnel: () => ipcRenderer.invoke('enable-tunnel'),
+  disableTunnel: () => ipcRenderer.invoke('disable-tunnel'),
+  regenerateTunnelSubdomain: () => ipcRenderer.invoke('regenerate-tunnel-subdomain'),
 });
