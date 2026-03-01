@@ -11,8 +11,12 @@ import { createTray, destroyTray } from './tray';
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 let watcherProcess: ChildProcess | null = null;
+let tunnelProcess: ChildProcess | null = null;
 let isQuitting = false;
 let isFirstRun = false;
+
+const RELAY_URL = 'wss://relay.alexreader.app/_tunnel/ws';
+const TUNNEL_DOMAIN = 'alexreader.app';
 
 const PORT = 3210;
 const isDev = !app.isPackaged;
@@ -626,7 +630,7 @@ function startWatcher(libraryPath: string) {
 function killChildProcesses() {
   console.log('[Electron] Shutting down child processes...');
 
-  for (const child of [serverProcess, watcherProcess]) {
+  for (const child of [serverProcess, watcherProcess, tunnelProcess]) {
     if (!child || child.pid == null) continue;
     try {
       if (detachChildProcesses) {
@@ -642,6 +646,7 @@ function killChildProcesses() {
 
   serverProcess = null;
   watcherProcess = null;
+  tunnelProcess = null;
 }
 
 function restartWatcher(libraryPath: string) {
@@ -655,6 +660,141 @@ function restartWatcher(libraryPath: string) {
   if (shouldStartWatcher(libraryPath)) {
     startWatcher(libraryPath);
   }
+}
+
+function generateTunnelSubdomain(): string {
+  const adjectives = [
+    'amber', 'ancient', 'autumn', 'blazing', 'bold', 'brave', 'bright', 'calm',
+    'clever', 'cool', 'cosmic', 'crisp', 'crystal', 'curious', 'dancing', 'daring',
+    'deep', 'divine', 'dreamy', 'eager', 'emerald', 'endless', 'fading', 'fierce',
+    'gentle', 'gilded', 'golden', 'graceful', 'green', 'hidden', 'humble', 'hushed',
+    'ivory', 'jade', 'keen', 'lasting', 'leafy', 'light', 'lively', 'lunar',
+    'magic', 'mellow', 'mighty', 'misty', 'moonlit', 'morning', 'mossy', 'noble',
+    'pale', 'peaceful', 'quiet', 'radiant', 'rapid', 'rising', 'rosy', 'rustic',
+    'sacred', 'serene', 'shining', 'silent', 'silver', 'sleepy', 'smooth', 'snowy',
+    'soft', 'solar', 'sparkling', 'spring', 'steady', 'still', 'summer', 'sunny',
+    'sweet', 'swift', 'tender', 'tidal', 'tranquil', 'twilight', 'vast', 'velvet',
+    'vivid', 'wandering', 'warm', 'western', 'wild', 'winding', 'winter', 'wise',
+  ];
+  const nouns = [
+    'aurora', 'bay', 'beacon', 'birch', 'bloom', 'boulder', 'breeze', 'bridge',
+    'brook', 'canyon', 'cedar', 'cliff', 'cloud', 'coral', 'cove', 'creek',
+    'crystal', 'dawn', 'delta', 'dew', 'drift', 'dune', 'dusk', 'eagle',
+    'echo', 'elm', 'ember', 'falcon', 'fern', 'fjord', 'flame', 'forest',
+    'fountain', 'frost', 'garden', 'glade', 'glen', 'grove', 'harbor', 'haven',
+    'hawk', 'heath', 'heron', 'hill', 'horizon', 'island', 'jade', 'lake',
+    'lark', 'laurel', 'leaf', 'lily', 'lotus', 'maple', 'meadow', 'mesa',
+    'mist', 'moon', 'moss', 'mountain', 'oak', 'ocean', 'orchid', 'owl',
+    'palm', 'path', 'peak', 'pearl', 'pine', 'prairie', 'rain', 'raven',
+    'reef', 'ridge', 'river', 'rock', 'rose', 'sage', 'sand', 'sea',
+    'shore', 'sky', 'snow', 'spark', 'spring', 'star', 'stone', 'storm',
+    'stream', 'summit', 'sun', 'surf', 'swan', 'temple', 'tide', 'trail',
+    'tree', 'valley', 'vine', 'vista', 'wave', 'whisper', 'willow', 'wind',
+  ];
+  const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+  return `${pick(adjectives)}-${pick(adjectives)}-${pick(nouns)}`;
+}
+
+function startTunnel() {
+  const subdomain = store.get('tunnelSubdomain');
+  if (!subdomain) {
+    console.error('[Electron] No tunnel subdomain configured');
+    return;
+  }
+
+  const baseEnv = getEnvVars(store.get('libraryPath') || '');
+  const workingDir = isDev ? process.cwd() : process.resourcesPath;
+
+  let command: string;
+  let args: string[];
+  let watcherDir: string;
+
+  const tunnelArgs = [
+    'tunnel',
+    '--subdomain', subdomain,
+    '--relay-url', RELAY_URL,
+    '--local-addr', `127.0.0.1:${PORT}`,
+  ];
+
+  if (isDev) {
+    const devBinary = getDevWatcherBinaryPath();
+    if (fs.existsSync(devBinary)) {
+      command = devBinary;
+      args = tunnelArgs;
+      watcherDir = path.dirname(devBinary);
+    } else {
+      command = 'cargo';
+      args = [
+        'run',
+        '--manifest-path',
+        path.join(process.cwd(), 'watcher-rs', 'Cargo.toml'),
+        '--release',
+        '--',
+        ...tunnelArgs,
+      ];
+      watcherDir = path.join(process.cwd(), 'watcher-rs');
+    }
+  } else {
+    const packagedBinary = getPackagedWatcherBinaryPath();
+    if (!fs.existsSync(packagedBinary)) {
+      console.error(`[Electron] Packaged watcher binary not found: ${packagedBinary}`);
+      return;
+    }
+    command = packagedBinary;
+    args = tunnelArgs;
+    watcherDir = path.dirname(packagedBinary);
+  }
+
+  const tunnelEnv = buildWatcherEnv(baseEnv, watcherDir);
+
+  console.log(`[Electron] Starting tunnel (subdomain: ${subdomain})...`);
+  try {
+    tunnelProcess = spawn(command, args, {
+      env: tunnelEnv,
+      cwd: workingDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...(detachChildProcesses && { detached: true }),
+    });
+  } catch (error) {
+    console.error('[Electron] Failed to spawn tunnel process:', error);
+    return;
+  }
+
+  tunnelProcess.stdout?.on('data', (data: Buffer) => {
+    process.stdout.write(`[Tunnel] ${data.toString()}`);
+  });
+
+  tunnelProcess.stderr?.on('data', (data: Buffer) => {
+    process.stderr.write(`[Tunnel] ${data.toString()}`);
+  });
+
+  tunnelProcess.on('error', (error) => {
+    console.error('[Electron] Tunnel process error:', error);
+  });
+
+  tunnelProcess.on('exit', (code) => {
+    console.log(`[Electron] Tunnel process exited with code ${code}`);
+    tunnelProcess = null;
+  });
+}
+
+function stopTunnel() {
+  if (!tunnelProcess || tunnelProcess.pid == null) {
+    tunnelProcess = null;
+    return;
+  }
+
+  try {
+    if (detachChildProcesses) {
+      process.kill(-tunnelProcess.pid, 'SIGTERM');
+    } else {
+      tunnelProcess.kill('SIGTERM');
+    }
+  } catch {
+    // Process may already be dead.
+  }
+
+  tunnelProcess = null;
 }
 
 function isPortListening(port: number, host = '127.0.0.1') {
@@ -1176,6 +1316,44 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('get-tunnel-status', () => {
+    const enabled = store.get('tunnelEnabled');
+    const subdomain = store.get('tunnelSubdomain');
+    const url = subdomain ? `https://${subdomain}.${TUNNEL_DOMAIN}` : '';
+    return { enabled, subdomain, url, connected: tunnelProcess !== null };
+  });
+
+  ipcMain.handle('enable-tunnel', () => {
+    let subdomain = store.get('tunnelSubdomain');
+    if (!subdomain) {
+      subdomain = generateTunnelSubdomain();
+      store.set('tunnelSubdomain', subdomain);
+    }
+    store.set('tunnelEnabled', true);
+    startTunnel();
+    const url = `https://${subdomain}.${TUNNEL_DOMAIN}`;
+    return { subdomain, url };
+  });
+
+  ipcMain.handle('disable-tunnel', () => {
+    store.set('tunnelEnabled', false);
+    stopTunnel();
+  });
+
+  ipcMain.handle('regenerate-tunnel-subdomain', () => {
+    const subdomain = generateTunnelSubdomain();
+    store.set('tunnelSubdomain', subdomain);
+
+    // Restart tunnel if it was running
+    if (store.get('tunnelEnabled')) {
+      stopTunnel();
+      startTunnel();
+    }
+
+    const url = `https://${subdomain}.${TUNNEL_DOMAIN}`;
+    return { subdomain, url };
+  });
+
   // First-run detection
   const libraryPath = store.get('libraryPath') || '';
   if (!libraryPath && !isS3Configured()) {
@@ -1206,6 +1384,11 @@ app.whenReady().then(async () => {
         `Next.js server did not start on http://127.0.0.1:${PORT}. Check logs prefixed with [Next].`,
       );
       return;
+    }
+
+    // Auto-start tunnel if enabled
+    if (store.get('tunnelEnabled') && store.get('tunnelSubdomain')) {
+      startTunnel();
     }
 
     createWindow();

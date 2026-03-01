@@ -120,6 +120,9 @@ export default function UsersTable({
   const [actionsContainer, setActionsContainer] = useState<HTMLElement | null>(null);
   const [localIps, setLocalIps] = useState<string[]>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [tunnelEnabled, setTunnelEnabled] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState("");
+  const [tunnelLoading, setTunnelLoading] = useState(false);
 
   useEffect(() => {
     if (!actionsContainerId) return;
@@ -129,6 +132,12 @@ export default function UsersTable({
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI?.getLocalIps) {
       window.electronAPI.getLocalIps().then(setLocalIps).catch(() => {});
+    }
+    if (typeof window !== "undefined" && window.electronAPI?.getTunnelStatus) {
+      window.electronAPI.getTunnelStatus().then((status: { enabled: boolean; url: string }) => {
+        setTunnelEnabled(status.enabled);
+        setTunnelUrl(status.url || "");
+      }).catch(() => {});
     }
   }, []);
 
@@ -236,6 +245,43 @@ export default function UsersTable({
     </Button>
   );
 
+  async function toggleTunnel() {
+    if (!window.electronAPI) return;
+    setTunnelLoading(true);
+    try {
+      if (tunnelEnabled) {
+        await window.electronAPI.disableTunnel();
+        setTunnelEnabled(false);
+        setTunnelUrl("");
+        toast.success("Public access disabled");
+      } else {
+        const result = await window.electronAPI.enableTunnel() as { subdomain: string; url: string };
+        setTunnelEnabled(true);
+        setTunnelUrl(result.url);
+        toast.success("Public access enabled");
+      }
+    } catch {
+      toast.error("Failed to toggle public access");
+    } finally {
+      setTunnelLoading(false);
+    }
+  }
+
+  async function regenerateSubdomain() {
+    if (!window.electronAPI) return;
+    setTunnelLoading(true);
+    try {
+      const result = await window.electronAPI.regenerateTunnelSubdomain() as { subdomain: string; url: string };
+      setTunnelUrl(result.url);
+      toast.success("Public URL regenerated");
+    } catch {
+      toast.error("Failed to regenerate URL");
+    } finally {
+      setTunnelLoading(false);
+    }
+  }
+
+  const isElectron = typeof window !== "undefined" && !!window.electronAPI?.getTunnelStatus;
   const serverUrls = localIps.length > 0 ? localIps : webServerUrl ? [webServerUrl] : [];
 
   return (
@@ -273,6 +319,54 @@ export default function UsersTable({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {isElectron && (
+        <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Public Access</p>
+              <p className="text-xs text-muted-foreground">
+                Expose your library at a public URL so anyone with the link can access it.
+              </p>
+            </div>
+            <Button
+              variant={tunnelEnabled ? "default" : "outline"}
+              size="sm"
+              onClick={toggleTunnel}
+              disabled={tunnelLoading}
+              className="shrink-0"
+            >
+              {tunnelLoading ? "..." : tunnelEnabled ? "Enabled" : "Disabled"}
+            </Button>
+          </div>
+          {tunnelEnabled && tunnelUrl && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded bg-background px-2 py-1 text-xs font-mono border border-border">
+                  {tunnelUrl}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyUrl(tunnelUrl)}
+                  className="shrink-0 text-xs h-7"
+                >
+                  {copiedUrl === tunnelUrl ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={regenerateSubdomain}
+                disabled={tunnelLoading}
+                className="text-xs text-muted-foreground"
+              >
+                Regenerate URL
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

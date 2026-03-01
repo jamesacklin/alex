@@ -24,6 +24,8 @@ interface StoreSchema {
   nextauthSecret: string;
   storageMode: 'local' | 's3';
   s3Config?: S3Config;
+  tunnelEnabled: boolean;
+  tunnelSubdomain: string;
 }
 
 function generateSecret(): string {
@@ -34,6 +36,8 @@ const DEFAULT_STORE: StoreSchema = {
   libraryPath: '',
   nextauthSecret: generateSecret(),
   storageMode: 'local',
+  tunnelEnabled: false,
+  tunnelSubdomain: '',
 };
 
 const explicitUserDataPath = process.env.E2E_USER_DATA_DIR || process.env.ALEX_USER_DATA_DIR;

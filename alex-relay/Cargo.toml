@@ -1,0 +1,19 @@
+[package]
+name = "alex-relay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-stream = "0.3"
+axum = { version = "0.8", features = ["ws"] }
+bincode = "1"
+clap = { version = "4", features = ["derive"] }
+dashmap = "6"
+futures-util = "0.3"
+http = "1"
+hyper = "1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"] }
+tokio-tungstenite = "0.26"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -58,6 +58,8 @@ enum Command {
     Db(DbCommand),
     /// Stream an S3 object to stdout (used by the Next.js file-serving route).
     S3Stream(S3StreamCommand),
+    /// Run the reverse tunnel client to expose the local server publicly.
+    Tunnel(TunnelCommand),
 }
 
 #[derive(Args)]
@@ -103,6 +105,21 @@ struct S3StreamCommand {
     s3_secret_key: String,
 }
 
+#[derive(Args)]
+struct TunnelCommand {
+    /// Three-word subdomain to register (e.g., "gentle-morning-tide").
+    #[arg(long)]
+    subdomain: String,
+
+    /// WebSocket URL of the relay server.
+    #[arg(long)]
+    relay_url: String,
+
+    /// Local address to forward requests to.
+    #[arg(long, default_value = "127.0.0.1:3210")]
+    local_addr: String,
+}
+
 #[derive(Deserialize)]
 struct SqlRequest {
     sql: String,
@@ -116,6 +133,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Some(Command::Db(cmd)) => run_db_command(cmd),
         Some(Command::S3Stream(cmd)) => run_s3_stream(cmd),
+        Some(Command::Tunnel(cmd)) => run_tunnel(cmd),
         None => {
             // Auto-detect: if S3_BUCKET is set, run S3 watcher; otherwise local.
             if cli.s3_bucket.is_some() {
@@ -216,6 +234,23 @@ fn run_s3_stream(cmd: S3StreamCommand) -> Result<()> {
         cmd.range.as_deref(),
     ))?;
 
+    Ok(())
+}
+
+fn run_tunnel(cmd: TunnelCommand) -> Result<()> {
+    let config = watcher_rs::tunnel::client::TunnelConfig {
+        subdomain: cmd.subdomain,
+        relay_url: cmd.relay_url,
+        local_addr: cmd.local_addr,
+    };
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+    ctrlc::set_handler(move || {
+        let _ = shutdown_tx.send(true);
+    })?;
+
+    watcher_rs::tunnel::run(config, shutdown_rx);
     Ok(())
 }
 

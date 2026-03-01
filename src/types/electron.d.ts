@@ -22,6 +22,10 @@ export interface ElectronAPI {
   getS3Config: () => Promise<S3Config | null>;
   saveS3Config: (config: S3Config) => Promise<{ success: boolean; error?: string }>;
   switchToLocalStorage: () => Promise<{ success: boolean; error?: string }>;
+  getTunnelStatus: () => Promise<{ enabled: boolean; subdomain: string; url: string; connected: boolean }>;
+  enableTunnel: () => Promise<{ subdomain: string; url: string }>;
+  disableTunnel: () => Promise<void>;
+  regenerateTunnelSubdomain: () => Promise<{ subdomain: string; url: string }>;
 }
 
 declare global {
