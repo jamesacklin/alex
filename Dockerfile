@@ -71,6 +71,9 @@ COPY --from=node-builder /app/public ./.next/standalone/public
 
 COPY --from=rust-builder /out ./watcher-rs
 
+# Ensure runtime writes (SQLite DB, covers, library metadata) happen as non-root.
+RUN mkdir -p /app/data/library && chown -R node:node /app
+
 # Absolute paths so runtime code is immune to cwd changes
 # (the Next.js standalone server does process.chdir to .next/standalone/).
 ENV DATABASE_PATH=/app/data/library.db
@@ -81,6 +84,8 @@ ENV LD_LIBRARY_PATH=/app/watcher-rs
 ENV HOSTNAME=0.0.0.0
 
 EXPOSE 3000
+
+USER node
 
 # db:push (schema) and db:seed (default admin) are both idempotent –
 # running them every startup is safe and ensures the DB is ready.
