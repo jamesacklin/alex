@@ -102,16 +102,17 @@ async function getRequestHeadersForDesktopAuth(): Promise<Headers | null> {
 
 // Dynamic auth session that checks desktop mode and validates Electron's auth token.
 export async function authSession() {
-  if (!isDesktopMode()) {
-    return nextAuthResult.auth();
+  if (isDesktopMode()) {
+    const requestHeaders = await getRequestHeadersForDesktopAuth();
+    if (requestHeaders && isDesktopRequestAuthorized(requestHeaders)) {
+      return desktopSession();
+    }
   }
 
-  const requestHeaders = await getRequestHeadersForDesktopAuth();
-  if (!requestHeaders || !isDesktopRequestAuthorized(requestHeaders)) {
-    return null;
-  }
-
-  return desktopSession();
+  // Fall through to standard web session (works for both non-desktop mode
+  // and desktop mode when the request lacks the desktop auth header, e.g.
+  // relay/browser traffic hitting the same server).
+  return nextAuthResult.auth();
 }
 
 type AuthUser = {
