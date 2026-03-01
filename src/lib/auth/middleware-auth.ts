@@ -1,10 +1,12 @@
 import NextAuth from "next-auth";
+import { authCookies } from "@/lib/auth/cookies";
 
 // Lightweight NextAuth instance for Edge-runtime middleware.
 // No providers needed — only decodes the existing JWT using the shared secret.
 // The session callback mirrors the one in config.ts so req.auth is shaped the same way.
 export const { auth } = NextAuth({
   trustHost: true,
+  cookies: authCookies,
   providers: [],
   session: {
     strategy: "jwt",

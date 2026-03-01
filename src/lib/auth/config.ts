@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { queryOne } from "@/lib/db/rust";
 import { execute } from "@/lib/db/rust";
 import { isDesktopMode, isDesktopRequestAuthorized } from "@/lib/auth/desktop-auth";
+import { authCookies } from "@/lib/auth/cookies";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -24,6 +25,7 @@ declare module "next-auth" {
 
 const nextAuthResult = NextAuth({
   trustHost: true,
+  cookies: authCookies,
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days
