@@ -100,12 +100,10 @@ export default function UsersTable({
   users,
   currentUserId,
   actionsContainerId,
-  webServerUrl,
 }: {
   users: UserRow[];
   currentUserId: string;
   actionsContainerId?: string;
-  webServerUrl?: string | null;
 }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
@@ -118,7 +116,6 @@ export default function UsersTable({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteEmail, setDeleteEmail] = useState("");
   const [actionsContainer, setActionsContainer] = useState<HTMLElement | null>(null);
-  const [localIps, setLocalIps] = useState<string[]>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
@@ -130,9 +127,6 @@ export default function UsersTable({
   }, [actionsContainerId]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electronAPI?.getLocalIps) {
-      window.electronAPI.getLocalIps().then(setLocalIps).catch(() => {});
-    }
     if (typeof window !== "undefined" && window.electronAPI?.getTunnelStatus) {
       window.electronAPI.getTunnelStatus().then((status: { enabled: boolean; url: string }) => {
         setTunnelEnabled(status.enabled);
@@ -282,7 +276,6 @@ export default function UsersTable({
   }
 
   const isElectron = typeof window !== "undefined" && !!window.electronAPI?.getTunnelStatus;
-  const serverUrls = localIps.length > 0 ? localIps : webServerUrl ? [webServerUrl] : [];
 
   return (
     <TooltipProvider>
@@ -296,39 +289,13 @@ export default function UsersTable({
             </div>
           )}
 
-      {serverUrls.length > 0 && (
-        <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-          <p className="text-sm font-medium">Server URL</p>
-          <p className="text-xs text-muted-foreground">
-            Share this address so others can access the server from their devices.
-          </p>
-          <div className="space-y-1.5">
-            {serverUrls.map((url) => (
-              <div key={url} className="flex items-center gap-2">
-                <code className="flex-1 rounded bg-background px-2 py-1 text-xs font-mono border border-border">
-                  {url}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyUrl(url)}
-                  className="shrink-0 text-xs h-7"
-                >
-                  {copiedUrl === url ? "Copied!" : "Copy"}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {isElectron && (
         <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Public Access</p>
+              <p className="text-sm font-medium">Public Access (Relay)</p>
               <p className="text-xs text-muted-foreground">
-                Expose your library at a public URL so anyone with the link can access it.
+                Enable this to expose your library at a stable public URL. This is required for sharing collections with people outside your local network.
               </p>
             </div>
             <Button
