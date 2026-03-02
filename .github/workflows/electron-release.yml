@@ -71,6 +71,58 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Update Homebrew cask
+        if: github.event_name == 'release'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          ZIP_NAME=$(ls -1 dist/*-arm64-mac.zip | head -1 | xargs basename)
+          SHA=$(shasum -a 256 "dist/${ZIP_NAME}" | awk '{print $1}')
+
+          echo "Tag: ${TAG}, Version: ${VERSION}, ZIP: ${ZIP_NAME}, SHA: ${SHA}"
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/jamesacklin/homebrew-alex.git" /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+
+          cat > Casks/alex.rb << EOF
+          cask "alex" do
+            version "${VERSION}"
+            sha256 "${SHA}"
+
+            url "https://github.com/jamesacklin/alex/releases/download/${TAG}/${ZIP_NAME}",
+                verified: "github.com/jamesacklin/alex/"
+            name "Alex"
+            desc "Personal reading and document library"
+            homepage "https://github.com/jamesacklin/alex"
+
+            depends_on macos: ">= :ventura"
+            depends_on arch: :arm64
+
+            app "Alex.app"
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-cr", "#{appdir}/Alex.app"]
+            end
+
+            zap trash: [
+              "~/Library/Application Support/Alex",
+              "~/Library/Caches/com.alex.app",
+              "~/Library/Logs/Alex",
+              "~/Library/Preferences/com.alex.app.plist",
+            ]
+          end
+          EOF
+
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add Casks/alex.rb
+          git diff --cached --quiet && echo "No changes to cask" && exit 0
+          git commit -m "Update alex to ${VERSION}"
+          git push
+
       - name: Build summary
         run: |
           echo "## macOS Electron App Built :apple:" >> $GITHUB_STEP_SUMMARY
