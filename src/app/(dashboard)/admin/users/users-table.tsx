@@ -9,54 +9,14 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  Badge, Button, Dialog, DialogContent, DialogDescription, DialogHeader,
+  DialogTitle, Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+  Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table,
+  TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip,
+  TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@alex/ui";
 import { createUser, deleteUser, updateUser, updateUserPassword } from "./actions";
 
 type UserRow = {

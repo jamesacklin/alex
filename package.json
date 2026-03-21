@@ -41,6 +41,7 @@
     "chromatic": "chromatic --exit-zero-on-changes"
   },
   "dependencies": {
+    "@alex/ui": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

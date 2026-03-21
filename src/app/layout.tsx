@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "@alex/ui";
 import "./globals.css";
 
 const hankenGrotesk = Hanken_Grotesk({

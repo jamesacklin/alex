@@ -7,22 +7,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardDescription,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from "@/components/ui/form";
+  Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Form,
+  FormControl, FormField, FormItem, FormLabel, FormMessage, Input,
+} from "@alex/ui";
 import { createAdmin } from "./actions";
 
 const setupSchema = z
