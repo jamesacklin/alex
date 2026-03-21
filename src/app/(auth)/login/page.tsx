@@ -9,21 +9,9 @@ import { signIn } from "next-auth/react";
 import { toast } from "sonner";
 
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from "@/components/ui/form";
+  Button, Card, CardContent, CardHeader, CardTitle, Form, FormControl,
+  FormField, FormItem, FormLabel, FormMessage, Input,
+} from "@alex/ui";
 import { AppLogo } from "@/components/branding/AppLogo";
 
 const loginSchema = z.object({

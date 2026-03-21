@@ -31,6 +31,7 @@ if (process.env.NODE_ENV === "production") {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  transpilePackages: ["@alex/ui"],
   env: {
     NEXT_PUBLIC_ALEX_DESKTOP: process.env.ALEX_DESKTOP,
   },

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@alex/ui";
 
 interface GeneralSettingsClientProps {
   displayName: string;

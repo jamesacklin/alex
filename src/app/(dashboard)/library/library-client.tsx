@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button, Skeleton } from "@alex/ui";
 import { BookCard, type Book } from "@/components/library/BookCard";
 import { BookFilters } from "@/components/library/BookFilters";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";

@@ -3,17 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { ReadingProgressMeter } from "@/components/library/ReadingProgressMeter";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@alex/ui";
+import { ReadingProgressMeter } from "@/components/library/ReadingProgressMeter";
 
 export interface Book {
   id: string;

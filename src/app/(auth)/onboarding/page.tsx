@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLogo } from "@/components/branding/AppLogo";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Button, Card, CardContent, cn, Input, Label } from "@alex/ui";
 
 interface S3FormState {
   endpoint: string;
