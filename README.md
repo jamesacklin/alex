@@ -105,13 +105,6 @@ Download the latest release for your platform from the [Releases page](https://g
 
 Since this app isn't signed with paid code-signing certificates, you may see security warnings on first launch:
 
-**macOS:**
-1. Download the `.zip` file
-2. Extract it and drag Alex to your Applications folder
-3. Right-click the app → **Open** (don't double-click)
-4. Click **Open** in the security dialog
-5. Subsequent launches work normally
-
 **Windows:**
 1. Download and run the `.exe` installer
 2. Windows SmartScreen will show a warning
