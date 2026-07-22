@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "alex-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-22",
+  "workers_dev": true,
+  "vars": {
+    "BASE_DOMAIN": "alexreader.app",
+    "REQUEST_TIMEOUT_MS": "120000"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TUNNELS",
+        "class_name": "Tunnel"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Tunnel"]
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "*.alexreader.app/*",
+      "zone_name": "alexreader.app"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

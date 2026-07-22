@@ -23,6 +23,8 @@ watcher-rs tunnel --subdomain gentle-morning-tide \
                   --local-addr 127.0.0.1:3210
 ```
 
+The client appends `?subdomain=gentle-morning-tide` to the upgrade URL so the Cloudflare Worker can route the socket to the correct Durable Object, then confirms the same value in the binary `Register` frame.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--subdomain` | (required) | Three-word subdomain to register |

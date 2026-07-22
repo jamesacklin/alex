@@ -22,10 +22,10 @@ A built-in reverse tunnel lets any Alex desktop user expose their server at a pu
 ```
 Browser → https://gentle-morning-tide.alexreader.app
               ↓
-     ┌─────────────────────┐
-     │   alex-relay (VPS)  │  Caddy handles TLS (wildcard *.alexreader.app)
-     │   axum on :8080     │  Caddy reverse-proxies to :8080
-     │   subdomain→client  │
+     ┌──────────────────────────┐
+     │ Cloudflare Worker        │  Cloudflare handles wildcard HTTPS/WSS
+     │ + Tunnel Durable Object  │  One object per public subdomain
+     │ subdomain → WebSocket    │
      └────────┬────────────┘
               │ WebSocket (outbound from client)
               │
@@ -41,9 +41,8 @@ Browser → https://gentle-morning-tide.alexreader.app
 
 | Component | Location | Role |
 |-----------|----------|------|
-| **alex-relay** | VPS (`alex-relay/`) | Accepts client WebSocket connections, maps subdomains to clients, proxies incoming HTTP requests over WebSocket |
+| **alex-relay** | Cloudflare Workers (`alex-relay/`) | Routes each public hostname to a Durable Object, which owns the client WebSocket and proxies HTTP requests |
 | **Tunnel client** | Desktop (`watcher-rs/src/tunnel/`) | Connects outbound to relay via WebSocket, receives HTTP requests, forwards them to the local Next.js server, streams responses back |
-| **Caddy** | VPS | Terminates TLS for `*.alexreader.app` using wildcard cert (DNS-01 via Cloudflare), reverse-proxies to relay on `:8080` |
 | **Electron integration** | Desktop (`electron/`) | Manages tunnel process lifecycle, persists settings, exposes IPC to renderer |
 | **Admin UI** | Desktop (`src/app/`) | Toggle, URL display, regenerate button |
 
@@ -51,7 +50,7 @@ Browser → https://gentle-morning-tide.alexreader.app
 
 - **Subdomain as credential**: Three random words chosen from pools of ~500 each give ~125 million combinations. Unguessable for a small user base.
 - **Future hardening**: Add a pre-shared key (PSK) sent as an auth header during WebSocket registration.
-- **All traffic over TLS**: Caddy terminates HTTPS; the relay and tunnel communicate over WSS.
+- **All traffic over TLS**: Cloudflare terminates HTTPS; the relay and tunnel communicate over WSS.
 - **No inbound ports**: The desktop app only makes outbound WebSocket connections, so no NAT/firewall holes are needed.
 
 ## Related Docs

@@ -243,8 +243,8 @@ sequenceDiagram
     participant Next as Next.js Server<br/>localhost:3210
 
     Note over Tunnel,Relay: Tunnel establishment
-    Tunnel->>Relay: Connect WSS /_tunnel/ws
-    Relay->>Relay: Register tunnel session (DashMap)
+    Tunnel->>Relay: Connect WSS /_tunnel/ws?subdomain=...
+    Relay->>Relay: Route to subdomain Durable Object
     Relay-->>Tunnel: Connection acknowledged
 
     Note over RemoteUser,Next: Request proxying
@@ -280,9 +280,9 @@ sequenceDiagram
 
 1. **No port forwarding required**: The desktop app initiates the outbound WebSocket connection; no inbound ports need to be opened
 2. **Binary protocol**: `bincode` serialization keeps frame overhead minimal
-3. **Session tracking**: `DashMap` provides concurrent tunnel session management on the relay
+3. **Session tracking**: One hibernatable Cloudflare Durable Object owns each subdomain's WebSocket and in-flight requests
 4. **Header preservation**: `Set-Cookie` headers pass through unmodified so auth works transparently
-5. **Forwarded headers**: Relay injects `X-Forwarded-Host` and `X-Forwarded-Proto` so Next.js middleware generates correct redirect URLs
+5. **Forwarded headers**: The desktop tunnel proxy injects `X-Forwarded-Host` and `X-Forwarded-Proto` so Next.js middleware generates correct redirect URLs
 6. **Cookie pinning**: Pinned cookie names in `src/lib/auth/cookies.ts` prevent mismatch between the login handler (which sees HTTPS via forwarded proto) and subsequent requests
 
 ---

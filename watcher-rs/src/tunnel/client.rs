@@ -55,7 +55,14 @@ async fn connect_and_serve(
     config: &Arc<TunnelConfig>,
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
-    let (ws_stream, _) = tokio_tungstenite::connect_async(&config.relay_url)
+    // Cloudflare routes the upgrade to the Durable Object for this subdomain
+    // before it can inspect our first binary Register frame.
+    let mut relay_url = url::Url::parse(&config.relay_url).context("invalid relay URL")?;
+    relay_url
+        .query_pairs_mut()
+        .append_pair("subdomain", &config.subdomain);
+
+    let (ws_stream, _) = tokio_tungstenite::connect_async(relay_url.as_str())
         .await
         .context("failed to connect to relay")?;
 
