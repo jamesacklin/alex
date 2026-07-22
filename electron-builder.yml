@@ -5,9 +5,6 @@ copyright: Copyright © 2025
 # Don't auto-publish to GitHub - we manually upload via workflow
 publish: null
 
-# Ad-hoc sign macOS builds to prevent "damaged" errors
-afterPack: electron/sign-macos.js
-
 directories:
   output: dist
   buildResources: electron/icons
@@ -36,13 +33,13 @@ mac:
     - target: zip
       arch:
         - arm64
+  # DMGs are produced by the release workflow alongside the ZIP used by Homebrew.
   category: public.app-category.productivity
-  hardenedRuntime: false
+  hardenedRuntime: true
   gatekeeperAssess: false
-  entitlements: null
-  entitlementsInherit: null
-  # Don't sign during build - we handle ad-hoc signing via afterPack hook
-  identity: null
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.inherit.plist
+  notarize: true
 
 win:
   icon: windows/icon.ico
@@ -71,5 +68,5 @@ linux:
         - arm64
   category: Utility
 
-# Skip code signing for local development builds
-# In production, configure signing via environment variables
+# Local builds remain unsigned unless signing credentials are supplied. The
+# release workflow supplies a Developer ID certificate and notarization key.

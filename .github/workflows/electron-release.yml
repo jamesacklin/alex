@@ -37,11 +37,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare notarization key
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          : "${APPLE_API_KEY:?Missing APPLE_API_KEY secret}"
+          : "${APPLE_API_KEY_ID:?Missing APPLE_API_KEY_ID secret}"
+          : "${APPLE_API_ISSUER:?Missing APPLE_API_ISSUER secret}"
+          NOTARIZATION_KEY="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY" > "$NOTARIZATION_KEY"
+          chmod 600 "$NOTARIZATION_KEY"
+          echo "APPLE_API_KEY=$NOTARIZATION_KEY" >> "$GITHUB_ENV"
+
       - name: Build Electron app
-        run: pnpm electron:build:mac
+        run: pnpm electron:build:mac:release
         env:
           ALEX_DESKTOP: 'true'
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Developer ID Application certificate exported as a password-protected
+          # .p12 and stored as a base64 GitHub Actions secret.
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          # APPLE_API_KEY is the temporary key path prepared above. These
+          # credentials let electron-builder notarize and staple the signed app.
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
       - name: List built files
         run: |
@@ -66,6 +87,7 @@ jobs:
           tag_name: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.upload_to_release }}
           files: |
             dist/*.zip
+            dist/*.dmg
           fail_on_unmatched_files: true
           overwrite: true
         env:
@@ -102,11 +124,6 @@ jobs:
 
             app "Alex.app"
 
-            postflight do
-              system_command "/usr/bin/xattr",
-                             args: ["-cr", "#{appdir}/Alex.app"]
-            end
-
             zap trash: [
               "~/Library/Application Support/Alex",
               "~/Library/Caches/com.alex.app",
@@ -131,10 +148,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Built Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          ls -1 dist/*.zip 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No ZIP files found" >> $GITHUB_STEP_SUMMARY
+          ls -1 dist/*.{zip,dmg} 2>/dev/null | sed 's|dist/||' >> $GITHUB_STEP_SUMMARY || echo "No macOS artifacts found" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "macOS ZIP package has been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
+          echo "Notarized macOS ZIP and DMG packages have been uploaded to the release page." >> $GITHUB_STEP_SUMMARY
 
   build-linux:
     runs-on: ubuntu-latest

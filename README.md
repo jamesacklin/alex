@@ -94,23 +94,19 @@ For new providers, downstream consumers only need to register one new handler in
 
 ### Desktop App
 
-Download the latest release for your platform from the [Releases page](https://github.com/jamesacklin/book-app/releases).
+Download the latest release for your platform from the [Releases page](https://github.com/jamesacklin/alex/releases).
 
 **Available platforms:**
-- macOS (Apple Silicon)
+- macOS (Apple Silicon, signed and notarized DMG)
 - Windows (x64)
 - Linux (AppImage, .deb)
 
 #### Installation Notes
 
-Since this app isn't signed with paid code-signing certificates, you may see security warnings on first launch:
-
 **macOS:**
-1. Download the `.zip` file
-2. Extract it and drag Alex to your Applications folder
-3. Right-click the app → **Open** (don't double-click)
-4. Click **Open** in the security dialog
-5. Subsequent launches work normally
+1. Download the `.dmg` file
+2. Open it and drag Alex to your Applications folder
+3. Open Alex normally from Applications
 
 **Windows:**
 1. Download and run the `.exe` installer

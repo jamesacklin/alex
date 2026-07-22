@@ -33,6 +33,7 @@
     "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "electron:build": "pnpm clean:dist && pnpm build && pnpm prepare:standalone && pnpm watcher:prepare-dist && tsc -p electron/tsconfig.json && pnpm electron:rebuild",
     "electron:build:mac": "pnpm electron:build && electron-builder --mac --arm64 && pnpm build:native",
+    "electron:build:mac:release": "pnpm electron:build && electron-builder --mac dmg zip --arm64 && pnpm build:native",
     "electron:build:win": "pnpm electron:build && electron-builder --win && pnpm build:native",
     "electron:build:linux": "pnpm electron:build && electron-builder --linux && pnpm build:native",
     "dev:prerun": "node scripts/dev-prerun.js",
