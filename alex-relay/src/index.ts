@@ -247,7 +247,13 @@ export class Tunnel extends DurableObject<Env> {
     }
 
     try {
-      pending.resolve(new Response(stream.readable, { status, headers }));
+      pending.resolve(new Response(stream.readable, {
+        status,
+        headers,
+        // The tunnel forwards the origin bytes verbatim. Without this,
+        // Workers compresses an already-compressed response a second time.
+        encodeBody: "manual",
+      }));
     } catch (error) {
       if (body.timeout !== undefined) clearTimeout(body.timeout);
       this.pending.delete(requestId);
