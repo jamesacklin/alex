@@ -397,17 +397,16 @@ The watcher is a standalone Rust binary that handles ingestion, metadata extract
 
 ### Alex Relay (`alex-relay`)
 
-The relay is an optional standalone Rust service that enables public access to a desktop Alex instance without port forwarding or dynamic DNS.
+The relay is a Cloudflare Worker that enables public access to a desktop Alex instance without port forwarding, dynamic DNS, or a dedicated server.
 
-- **Architecture**: Axum-based HTTP server with WebSocket upgrade for tunnel connections
-- **Protocol**: Binary WebSocket frames carrying serialized HTTP request/response pairs (`bincode` + `serde`)
-- **Routing**: Incoming HTTP requests to `relay.alexreader.app` are proxied through the WebSocket tunnel to the desktop app's local Next.js server
+- **Architecture**: A Worker router plus one hibernatable `Tunnel` Durable Object per public subdomain
+- **Protocol**: Binary WebSocket frames using a TypeScript codec compatible with Rust bincode 1
+- **Routing**: Wildcard `*.alexreader.app` requests and tunnel upgrades are routed to the Durable Object named for that subdomain
 - **Key modules**:
-  - `relay.rs` - WebSocket connection management and tunnel session tracking (via `DashMap`)
-  - `proxy.rs` - HTTP request proxying through the tunnel
-  - `protocol.rs` - Shared request/response frame types
-- **Header forwarding**: Preserves `Set-Cookie` and other response headers; injects `X-Forwarded-Host` and `X-Forwarded-Proto` so the app generates correct URLs
-- **Dependencies**: `axum`, `tokio-tungstenite`, `bincode`, `dashmap`, `hyper`
+  - `index.ts` - hostname routing, WebSocket lifecycle, request multiplexing, and response streaming
+  - `protocol.ts` - bincode-compatible request/response frame codec
+- **Header forwarding**: Preserves `Set-Cookie` and other end-to-end response headers; the desktop proxy supplies `X-Forwarded-Host` and `X-Forwarded-Proto`
+- **Deployment**: Wrangler, Cloudflare Workers, SQLite-backed Durable Objects, and a proxied wildcard DNS record
 
 ## Data Flow
 
@@ -522,7 +521,7 @@ The relay is an optional standalone Rust service that enables public access to a
 | PDF/EPUB Metadata | `lopdf`, `quick-xml` + `zip` (Rust, in `watcher-rs`) |
 | Cover Generation | `pdfium-render` (statically linked PDFium), `ab_glyph` + `imageproc` fallback (Rust, in `watcher-rs`) |
 | Real-time | Server-Sent Events (SSE) |
-| Relay | `alex-relay` (Axum + WebSocket tunnel); `watcher-rs` tunnel client (`tokio-tungstenite`) |
+| Relay | `alex-relay` (Cloudflare Worker + hibernatable Durable Objects); `watcher-rs` tunnel client (`tokio-tungstenite`) |
 | Desktop | Electron 34, `electron-store`, system tray |
 | Testing | Playwright (E2E, web + Electron), Jest (unit), Storybook + Chromatic (visual) |
 | CI/CD | GitHub Actions (CI, Docker release, Electron release, E2E, Chromatic, code review) |

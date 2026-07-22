@@ -60,6 +60,24 @@ mod tests {
     }
 
     #[test]
+    fn register_wire_format_matches_worker_codec() {
+        let encoded = Frame::Register {
+            subdomain: "demo".to_string(),
+        }
+        .encode()
+        .unwrap();
+
+        assert_eq!(
+            encoded,
+            vec![
+                0, 0, 0, 0, // Register enum variant
+                4, 0, 0, 0, 0, 0, 0, 0, // String byte length (u64 LE)
+                b'd', b'e', b'm', b'o',
+            ]
+        );
+    }
+
+    #[test]
     fn roundtrip_http_response() {
         let frame = Frame::HttpResponse {
             request_id: 99,

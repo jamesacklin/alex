@@ -1,35 +1,28 @@
-# Relay Server (`alex-relay`)
+# Relay Worker (`alex-relay`)
 
 ## Overview
 
-The relay is a lightweight Rust server that runs on a VPS behind Caddy. It accepts WebSocket connections from Alex desktop clients, registers their chosen subdomains, and proxies incoming HTTP requests to the correct client over the WebSocket.
+The relay runs on Cloudflare Workers. A `Tunnel` Durable Object is created for each public subdomain; that object owns the desktop client's WebSocket and multiplexes browser requests over it. There is no VM, listening port, reverse proxy, or TLS process to operate.
 
-## Crate Layout
+Cloudflare's WebSocket Hibernation API keeps idle tunnel connections open while allowing their Durable Objects to sleep.
+
+## Project Layout
 
 ```
 alex-relay/
-  Cargo.toml
+  package.json
+  wrangler.jsonc       — Worker routes, variables, Durable Object binding/migration
   src/
-    main.rs        — CLI entry point (clap)
-    relay.rs       — RelayState, WebSocket acceptor, subdomain registration
-    proxy.rs       — HTTP handler: subdomain lookup, request forwarding
-    protocol.rs    — Frame enum (shared with watcher-rs tunnel)
+    index.ts           — Worker router and Tunnel Durable Object
+    protocol.ts        — bincode-compatible frame codec
+  test/
+    protocol.test.ts   — wire-format tests
+    relay.test.ts      — local workerd integration tests
 ```
-
-## CLI
-
-```
-alex-relay --listen-addr 0.0.0.0:8080 --domain alexreader.app
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--listen-addr` | `0.0.0.0:8080` | Address to bind the HTTP server |
-| `--domain` | `alexreader.app` | Base domain for subdomain extraction |
 
 ## Protocol
 
-All frames are serialized with **bincode** and sent as binary WebSocket messages.
+The desktop protocol remains bincode 1's fixed-integer, little-endian encoding over binary WebSocket messages:
 
 ```rust
 enum Frame {
@@ -44,51 +37,47 @@ enum Frame {
 }
 ```
 
-### Message Flow
-
-1. Client connects to `wss://relay.alexreader.app/_tunnel/ws`
-2. Client sends `Register { subdomain: "gentle-morning-tide" }`
-3. Relay responds with `RegisterAck { success: true, message: "registered" }`
-4. Browser hits `https://gentle-morning-tide.alexreader.app/some/page`
-5. Caddy terminates TLS, proxies to relay `:8080`
-6. Relay extracts subdomain from `Host` header, looks up client
-7. Relay sends `HttpRequest { request_id: 1, method: "GET", uri: "/some/page", ... }`
-8. Client forwards to `http://127.0.0.1:3210/some/page`, streams response back
-9. Client sends `HttpResponse { ... }` then `ResponseChunk { ... }` (repeated) then `ResponseEnd { ... }`
-10. Relay reconstructs HTTP response and sends it to the browser
-
-### Request Multiplexing
-
-Each HTTP request gets a monotonically increasing `request_id` (u64). Multiple in-flight requests share the same WebSocket. The relay holds a `DashMap<u64, oneshot::Sender<...>>` to correlate response frames back to the correct HTTP handler.
-
-## State
-
-```rust
-struct RelayState {
-    clients: DashMap<String, ClientHandle>,  // subdomain → client
-    domain: String,
-}
-
-struct ClientHandle {
-    tx: mpsc::Sender<Frame>,                // send frames to this client's WS writer
-    pending: Arc<DashMap<u64, oneshot::Sender<ResponseCollector>>>,
-    next_request_id: Arc<AtomicU64>,
-}
-```
-
-## Deployment
-
-Caddy runs in front of the relay to handle TLS termination with a wildcard certificate for `*.alexreader.app`, obtained via DNS-01 challenge with the Cloudflare plugin.
-
-Example Caddyfile:
+The Workers router must choose a Durable Object before it receives the first WebSocket message. The client therefore connects to:
 
 ```
-*.alexreader.app {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
-    reverse_proxy 127.0.0.1:8080
-}
+wss://relay.alexreader.app/_tunnel/ws?subdomain=gentle-morning-tide
 ```
 
-The Rust binary listens on plain HTTP only.
+The client adds this query parameter automatically from its `--subdomain` argument, then sends the existing `Register` frame. The Durable Object verifies that the two values match before acknowledging registration.
+
+## Message Flow
+
+1. The client opens the WebSocket URL with its subdomain query parameter.
+2. The Worker routes the upgrade to the Durable Object named for that subdomain.
+3. The client sends `Register`; the object validates it and returns `RegisterAck`.
+4. A browser requests `https://gentle-morning-tide.alexreader.app/some/page`.
+5. The Worker extracts the subdomain and forwards the request to the same object.
+6. The object sends `HttpRequest` through the registered WebSocket.
+7. The desktop forwards to `http://127.0.0.1:3210` and sends response headers and chunks.
+8. The Durable Object streams those chunks to the browser.
+
+Each object assigns `u64` request IDs and keeps a correlation entry for every in-flight request. Multiple requests share the desktop WebSocket. Request bodies are limited to 10 MiB; response headers and each subsequent body chunk must arrive within `REQUEST_TIMEOUT_MS` (120 seconds by default).
+
+## Local Development
+
+From the repository root:
+
+```bash
+pnpm install
+pnpm --filter @alex/relay typecheck
+pnpm --filter @alex/relay test
+pnpm --filter @alex/relay dev
+```
+
+Tests run in Cloudflare's local `workerd` runtime through the Workers Vitest integration.
+
+## Configuration
+
+`wrangler.jsonc` defines:
+
+- `BASE_DOMAIN`: the domain used to extract tunnel subdomains.
+- `REQUEST_TIMEOUT_MS`: header/body timeout for tunneled requests.
+- `TUNNELS`: the Durable Object namespace.
+- `*.alexreader.app/*`: the wildcard Worker route.
+
+If the production domain changes, update both the route and `BASE_DOMAIN`, then update `RELAY_URL` and `TUNNEL_DOMAIN` in `electron/main.ts`.

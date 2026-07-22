@@ -2,274 +2,118 @@
 
 ## Prerequisites
 
-- A VPS with a public IP (e.g., DigitalOcean, Hetzner, Fly.io)
-- A domain with DNS managed by Cloudflare (for wildcard TLS)
-- Rust toolchain (`rustup`) on both the VPS and the development machine
+- A Cloudflare account with the `alexreader.app` zone.
+- A Workers Free or Paid plan. This relay uses the SQLite-backed Durable Objects supported by both plans; check the Free plan's daily request limits before production use.
+- Node.js and pnpm for deployment.
+- Wrangler authenticated with an account that can deploy Workers and configure routes.
+
+No VPS, Caddy installation, public server ports, or relay Rust toolchain is required.
 
 ## 1. DNS Setup
 
-The marketing site lives at the apex domain (`alexreader.app`). Tunnel subdomains use a wildcard record pointing to the relay VPS. These don't conflict — a wildcard record never matches the apex.
+The Worker uses a wildcard route, `*.alexreader.app/*`. Cloudflare requires a proxied DNS record for hostnames matched by a Worker route.
 
-Create these DNS records in Cloudflare:
+Create or change the wildcard record in Cloudflare DNS:
 
-| Type         | Name | Content        | Proxy                 | Purpose                                       |
-| ------------ | ---- | -------------- | --------------------- | --------------------------------------------- |
-| A (or CNAME) | `@`  | Marketing host | Per your setup        | `alexreader.app` — marketing site             |
-| A            | `*`  | `<VPS_IP>`     | DNS only (gray cloud) | `<subdomain>.alexreader.app` — tunnel traffic |
+| Type | Name | Content | Proxy | Purpose |
+| --- | --- | --- | --- | --- |
+| AAAA | `*` | `100::` | Proxied (orange cloud) | Sends all otherwise-unmatched subdomains to Cloudflare; the Worker route answers before an origin is used |
 
-Caddy handles TLS for the wildcard, so the wildcard record must be DNS-only (gray cloud, no Cloudflare proxy).
+The apex marketing site is unaffected because `*.alexreader.app/*` does not match `alexreader.app`.
 
-### Protecting other subdomains
+The wildcard Worker route can match other proxied subdomains too. Protect `www`, `docs`, `api`, and similar hosts with a more-specific Worker route or leave their explicit DNS record unproxied when appropriate. `relay.alexreader.app` is intentionally handled by this Worker for `/_tunnel/ws`.
 
-The wildcard catches **all** subdomains not covered by an explicit record. If you use other subdomains (e.g., `www`, `docs`, `api`), add explicit A or CNAME records for them — explicit records take precedence over the wildcard:
+## 2. Authenticate Wrangler
 
-| Type  | Name  | Content        | Purpose                                              |
-| ----- | ----- | -------------- | ---------------------------------------------------- |
-| CNAME | `www` | Marketing host | Keeps `www.alexreader.app` on the marketing site     |
-| A     | `api` | API server IP  | Prevents `api.alexreader.app` from hitting the relay |
-
-Any subdomain without an explicit record will route to the relay VPS and be treated as a tunnel subdomain.
-
-## 2. Build the Relay
-
-On the VPS (or cross-compile and copy the binary):
+From `alex-relay/`:
 
 ```bash
-cd alex-relay
-cargo build --release
+pnpm exec wrangler login
+pnpm exec wrangler whoami
 ```
 
-The binary is at `alex-relay/target/release/alex-relay`.
+For CI, use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead of an interactive login. The API token needs permission to edit Workers scripts, Durable Objects, and Workers routes for the zone.
 
-### Cross-compiling (optional)
+## 3. Validate and Deploy
 
-If building on macOS for a Linux VPS:
+From the repository root:
 
 ```bash
-# Install the target
-rustup target add x86_64-unknown-linux-gnu
-
-# Install zig + cargo-zigbuild
-brew install zig
-cargo install cargo-zigbuild
-
-# Build using Zig as the linker
-cargo zigbuild --release --target x86_64-unknown-linux-gnu
+pnpm install
+pnpm --filter @alex/relay typecheck
+pnpm --filter @alex/relay test
+pnpm --filter @alex/relay deploy
 ```
 
-Copy the binary to the VPS:
+The first deploy applies Durable Object migration `v1` and installs the wildcard route from `wrangler.jsonc`. Later deploys update the Worker without requiring a server restart; connected desktop clients reconnect automatically if Cloudflare closes a socket during rollout.
+
+## 4. Build the Updated Desktop Client
+
+The Cloudflare relay requires the version of `watcher-rs` that adds `?subdomain=...` to the WebSocket upgrade URL:
 
 ```bash
-scp target/x86_64-unknown-linux-gnu/release/alex-relay user@vps:/opt/alex-relay/
+pnpm watcher:build
 ```
 
-## 3. Install and Configure Caddy
+Package and distribute a new Electron build before retiring any compatibility deployment of the old relay.
 
-Install Caddy and add the Cloudflare DNS plugin (required for wildcard certs):
+## 5. Manual End-to-End Test
 
-```bash
-# On the VPS
-# If Caddy is installed via snap, remove it to avoid conflicts with apt/systemd setup
-if snap list caddy >/dev/null 2>&1; then sudo snap remove caddy; fi
-
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
-curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
-sudo apt update
-sudo apt install -y caddy
-
-# Add the Cloudflare DNS module to the installed Caddy binary
-# Stop running instances first; add-package starts a temporary Caddy process
-sudo systemctl stop caddy 2>/dev/null || true
-sudo pkill -x caddy 2>/dev/null || true
-sudo caddy add-package github.com/caddy-dns/cloudflare
-sudo caddy list-modules | grep dns.providers.cloudflare
-```
-
-`caddy add-package` is the quickest path and is currently marked experimental by Caddy. If you want strict reproducibility/pinning, use an `xcaddy` build flow instead.
-If `systemctl status caddy` says unit not found, Caddy was not installed as an apt package (or install failed); reinstall with `sudo apt install --reinstall caddy`.
-
-Create `/etc/caddy/Caddyfile`:
-
-```
-*.alexreader.app {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
-    reverse_proxy 127.0.0.1:8080
-}
-```
-
-Create a Cloudflare API token with **Zone > DNS > Edit** permission for your domain, then set it:
-
-```bash
-sudo mkdir -p /etc/systemd/system/caddy.service.d
-sudo tee /etc/systemd/system/caddy.service.d/override.conf > /dev/null <<'EOF'
-[Service]
-Environment=CF_API_TOKEN=your-cloudflare-api-token-here
-EOF
-```
-
-Start Caddy:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable caddy
-sudo systemctl start caddy
-```
-
-Verify the wildcard cert is issued:
-
-```bash
-sudo journalctl -u caddy -f
-# Look for "certificate obtained successfully" for *.alexreader.app
-```
-
-## 4. Run the Relay as a Service
-
-Create `/etc/systemd/system/alex-relay.service`:
-
-```ini
-[Unit]
-Description=Alex Relay Server
-After=network.target
-
-[Service]
-Type=simple
-User=alex
-ExecStart=/opt/alex-relay/alex-relay --listen-addr 0.0.0.0:8080 --domain alexreader.app
-Restart=always
-RestartSec=5
-Environment=RUST_LOG=alex_relay=info
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo useradd -r -s /bin/false alex  # service user
-sudo systemctl daemon-reload
-sudo systemctl enable alex-relay
-sudo systemctl start alex-relay
-```
-
-Check it's running:
-
-```bash
-sudo systemctl status alex-relay
-curl -s http://127.0.0.1:8080/  # should return "no tunnel found"
-```
-
-## 5. Build the Client (watcher-rs)
-
-On the development machine, rebuild watcher-rs with the new tunnel module:
-
-```bash
-cd watcher-rs
-cargo build --release
-```
-
-### Manual test
-
-Run this mode without Electron (`pnpm electron:dev` should be stopped). Start a local Next.js server on port 3210, then:
+Stop `pnpm electron:dev`, then start the local web app on the desktop port:
 
 ```bash
 pnpm next dev -p 3210 -H 127.0.0.1
 ```
 
-In a second terminal, run:
+In another terminal:
 
 ```bash
-./target/release/watcher-rs tunnel \
+./watcher-rs/target/release/watcher-rs tunnel \
   --subdomain test-my-tunnel \
   --relay-url wss://relay.alexreader.app/_tunnel/ws \
   --local-addr 127.0.0.1:3210
 ```
 
-You should see:
-
-```
-connecting to relay at wss://relay.alexreader.app/_tunnel/ws (subdomain: test-my-tunnel)
-registered as test-my-tunnel
-```
-
-Visit `https://test-my-tunnel.alexreader.app` in a browser to verify.
+The log should report `registered as test-my-tunnel`. Visit `https://test-my-tunnel.alexreader.app` and verify navigation plus a PDF or EPUB response.
 
 ## 6. Electron Integration
 
-No additional setup is needed for end users. When they toggle "Public Access" in Admin > Users:
-
-1. A subdomain is generated and saved to the Electron store (`~/<userData>/config.json`)
-2. The tunnel process is spawned as a child of the Electron app
-3. The public URL is displayed with a copy button
-
-The tunnel auto-starts on subsequent app launches if it was previously enabled.
-
-For local development, `pnpm electron:dev` starts its own Next.js server on `127.0.0.1:3210`. Do not run a separate `next dev` or manual `watcher-rs tunnel` against the same port at the same time.
-
-### Changing the relay URL
-
-The relay URL is hardcoded in `electron/main.ts` as `RELAY_URL`. To point to a different relay:
+No additional end-user setup is needed. Enabling **Public Access** starts the tunnel child process, persists the generated subdomain, and displays its public URL. The configured relay constants remain in `electron/main.ts`:
 
 ```typescript
-const RELAY_URL = "wss://relay.yourdomain.com/_tunnel/ws";
-const TUNNEL_DOMAIN = "yourdomain.com";
+const RELAY_URL = "wss://relay.alexreader.app/_tunnel/ws";
+const TUNNEL_DOMAIN = "alexreader.app";
 ```
 
-Rebuild the Electron app after changing these values.
+The Rust client appends the subdomain query parameter; do not include it in `RELAY_URL`.
 
 ## 7. Monitoring
 
-### Relay logs
-
-```bash
-sudo journalctl -u alex-relay -f
-```
-
-Key log lines:
-
-- `client registered` — a tunnel client connected
-- `client disconnected` — a tunnel client dropped
-
-### Caddy logs
-
-```bash
-sudo journalctl -u caddy -f
-```
-
-### Client-side
-
-Tunnel output is logged to stderr with `[Tunnel]` prefix in the Electron console.
-
-## 8. Firewall
-
-The VPS needs:
-
-| Port | Protocol | Purpose                              |
-| ---- | -------- | ------------------------------------ |
-| 443  | TCP      | HTTPS (Caddy)                        |
-| 80   | TCP      | HTTP (Caddy ACME challenge redirect) |
-
-The relay port (8080) should **not** be exposed publicly — Caddy reverse-proxies to it on localhost.
-
-```bash
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw enable
-```
-
-## 9. Updating
-
-### Relay
+Tail deployed logs with:
 
 ```bash
 cd alex-relay
-cargo build --release
-sudo systemctl restart alex-relay
+pnpm exec wrangler tail
 ```
 
-Connected clients will reconnect automatically after the relay restarts (exponential backoff, 5s to 60s).
+The Worker emits structured fields for tunnel connections, disconnects, WebSocket errors, invalid frames, and failed request sends. Cloudflare's Workers dashboard also shows request/error metrics because observability is enabled in `wrangler.jsonc`.
 
-### Client
+Useful checks:
 
-Rebuild watcher-rs and package the new binary with the Electron app. Existing tunnel connections will use the new binary on next app restart.
+```bash
+curl -i https://unknown-tunnel.alexreader.app/
+# 502 tunnel not connected
+
+curl -i https://relay.alexreader.app/_tunnel/ws
+# 426 expected a WebSocket upgrade
+```
+
+## 8. Updating or Rolling Back
+
+Deploy the current checkout:
+
+```bash
+pnpm --filter @alex/relay deploy
+```
+
+Use Cloudflare's Workers deployments UI or Wrangler deployment commands to inspect versions and roll back. Do not remove or rename the `v1` Durable Object migration after it has reached production; add a new migration tag for future storage/class changes.

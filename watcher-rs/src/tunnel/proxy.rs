@@ -1,7 +1,6 @@
 use crate::tunnel::protocol::Frame;
 use anyhow::{Context, Result};
 use http_body_util::BodyExt;
-use hyper::body::Incoming;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
