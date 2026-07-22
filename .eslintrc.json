@@ -36,6 +36,12 @@
   },
   "overrides": [
     {
+      "files": ["alex-relay/**/*.ts"],
+      "parserOptions": {
+        "project": "./alex-relay/tsconfig.json"
+      }
+    },
+    {
       "files": ["scripts/**/*.js", "electron/**/*.js"],
       "parserOptions": {
         "project": null,
