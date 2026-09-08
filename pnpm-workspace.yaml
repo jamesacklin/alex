@@ -12,5 +12,32 @@ onlyBuiltDependencies:
   - canvas
   - core-js
   - electron
+  - electron-winstaller
   - es5-ext
   - esbuild
+
+# Transitive advisory fixes that the direct dependency ranges cannot reach.
+# Each entry is scoped to the dependent that pulls the vulnerable copy, so a
+# future consumer wanting a different major is not pinned back.
+# See docs/release/dependency-baseline.md for the reachability triage.
+overrides:
+  # Keep a single React (and therefore a single react-hook-form peer
+  # resolution) across the root app and the @alex/ui workspace package.
+  # Two copies produce structurally identical but nominally incompatible
+  # types at every <Form> boundary.
+  react: '19.2.8'
+  react-dom: '19.2.8'
+  # epubjs 0.3.93 is the latest published release and is unmaintained.
+  # GHSA-r5fr-rjxr-66jc (lodash `_.template` code injection).
+  'epubjs>lodash': '^4.18.1'
+  # GHSA-wh4c-j3r5-mjhp, GHSA-2v35-w6hq-6mfw, GHSA-f6ww-3ggp-fr8h,
+  # GHSA-x6wf-f3px-wcqx, GHSA-j759-j44w-7fr8 (xmldom XML injection / DoS).
+  'epubjs>@xmldom/xmldom': '^0.8.15'
+  # GHSA-2v37-7h3g-55p8 (nanoid infinite loop on zero size), build-time only.
+  'postcss>nanoid': '^3.3.18'
+  # GHSA-c83g-rgw3-j3cx, GHSA-73wf-gq98-2v4g (browserslist OOM / prototype
+  # write), build-time only.
+  browserslist: '^4.28.9'
+  # GHSA-4cwx-7wf7-3272 and four related undici advisories, reached only by
+  # the relay's Workers test runtime.
+  'miniflare>undici': '^7.29.0'
