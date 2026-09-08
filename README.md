@@ -199,11 +199,22 @@ If you are using S3 mode, skip this step and configure S3 env vars instead.
 docker compose up -d --build
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000). On first run, Alex creates a default admin account:
-   - **Email:** `admin@localhost`
-   - **Password:** `admin123`
+4. Open [http://localhost:3000](http://localhost:3000) and complete first-run setup.
 
-   **Change the password immediately after logging in.**
+   Alex ships **no default account and no default password**. The first time
+   you open `/setup`, it prints a one-time setup token to the container log
+   and writes it next to the database (`/app/data/setup-token`). Paste that
+   token into the setup form along with the email, name and password you
+   want for the owner account:
+
+   ```sh
+   docker compose logs alex | grep -A2 'first-run setup'
+   # or
+   docker compose exec alex cat /app/data/setup-token
+   ```
+
+   The token is discarded as soon as setup completes, so `/setup` cannot be
+   replayed. Restarting the container never resets your password.
 
 5. **Add books:**
 - Local mode: drop PDFs/EPUBs into your library folder (`/Volumes/books`).
@@ -213,14 +224,27 @@ docker compose up -d --build
 
 **One-command setup:**
 ```sh
-pnpm setup          # installs deps, creates schema, seeds admin
+pnpm setup          # installs deps, builds watcher-rs, applies migrations
 ```
 
 **Or step-by-step:**
 ```sh
 pnpm install
-pnpm db:push        # create the SQLite schema (builds watcher-rs if needed)
-pnpm db:seed        # seed the default admin user
+pnpm db:push        # apply schema migrations (builds watcher-rs if needed)
+```
+
+Then open http://localhost:3000/setup and use the one-time token it prints
+to create the owner account.
+
+`pnpm db:seed` still exists for automated environments, but it has no
+default credential: it requires `ALEX_ADMIN_EMAIL` and
+`ALEX_ADMIN_PASSWORD`, and it never modifies an account that already
+exists.
+
+```sh
+ALEX_ADMIN_EMAIL=you@example.com \
+ALEX_ADMIN_PASSWORD='a password you choose' \
+pnpm db:seed
 ```
 
 In two terminals:

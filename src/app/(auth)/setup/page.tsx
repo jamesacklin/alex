@@ -1,21 +1,17 @@
 import { redirect } from "next/navigation";
-import { queryOne } from "@/lib/db/rust";
+import { anyUserExists, ensureSetupToken, setupTokenPath } from "@/lib/auth/bootstrap";
 import SetupForm from "./setup-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
-  const existing = await queryOne<{ id: string }>(
-    `
-      SELECT id
-      FROM users
-      LIMIT 1
-    `
-  );
-
-  if (existing) {
+  if (await anyUserExists()) {
     redirect("/login");
   }
 
-  return <SetupForm />;
+  // Mint (and log) the one-time bootstrap token if this is the first visit.
+  // The value is never sent to the browser — only the location to find it.
+  await ensureSetupToken();
+
+  return <SetupForm tokenLocation={setupTokenPath()} />;
 }

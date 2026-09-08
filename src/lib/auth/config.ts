@@ -1,17 +1,20 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
-import { queryOne } from "@/lib/db/rust";
-import { execute } from "@/lib/db/rust";
 import { isDesktopMode, isDesktopRequestAuthorized } from "@/lib/auth/desktop-auth";
 import { authCookies } from "@/lib/auth/cookies";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { verifyCredentials } from "@/lib/auth/credentials";
+import { resolveLiveSession, type LiveSession } from "@/lib/auth/session-authority";
+import {
+  DESKTOP_PRINCIPAL_DISPLAY_NAME,
+  DESKTOP_PRINCIPAL_EMAIL,
+  DESKTOP_PRINCIPAL_ID,
+} from "@/lib/auth/principals";
 
 declare module "next-auth" {
   interface User {
     role: string;
+    sessionVersion?: number;
   }
   interface Session {
     user: {
@@ -22,6 +25,8 @@ declare module "next-auth" {
     };
   }
 }
+
+export { DESKTOP_PRINCIPAL_EMAIL, DESKTOP_PRINCIPAL_ID } from "@/lib/auth/principals";
 
 const nextAuthResult = NextAuth({
   trustHost: true,
@@ -37,29 +42,18 @@ const nextAuthResult = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = String(credentials?.email ?? "");
-        const password = String(credentials?.password ?? "");
-
-        if (!email || !password) return null;
-
-        let user: AuthUser | null = null;
-        try {
-          user = await findAuthUserByEmail(email);
-        } catch (error) {
-          console.error("[auth] Failed to query users for credentials login", error);
-          return null;
-        }
-
+        const user = await verifyCredentials(
+          String(credentials?.email ?? ""),
+          String(credentials?.password ?? "")
+        );
         if (!user) return null;
-
-        const isValid = await bcrypt.compare(password, user.passwordHash);
-        if (!isValid) return null;
 
         return {
           id: user.id,
           email: user.email,
           name: user.displayName,
           role: user.role,
+          sessionVersion: user.sessionVersion,
         };
       },
     }),
@@ -70,6 +64,7 @@ const nextAuthResult = NextAuth({
         token.id = user.id;
         token.role = user.role;
         token.displayName = user.name ?? "";
+        token.sessionVersion = user.sessionVersion ?? 1;
       }
       return token;
     },
@@ -77,6 +72,11 @@ const nextAuthResult = NextAuth({
       session.user.id = token.id as string;
       session.user.role = token.role as string;
       session.user.displayName = token.displayName as string;
+      // Carried through so `authSession()` can compare it against the
+      // account's current version and reject a revoked session.
+      (session as { sessionVersion?: number }).sessionVersion = token.sessionVersion as
+        | number
+        | undefined;
       return session;
     },
   },
@@ -85,9 +85,14 @@ const nextAuthResult = NextAuth({
 export const { handlers, signIn, signOut } = nextAuthResult;
 
 // Desktop mode uses a synthetic admin session only when Electron presents a valid session token.
-async function desktopSession() {
+function desktopSession(): LiveSession {
   return {
-    user: { id: '1', email: 'admin@localhost', displayName: 'Admin', role: 'admin' },
+    user: {
+      id: DESKTOP_PRINCIPAL_ID,
+      email: DESKTOP_PRINCIPAL_EMAIL,
+      displayName: DESKTOP_PRINCIPAL_DISPLAY_NAME,
+      role: "admin",
+    },
     expires: new Date(Date.now() + 365 * 86400000).toISOString(),
   };
 }
@@ -100,8 +105,17 @@ async function getRequestHeadersForDesktopAuth(): Promise<Headers | null> {
   }
 }
 
-// Dynamic auth session that checks desktop mode and validates Electron's auth token.
-export async function authSession() {
+/**
+ * Resolve the session for a protected operation.
+ *
+ * Middleware runs on the Edge runtime and cannot reach the database, so it
+ * can only make a cheap routing decision. This is where authority is
+ * actually established: the decoded session is revalidated against the
+ * database on every call, so a deleted, disabled, demoted or
+ * password-reset account loses access at its next protected operation
+ * rather than when its 30-day JWT expires.
+ */
+export async function authSession(): Promise<LiveSession | null> {
   if (isDesktopMode()) {
     const requestHeaders = await getRequestHeadersForDesktopAuth();
     if (requestHeaders && isDesktopRequestAuthorized(requestHeaders)) {
@@ -109,148 +123,9 @@ export async function authSession() {
     }
   }
 
-  // Fall through to standard web session (works for both non-desktop mode
-  // and desktop mode when the request lacks the desktop auth header, e.g.
+  // Fall through to the standard web session (used both in web mode and in
+  // desktop mode for requests without the desktop capability header, e.g.
   // relay/browser traffic hitting the same server).
-  return nextAuthResult.auth();
-}
-
-type AuthUser = {
-  id: string;
-  email: string;
-  passwordHash: string;
-  displayName: string;
-  role: string;
-};
-
-const MIGRATION_BREAKPOINT = "--> statement-breakpoint";
-const ADMIN_EMAIL = "admin@localhost";
-const ADMIN_PASSWORD = "admin123";
-const ADMIN_ID = "1";
-
-let bootstrapPromise: Promise<void> | null = null;
-
-async function findAuthUserByEmail(email: string): Promise<AuthUser | null> {
-  const row = await queryUserRow(email).catch(async (error) => {
-    if (!isMissingUsersTableError(error)) {
-      throw error;
-    }
-
-    console.warn("[auth] Missing users table detected. Attempting automatic DB bootstrap.");
-    await bootstrapAuthDatabase();
-    return queryUserRow(email);
-  });
-
-  if (!row) return null;
-
-  const normalized = normalizeAuthUserRow(row);
-  if (!normalized) {
-    console.error("[auth] User row is missing required fields for credentials auth");
-  }
-  return normalized;
-}
-
-function normalizeAuthUserRow(row: Record<string, unknown>): AuthUser | null {
-  const id = getString(row, ["id"]);
-  const email = getString(row, ["email"]);
-  const passwordHash = getString(row, ["password_hash", "passwordHash", "password"]);
-  const displayName = getString(row, ["display_name", "displayName", "name"]) ?? email;
-  const role = getString(row, ["role"]) ?? "user";
-
-  if (!id || !email || !passwordHash || !displayName) {
-    return null;
-  }
-
-  return {
-    id,
-    email,
-    passwordHash,
-    displayName,
-    role,
-  };
-}
-
-function getString(row: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = row[key];
-    if (typeof value === "string" && value.length > 0) {
-      return value;
-    }
-    if (typeof value === "number") {
-      return String(value);
-    }
-  }
-  return undefined;
-}
-
-function isMissingUsersTableError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("no such table: users");
-}
-
-async function queryUserRow(email: string): Promise<Record<string, unknown> | null> {
-  return queryOne<Record<string, unknown>>(
-    `
-      SELECT *
-      FROM users
-      WHERE email = ?1
-      LIMIT 1
-    `,
-    [email]
-  );
-}
-
-async function bootstrapAuthDatabase(): Promise<void> {
-  if (!bootstrapPromise) {
-    bootstrapPromise = doBootstrapAuthDatabase().catch((error) => {
-      bootstrapPromise = null;
-      throw error;
-    });
-  }
-  return bootstrapPromise;
-}
-
-async function doBootstrapAuthDatabase(): Promise<void> {
-  const migrationPath = path.resolve(
-    process.env.DB_MIGRATION_PATH || "./src/lib/db/migrations/0000_wide_expediter.sql"
-  );
-  const migrationSql = await fs.readFile(migrationPath, "utf8");
-  const statements = migrationSql
-    .split(MIGRATION_BREAKPOINT)
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-
-  for (const statement of statements) {
-    try {
-      await execute(statement);
-    } catch (error) {
-      if (isAlreadyExistsError(error)) {
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  const usersCount = await queryOne<{ count: number }>("SELECT COUNT(*) AS count FROM users");
-  if ((usersCount?.count ?? 0) > 0) {
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-  const now = Math.floor(Date.now() / 1000);
-
-  await execute(
-    `
-      INSERT INTO users (
-        id, email, password_hash, display_name, role, created_at, updated_at
-      )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-    `,
-    [ADMIN_ID, ADMIN_EMAIL, passwordHash, "Admin", "admin", now, now]
-  );
-}
-
-function isAlreadyExistsError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("already exists");
+  const session = await nextAuthResult.auth();
+  return resolveLiveSession(session);
 }

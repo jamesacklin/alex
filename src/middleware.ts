@@ -13,9 +13,29 @@ function originUrl(req: Request): string {
   return req.url;
 }
 
+/**
+ * True only for a session that names a concrete account.
+ *
+ * `req.auth` is not always a session: Auth.js can populate it with an object
+ * describing a *configuration error* (GHSA-8fpg-xm3f-6cx3), and such an
+ * object is truthy.  A `!!session` check therefore treats a misconfigured
+ * deployment as authenticated.  Requiring a non-empty `user.id` fails closed
+ * on the error object, on a partially decoded token, and on anything else
+ * that is not a real identity.
+ */
+function hasConcreteIdentity(session: unknown): session is {
+  user: { id: string; role?: unknown };
+} {
+  if (!session || typeof session !== "object") return false;
+  const user = (session as { user?: unknown }).user;
+  if (!user || typeof user !== "object") return false;
+  const id = (user as { id?: unknown }).id;
+  return typeof id === "string" && id.length > 0;
+}
+
 export default auth((req) => {
   const { nextUrl } = req;
-  const session = req.auth;
+  const session: unknown = req.auth;
   const isApiRoute = nextUrl.pathname.startsWith("/api/");
   const isDesktop = isDesktopMode();
   const isDesktopAuthorized = isDesktop && isDesktopRequestAuthorized(req.headers);
@@ -44,8 +64,10 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  const isAuthenticated = isDesktopAuthorized || !!session;
-  const isAdmin = isDesktopAuthorized || session?.user?.role === "admin";
+  const identified = hasConcreteIdentity(session);
+  const isAuthenticated = isDesktopAuthorized || identified;
+  const isAdmin =
+    isDesktopAuthorized || (identified && session.user.role === "admin");
 
   // Other API routes — return JSON errors instead of redirecting.
   if (isApiRoute) {

@@ -6,15 +6,37 @@ import * as path from 'path';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Desktop-only library wipe (F04).
+ *
+ * This endpoint used to check the desktop capability only *when desktop
+ * mode was enabled*; in ordinary web mode it fell back to matching a
+ * substring of the request's own `Host` header. Because the path is not
+ * under `/api/admin`, middleware admitted any authenticated account, so an
+ * ordinary reader on the documented localhost deployment could delete every
+ * book — and with the cascades, everyone's reading progress and collection
+ * membership. A forwarded `Host` containing `localhost` was accepted too.
+ *
+ * The route is now unconditionally unavailable outside desktop mode, and
+ * inside desktop mode it requires the desktop capability token on every
+ * request. `Host` is caller-controlled and is not an authorization signal.
+ * Administrators use the separately authorized POST /api/admin/library/clear.
+ */
 export async function POST(request: NextRequest) {
-  if (isDesktopMode() && !isDesktopRequestAuthorized(request.headers)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!isDesktopMode()) {
+    // Not "forbidden for you" — this operation does not exist here.
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Not found',
+        details: 'This endpoint is only available in the desktop app.',
+      },
+      { status: 404 }
+    );
   }
 
-  // Only allow requests from localhost (Electron)
-  const host = request.headers.get('host');
-  if (!host?.includes('localhost') && !host?.includes('127.0.0.1')) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  if (!isDesktopRequestAuthorized(request.headers)) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

@@ -64,7 +64,7 @@ describe("User actions", () => {
     const { updateUserPassword } = await import("@/app/(dashboard)/admin/users/actions");
     const result = await updateUserPassword("user-1", { password: "12345" });
 
-    expect(result).toEqual({ error: "Password must be at least 6 characters" });
+    expect(result).toEqual({ error: "Password must be at least 8 characters" });
   });
 
   it("updates password hash for an existing user", async () => {
