@@ -497,6 +497,21 @@ export function EpubReader({
     localStorage.setItem("epub-reader-settings", JSON.stringify({ fontSize }));
   }, [fontSize]);
 
+  // Escape dismisses whichever overlay is open. Without this the only way
+  // out was a pointer click on the backdrop.
+  useEffect(() => {
+    if (!tocOpen && !settingsOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setTocOpen(false);
+      setSettingsOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [tocOpen, settingsOpen]);
+
   // Apply settings to rendition whenever they change
   useEffect(() => {
     if (!renditionRef.current) return;
@@ -823,7 +838,7 @@ export function EpubReader({
               precision={2}
               compact
               className="max-w-full"
-              rowClassName="text-[11px] text-sidebar-foreground/80"
+              rowClassName="text-xs text-sidebar-foreground/80"
               trackClassName="bg-sidebar-foreground/25"
               fillClassName="bg-sidebar-foreground"
             />
@@ -883,8 +898,12 @@ export function EpubReader({
         {/* Table of Contents */}
         {tocOpen && (
           <>
-            {/* Backdrop */}
-            <div
+            {/* Backdrop. A button, not a div: it is the only way to
+                dismiss this panel, so it has to be reachable by keyboard
+                and announced to a screen reader. */}
+            <button
+              type="button"
+              aria-label="Close table of contents"
               className="absolute inset-0 bg-black/50 z-20"
               onClick={() => setTocOpen(false)}
             />
@@ -921,8 +940,10 @@ export function EpubReader({
         {/* Reading Settings */}
         {settingsOpen && (
           <>
-            {/* Backdrop */}
-            <div
+            {/* Backdrop — see the note on the table-of-contents backdrop. */}
+            <button
+              type="button"
+              aria-label="Close reading settings"
               className="absolute inset-0 bg-black/50 z-20"
               onClick={() => setSettingsOpen(false)}
             />

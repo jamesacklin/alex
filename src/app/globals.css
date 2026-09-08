@@ -56,5 +56,20 @@ body {
     .dashboard-screen-fade {
       animation: none;
     }
+
+    /*
+     * Indefinite motion is what `prefers-reduced-motion` is chiefly about,
+     * and the spinners in this app previously ignored it entirely. Tailwind's
+     * `motion-safe:` variant covers new code; these rules cover the
+     * `animate-*` utilities already in use, so a single spinner cannot be
+     * missed. Elements keep their layout and any accessible name — only the
+     * looping animation stops.
+     */
+    .animate-spin,
+    .animate-ping,
+    .animate-pulse,
+    .animate-bounce {
+      animation: none;
+    }
   }
 }

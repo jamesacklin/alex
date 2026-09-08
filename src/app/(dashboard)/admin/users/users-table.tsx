@@ -25,6 +25,29 @@ import {
   updateUserPassword,
 } from "./actions";
 
+/**
+ * Inline busy indicator.
+ *
+ * `aria-hidden` because the accessible name comes from the adjacent
+ * `sr-only` text; `motion-safe:` so the spin is dropped for anyone who has
+ * asked for reduced motion.
+ */
+function Spinner() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 motion-safe:animate-spin"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  );
+}
+
 type UserRow = {
   id: string;
   email: string;
@@ -331,9 +354,19 @@ export default function UsersTable({
               size="sm"
               onClick={toggleTunnel}
               disabled={tunnelLoading || (!tunnelEnabled && !hasRemoteCredentials)}
+              aria-busy={tunnelLoading}
               className="shrink-0"
             >
-              {tunnelLoading ? "..." : tunnelEnabled ? "Enabled" : "Disabled"}
+              {tunnelLoading ? (
+                <>
+                  <Spinner />
+                  <span className="sr-only">Working…</span>
+                </>
+              ) : tunnelEnabled ? (
+                "Enabled"
+              ) : (
+                "Disabled"
+              )}
             </Button>
           </div>
           {tunnelEnabled && tunnelUrl && (
@@ -703,9 +736,9 @@ export default function UsersTable({
             <AlertDialogCancel />
             <AlertDialogAction
               onClick={onDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 max-w-full"
             >
-              Delete
+              <span className="truncate">Delete {deleteEmail}</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

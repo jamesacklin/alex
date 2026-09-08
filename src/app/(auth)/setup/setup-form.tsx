@@ -84,6 +84,12 @@ export default function SetupForm({ tokenLocation }: { tokenLocation: string }) 
                       <Input
                         placeholder="Paste the token from the server log"
                         autoComplete="off"
+                        // The token is hex and compared byte-for-byte, so a
+                        // mobile keyboard capitalising the first character
+                        // turns a correct paste into "Invalid or expired
+                        // setup token" with nothing to explain it.
+                        autoCapitalize="none"
+                        autoCorrect="off"
                         spellCheck={false}
                         {...field}
                       />
