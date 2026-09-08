@@ -76,6 +76,12 @@ enum DbAction {
     QueryAll,
     QueryOne,
     Execute,
+    /// Run every statement on one connection inside a single transaction.
+    Transaction,
+    /// Apply pending schema migrations. Exits non-zero if any migration fails.
+    Migrate,
+    /// Report the highest applied migration version without changing anything.
+    MigrationStatus,
 }
 
 #[derive(Args)]
@@ -125,6 +131,29 @@ struct SqlRequest {
     sql: String,
     #[serde(default)]
     params: Vec<JsonValue>,
+}
+
+#[derive(Deserialize)]
+struct TransactionRequest {
+    statements: Vec<TransactionStatement>,
+}
+
+#[derive(Deserialize)]
+struct TransactionStatement {
+    sql: String,
+    #[serde(default)]
+    params: Vec<JsonValue>,
+    #[serde(default)]
+    mode: TransactionMode,
+}
+
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+enum TransactionMode {
+    #[default]
+    Execute,
+    QueryOne,
+    QueryAll,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -255,10 +284,21 @@ fn run_tunnel(cmd: TunnelCommand) -> Result<()> {
 }
 
 fn run_db_command(cmd: DbCommand) -> Result<()> {
+    // Migration commands take no stdin payload, so do not block waiting for one.
+    match cmd.action {
+        DbAction::Migrate => return run_db_migrate(&cmd.db_path),
+        DbAction::MigrationStatus => return run_db_migration_status(&cmd.db_path),
+        _ => {}
+    }
+
     let mut stdin = String::new();
     std::io::stdin()
         .read_to_string(&mut stdin)
         .context("Failed to read SQL request from stdin")?;
+
+    if matches!(cmd.action, DbAction::Transaction) {
+        return run_db_transaction(&cmd.db_path, &stdin);
+    }
 
     let request: SqlRequest = serde_json::from_str(&stdin).context("Invalid SQL request JSON")?;
     let bindings = to_sql_values(request.params)?;
@@ -279,11 +319,110 @@ fn run_db_command(cmd: DbCommand) -> Result<()> {
                 .with_context(|| format!("Failed to execute SQL: {}", request.sql))?;
             json!({ "changes": changes })
         }
+        DbAction::Transaction | DbAction::Migrate | DbAction::MigrationStatus => {
+            unreachable!("handled above")
+        }
     };
 
     println!(
         "{}",
         serde_json::to_string(&output).context("Failed to serialize DB output")?
+    );
+    Ok(())
+}
+
+fn run_db_migrate(db_path: &str) -> Result<()> {
+    if let Some(parent) = std::path::Path::new(db_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create database directory {}", parent.display())
+            })?;
+        }
+    }
+
+    let mut conn = open_connection(db_path)?;
+    let applied = watcher_rs::migrations::run(&mut conn)?;
+    let current = watcher_rs::migrations::current_version(&conn)?;
+
+    let output = json!({
+        "applied": applied
+            .iter()
+            .map(|m| json!({ "version": m.version, "name": m.name }))
+            .collect::<Vec<_>>(),
+        "version": current,
+    });
+
+    println!(
+        "{}",
+        serde_json::to_string(&output).context("Failed to serialize migration output")?
+    );
+    Ok(())
+}
+
+fn run_db_migration_status(db_path: &str) -> Result<()> {
+    let conn = open_connection(db_path)?;
+    let current = watcher_rs::migrations::current_version(&conn)?;
+    let latest = watcher_rs::migrations::MIGRATIONS
+        .iter()
+        .map(|m| m.version)
+        .max();
+
+    let output = json!({
+        "version": current,
+        "latest": latest,
+        "upToDate": current.is_some() && current == latest,
+    });
+
+    println!(
+        "{}",
+        serde_json::to_string(&output).context("Failed to serialize migration status")?
+    );
+    Ok(())
+}
+
+/// Run a batch of statements on one connection inside one transaction.
+///
+/// Node's DB bridge spawns a process per call, so `BEGIN` and `COMMIT` sent
+/// as separate `execute` calls are not a transaction.  This command is the
+/// real primitive: every statement shares a connection, and any error rolls
+/// the whole batch back.
+fn run_db_transaction(db_path: &str, stdin: &str) -> Result<()> {
+    let request: TransactionRequest =
+        serde_json::from_str(stdin).context("Invalid transaction request JSON")?;
+
+    let mut conn = open_connection(db_path)?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .context("Failed to begin transaction")?;
+
+    let mut results = Vec::with_capacity(request.statements.len());
+    for statement in request.statements {
+        let bindings = to_sql_values(statement.params)?;
+        let result = match statement.mode {
+            TransactionMode::Execute => {
+                let changes = tx
+                    .execute(&statement.sql, params_from_iter(bindings.iter()))
+                    .with_context(|| format!("Failed to execute SQL: {}", statement.sql))?;
+                json!({ "changes": changes })
+            }
+            TransactionMode::QueryOne => {
+                let row = query_one(&tx, &statement.sql, &bindings)?;
+                json!({ "row": row })
+            }
+            TransactionMode::QueryAll => {
+                let rows = query_all(&tx, &statement.sql, &bindings)?;
+                json!({ "rows": rows })
+            }
+        };
+        results.push(result);
+    }
+
+    tx.commit().context("Failed to commit transaction")?;
+
+    println!(
+        "{}",
+        serde_json::to_string(&json!({ "results": results }))
+            .context("Failed to serialize transaction output")?
     );
     Ok(())
 }

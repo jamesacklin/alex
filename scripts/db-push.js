@@ -1,8 +1,13 @@
+// Apply schema migrations.
+//
+// The migration set, its ordering and the applied-version ledger all live in
+// watcher-rs (`db migrate`), which embeds the SQL files at compile time.
+// This script only resolves the binary and reports the result, so there is no
+// second copy of the migration logic to drift.
+
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-
-const MIGRATION_BREAKPOINT = '--> statement-breakpoint';
 
 function watcherBinaryName() {
   return process.platform === 'win32' ? 'watcher-rs.exe' : 'watcher-rs';
@@ -46,11 +51,14 @@ function resolveWatcherBinary() {
   throw new Error(`[db:push] Unable to resolve watcher-rs binary. Checked: ${candidates.join(', ')}`);
 }
 
-function runWatcherDb(binaryPath, dbPath, action, sql, params = []) {
-  const result = spawnSync(binaryPath, ['db', '--db-path', dbPath, action], {
+function main() {
+  const dbPath = path.resolve(process.env.DATABASE_PATH || './data/library.db');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+  const binaryPath = resolveWatcherBinary();
+  const result = spawnSync(binaryPath, ['db', '--db-path', dbPath, 'migrate'], {
     cwd: process.cwd(),
     env: process.env,
-    input: JSON.stringify({ sql, params }),
     encoding: 'utf8',
   });
 
@@ -59,144 +67,21 @@ function runWatcherDb(binaryPath, dbPath, action, sql, params = []) {
   }
 
   if (result.status !== 0) {
-    throw new Error(
-      `[db:push] watcher-rs failed (${result.status})\n${result.stderr?.trim() || '(no stderr)'}`
-    );
+    console.error(result.stderr?.trim() || '(no stderr)');
+    throw new Error(`[db:push] Migration failed (exit code ${result.status})`);
   }
 
   const payload = result.stdout?.trim();
-  if (!payload) {
-    return {};
-  }
+  const parsed = payload ? JSON.parse(payload) : { applied: [], version: null };
 
-  return JSON.parse(payload);
-}
-
-function splitMigrationStatements(sql) {
-  return sql
-    .split(MIGRATION_BREAKPOINT)
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-}
-
-function main() {
-  const dbPath = path.resolve(process.env.DATABASE_PATH || './data/library.db');
-  const migrationPath = path.resolve(
-    process.env.DB_MIGRATION_PATH || './src/lib/db/migrations/0000_wide_expediter.sql'
-  );
-
-  if (!fs.existsSync(migrationPath)) {
-    throw new Error(`[db:push] Migration file not found: ${migrationPath}`);
-  }
-
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-
-  const binaryPath = resolveWatcherBinary();
-
-  const usersTable = runWatcherDb(
-    binaryPath,
-    dbPath,
-    'query-one',
-    "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'users' LIMIT 1",
-  ).row;
-
-  if (!usersTable) {
-    const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-    const statements = splitMigrationStatements(migrationSql);
-    for (const statement of statements) {
-      runWatcherDb(binaryPath, dbPath, 'execute', statement);
-    }
-    console.log('[db:push] Applied initial schema migration.');
+  if (parsed.applied.length === 0) {
+    console.log(`[db:push] Schema already at version ${parsed.version}.`);
   } else {
-    console.log('[db:push] Schema already present.');
-  }
-
-  const hasHashIndex = runWatcherDb(
-    binaryPath,
-    dbPath,
-    'query-one',
-    "SELECT 1 AS present FROM sqlite_master WHERE type = 'index' AND name = 'books_file_hash_unique' LIMIT 1",
-  ).row;
-
-  if (!hasHashIndex) {
-    console.log('[db:push] Missing unique book indexes, applying dedupe + index fix...');
-    runWatcherDb(
-      binaryPath,
-      dbPath,
-      'execute',
-      `
-        DELETE FROM books WHERE id IN (
-          SELECT b.id FROM books b
-          INNER JOIN (
-            SELECT file_hash, MIN(added_at) AS min_added
-            FROM books GROUP BY file_hash HAVING COUNT(*) > 1
-          ) d ON b.file_hash = d.file_hash AND b.added_at > d.min_added
-        )
-      `,
-    );
-    runWatcherDb(
-      binaryPath,
-      dbPath,
-      'execute',
-      `
-        DELETE FROM books WHERE id IN (
-          SELECT b.id FROM books b
-          INNER JOIN (
-            SELECT file_path, MIN(added_at) AS min_added
-            FROM books GROUP BY file_path HAVING COUNT(*) > 1
-          ) d ON b.file_path = d.file_path AND b.added_at > d.min_added
-        )
-      `,
-    );
-    runWatcherDb(
-      binaryPath,
-      dbPath,
-      'execute',
-      'CREATE UNIQUE INDEX IF NOT EXISTS `books_file_path_unique` ON `books` (`file_path`)',
-    );
-    runWatcherDb(
-      binaryPath,
-      dbPath,
-      'execute',
-      'CREATE UNIQUE INDEX IF NOT EXISTS `books_file_hash_unique` ON `books` (`file_hash`)',
-    );
-  }
-
-  // --- S3 source columns migration (0001) ---
-  const hasSourceColumn = runWatcherDb(
-    binaryPath,
-    dbPath,
-    'query-one',
-    "SELECT 1 AS present FROM pragma_table_info('books') WHERE name = 'source' LIMIT 1",
-  ).row;
-
-  if (!hasSourceColumn) {
-    console.log('[db:push] Applying S3 source columns migration...');
-    const s3MigrationPath = path.resolve(
-      path.dirname(migrationPath),
-      '0001_s3_source_columns.sql',
-    );
-
-    if (fs.existsSync(s3MigrationPath)) {
-      const s3Sql = fs.readFileSync(s3MigrationPath, 'utf8');
-      const s3Statements = splitMigrationStatements(s3Sql);
-      for (const statement of s3Statements) {
-        try {
-          runWatcherDb(binaryPath, dbPath, 'execute', statement);
-        } catch (e) {
-          // Column may already exist if partially applied
-          if (!String(e).includes('duplicate column')) {
-            throw e;
-          }
-        }
-      }
-      console.log('[db:push] S3 source columns applied.');
-    } else {
-      console.log('[db:push] S3 migration file not found, skipping.');
+    for (const migration of parsed.applied) {
+      console.log(`[db:push] Applied ${String(migration.version).padStart(4, '0')}_${migration.name}`);
     }
+    console.log(`[db:push] Database schema is ready (version ${parsed.version}).`);
   }
-
-  console.log('[db:push] Database schema is ready.');
 }
 
 main();

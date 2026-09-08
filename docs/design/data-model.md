@@ -88,6 +88,8 @@ Stores user accounts with authentication credentials and profile information.
 | password_hash | TEXT | NOT NULL | Bcrypt hash of password |
 | display_name | TEXT | NOT NULL | User's display name (shown in UI) |
 | role | TEXT | NOT NULL, DEFAULT 'user' | User role: 'admin' or 'user' |
+| session_version | INTEGER | NOT NULL, DEFAULT 1 | Monotonic counter; bumped to revoke issued sessions |
+| disabled_at | INTEGER | NULL | Set to deactivate an account without deleting it |
 | created_at | INTEGER | NOT NULL | Unix timestamp (seconds) |
 | updated_at | INTEGER | NOT NULL | Unix timestamp (seconds) |
 
@@ -96,9 +98,28 @@ Stores user accounts with authentication credentials and profile information.
 - Unique index on `email`
 
 **Default Data:**
-- System seeds a default admin account: `admin@localhost` / `admin123` with a fixed ID of `"1"` (for desktop auth compatibility)
-- Seed uses `INSERT...ON CONFLICT DO UPDATE` (upsert) so it is idempotent and safe to re-run on every app launch
-- Users should change default password on first login
+- **None.** Alex ships no default account and no default password. The first
+  administrator is created through `/setup`, which requires a one-time
+  bootstrap token printed to the server log and written next to the database.
+  Setup is a single atomic `INSERT ... WHERE NOT EXISTS (SELECT 1 FROM users)`,
+  so concurrent first-run requests cannot both succeed.
+- The desktop app creates one row — id `"1"`, `admin@localhost` — so that
+  foreign keys from reading progress and collections resolve. It carries a
+  sentinel `password_hash` (`!`) that is not a bcrypt digest, and the
+  credentials provider refuses any account whose hash is not well-formed
+  bcrypt. It therefore cannot log in over the network. Remote access to a
+  desktop install requires the owner to create a real account in
+  Admin → Users; enabling the public tunnel is blocked until one exists.
+
+**Session revocation:**
+- Issued JWTs carry the `session_version` they were minted with.
+- `authSession()` re-reads the account on every protected operation and
+  rejects a session whose version no longer matches, whose account has been
+  deleted, or whose account is disabled. Role and display name are read from
+  the database, so a demotion takes effect immediately.
+- A password reset, a role change and a deactivation all bump
+  `session_version`. A token with no version at all (issued before this
+  column existed) is treated as revoked.
 
 **Roles:**
 - `admin`: Can manage users, access admin panel, view all data
@@ -432,21 +453,25 @@ WHERE key = 'library_version';
 ### Database Access
 
 - **Rust side**: `rusqlite` with statically linked SQLite (bundled feature). The `watcher-rs` binary opens the database directly for file watching operations and also exposes a `db` subcommand for use by Node.js.
-- **Next.js side**: All database queries go through `src/lib/db/rust.ts`, which spawns the `watcher-rs` binary with `db <mode>` (where mode is `query-all`, `query-one`, or `execute`). Requests are sent as JSON over stdin; responses are read from stdout.
-- **Migrations**: SQL migration files in `src/lib/db/migrations/` are applied by `scripts/db-push.js`, which uses the Rust binary bridge to execute each statement. Current migrations:
+- **Next.js side**: All database queries go through `src/lib/db/rust.ts`, which spawns the `watcher-rs` binary with `db <mode>` (where mode is `query-all`, `query-one`, `execute`, `transaction` or `migrate`). Requests are sent as JSON over stdin; responses are read from stdout. The bridge bounds concurrency (16 child processes by default), per-call runtime (30s) and buffered output, so a runaway query cannot fork or buffer without limit.
+- **Transactions**: because each call is its own process and its own connection, `BEGIN`/`COMMIT` sent as separate `execute()` calls are *not* a transaction. `transaction([...])` sends a batch that runs on one connection inside one `BEGIN IMMEDIATE`; any error rolls the whole batch back.
+- **Migrations**: versioned, embedded in the `watcher-rs` binary at compile time (`include_str!`), and applied by `watcher-rs db migrate`. `scripts/db-push.js`, the Electron main process and the container entrypoint all call that one command, so there is a single ordering of statements and a single `schema_migrations` ledger. Each migration is applied inside its own transaction together with the row that records it, so a failure leaves neither partial schema nor a false "applied" marker. Databases predating the ledger have their baseline inferred from the schema, so 0000 is never replayed over live data. Current migrations:
   - `0000_wide_expediter.sql` — Initial schema (users, books, reading_progress, collections, collection_books, settings)
   - `0001_s3_source_columns.sql` — Adds `source`, `s3_bucket`, `s3_etag` columns to the `books` table
+  - `0002_book_unique_indexes.sql` — Deduplicates books and enforces the unique indexes 0000 declares (previously repaired by ad-hoc startup code)
+  - `0003_session_revocation.sql` — Adds `users.session_version` and `users.disabled_at`
+  - `0004_progress_unique.sql` — Deduplicates reading progress and enforces `(user_id, book_id)` uniqueness
 - **Schema**: Defined in the SQL migration files (the canonical Drizzle schema file `src/lib/db/schema.ts` still exists for reference but is no longer used at runtime by Drizzle ORM).
-- **Seeding**: `pnpm db:seed` (runs `src/lib/db/seed.ts`) inserts the default admin user using `INSERT...ON CONFLICT DO UPDATE` for idempotent re-runs.
+- **Provisioning**: `pnpm db:seed` has no default credential. It requires `ALEX_ADMIN_EMAIL` and `ALEX_ADMIN_PASSWORD`, and inserts only — an existing account for that email is left exactly as it is. Ordinary installs use `/setup` instead.
 
 ### Schema Updates
 
 ```bash
-# Apply schema to the database (creates tables if missing, applies index fixes)
+# Apply every pending migration (idempotent; builds watcher-rs if needed)
 pnpm db:push
 
-# Seed the default admin user
-pnpm db:seed
+# Provision an account explicitly (automated environments only)
+ALEX_ADMIN_EMAIL=you@example.com ALEX_ADMIN_PASSWORD='chosen password' pnpm db:seed
 
 # Reset database (destructive)
 rm -f data/library.db data/library.db-shm data/library.db-wal && pnpm db:push && pnpm db:seed

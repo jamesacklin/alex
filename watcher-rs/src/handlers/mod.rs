@@ -8,4 +8,4 @@ pub use add::handle_add_with_covers_dir;
 pub use change::handle_change;
 pub use change::handle_change_with_covers_dir;
 pub use delete::handle_delete;
-pub use orphan_cleanup::remove_orphaned_books;
+pub use orphan_cleanup::{SourceState, classify_source, mark_source_scanned, remove_orphaned_books};

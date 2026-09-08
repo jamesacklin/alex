@@ -4,7 +4,8 @@ use std::path::Path;
 use tempfile::TempDir;
 use watcher_rs::db::Database;
 use watcher_rs::handlers::{
-    handle_add_with_covers_dir, handle_change_with_covers_dir, handle_delete, remove_orphaned_books,
+    handle_add_with_covers_dir, handle_change_with_covers_dir, handle_delete,
+    mark_source_scanned, remove_orphaned_books,
 };
 
 fn create_test_db() -> (TempDir, Database) {
@@ -210,10 +211,107 @@ fn test_orphan_cleanup() {
     handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
     assert_eq!(db.all_books().unwrap().len(), 1);
 
+    // The library root is the one we indexed, so a file that disappears from
+    // it really has been deleted.
+    mark_source_scanned(lib_dir.path()).unwrap();
     fs::remove_file(&pdf_path).unwrap();
 
-    remove_orphaned_books(&db).unwrap();
+    remove_orphaned_books(&db, lib_dir.path()).unwrap();
     assert_eq!(db.all_books().unwrap().len(), 0);
+}
+
+/// F09: an absent library root must not be read as "every book was deleted".
+#[test]
+fn test_orphan_cleanup_keeps_books_when_the_source_is_missing() {
+    let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
+    let lib_dir = TempDir::new().unwrap();
+    let pdf_path = lib_dir.path().join("book.pdf");
+    create_sample_pdf(&pdf_path);
+
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
+    mark_source_scanned(lib_dir.path()).unwrap();
+    assert_eq!(db.all_books().unwrap().len(), 1);
+
+    // Simulate the volume going away entirely.
+    let missing_root = lib_dir.path().join("not-mounted");
+    fs::remove_file(&pdf_path).unwrap();
+
+    remove_orphaned_books(&db, &missing_root).unwrap();
+    assert_eq!(
+        db.all_books().unwrap().len(),
+        1,
+        "an unreachable source must not delete book records"
+    );
+}
+
+/// F09: an empty directory where the volume used to be mounted is the exact
+/// shape the previous implementation mistook for deletion.
+#[test]
+fn test_orphan_cleanup_keeps_books_when_the_mountpoint_is_empty() {
+    let (_db_dir, db) = create_test_db();
+    let covers_dir = create_covers_dir();
+    let lib_dir = TempDir::new().unwrap();
+    let pdf_path = lib_dir.path().join("book.pdf");
+    create_sample_pdf(&pdf_path);
+
+    handle_add_with_covers_dir(&db, &pdf_path, covers_dir.path()).unwrap();
+    assert_eq!(db.all_books().unwrap().len(), 1);
+
+    // The mountpoint is present but empty and carries no marker: the volume
+    // is not mounted, not wiped.
+    let empty_mountpoint = TempDir::new().unwrap();
+
+    remove_orphaned_books(&db, empty_mountpoint.path()).unwrap();
+    assert_eq!(
+        db.all_books().unwrap().len(),
+        1,
+        "an unrecognised source must not delete book records"
+    );
+
+    // And once the volume is back, cleanup behaves normally again.
+    mark_source_scanned(lib_dir.path()).unwrap();
+    fs::remove_file(&pdf_path).unwrap();
+    remove_orphaned_books(&db, lib_dir.path()).unwrap();
+    assert_eq!(db.all_books().unwrap().len(), 0);
+}
+
+/// F09: narrowing the configured prefix must not make objects outside it
+/// look removed.
+#[test]
+fn test_s3_reconciliation_is_scoped_to_the_prefix() {
+    let (_db_dir, db) = create_test_db();
+    let now = 1_700_000_000;
+
+    for (id, key) in [("a", "fiction/one.epub"), ("b", "reference/two.pdf")] {
+        db.insert_book(&watcher_rs::db::NewBook {
+            id,
+            title: key,
+            author: None,
+            description: None,
+            file_type: if key.ends_with(".epub") { "epub" } else { "pdf" },
+            file_path: key,
+            file_size: 10,
+            file_hash: id,
+            cover_path: None,
+            page_count: None,
+            added_at: now,
+            updated_at: now,
+            source: "s3",
+            s3_bucket: Some("bucket-a"),
+            s3_etag: Some("etag"),
+        })
+        .unwrap();
+    }
+
+    // The whole bucket.
+    assert_eq!(db.find_s3_books("bucket-a", None).unwrap().len(), 2);
+
+    // Narrowed to one prefix: only that prefix's rows are in scope, so the
+    // diff cannot classify the others as removed.
+    let scoped = db.find_s3_books("bucket-a", Some("fiction/")).unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].file_path, "fiction/one.epub");
 }
 
 #[test]
