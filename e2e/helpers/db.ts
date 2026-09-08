@@ -4,6 +4,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 
+// Test-only credentials. These are written straight into the disposable
+// e2e database by this helper; the application itself ships no default
+// account and `pnpm db:seed` refuses to run without an explicitly supplied
+// email and password (F01).
 const ADMIN_EMAIL = 'admin@localhost';
 const ADMIN_PASSWORD = 'admin123';
 const USER_EMAIL = 'user@localhost';

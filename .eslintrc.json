@@ -32,17 +32,29 @@
   "rules": {
     "react/react-in-jsx-scope": "off",
     "react/prop-types": "off",
-    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_"
+      }
+    ]
   },
   "overrides": [
     {
-      "files": ["alex-relay/**/*.ts"],
+      "files": [
+        "alex-relay/**/*.ts"
+      ],
       "parserOptions": {
         "project": "./alex-relay/tsconfig.json"
       }
     },
     {
-      "files": ["scripts/**/*.js", "electron/**/*.js"],
+      "files": [
+        "scripts/**/*.js",
+        "electron/**/*.js",
+        "e2e/**/*.js",
+        "docker/**/*.js"
+      ],
       "parserOptions": {
         "project": null,
         "sourceType": "script"
