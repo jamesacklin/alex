@@ -1099,7 +1099,8 @@ function setMacAppIcon() {
 
     const icon = nativeImage.createFromPath(iconPath);
     if (!icon.isEmpty()) {
-      app.dock.setIcon(icon);
+      // `app.dock` is undefined off macOS (and typed that way since Electron 36).
+      app.dock?.setIcon(icon);
       return;
     }
   }
