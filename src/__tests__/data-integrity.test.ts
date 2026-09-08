@@ -255,6 +255,64 @@ describe("F12 — deleting an account that has been used", () => {
     expect(await queryOne("SELECT id FROM users WHERE id = ?1", [reader.id])).not.toBeNull();
   });
 
+  it("deletes the account and its dependent state through the API route", async () => {
+    await seedUsedAccount();
+    authMock.mockResolvedValue({ user: admin });
+
+    const { DELETE } = await import("@/app/api/users/[id]/route");
+    const response = await DELETE(
+      new Request(`http://localhost/api/users/${reader.id}`, { method: "DELETE" }),
+      { params: Promise.resolve({ id: reader.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ success: true });
+
+    expect(await queryOne("SELECT id FROM users WHERE id = ?1", [reader.id])).toBeNull();
+    expect(
+      await queryOne("SELECT id FROM reading_progress WHERE user_id = ?1", [reader.id])
+    ).toBeNull();
+    expect(
+      await queryOne("SELECT id FROM collections WHERE user_id = ?1", [reader.id])
+    ).toBeNull();
+    expect(
+      await queryOne("SELECT book_id FROM collection_books WHERE collection_id = 'c1'")
+    ).toBeNull();
+
+    // Library content is shared and must survive deleting a reader.
+    expect(await queryOne("SELECT id FROM books WHERE id = 'book-epub'")).not.toBeNull();
+  });
+
+  it("deletes the account through the admin server action too", async () => {
+    await seedUsedAccount();
+    authMock.mockResolvedValue({ user: admin });
+
+    const { deleteUser } = await import("@/app/(dashboard)/admin/users/actions");
+    expect(await deleteUser(reader.id)).toEqual({ success: true });
+    expect(await queryOne("SELECT id FROM users WHERE id = ?1", [reader.id])).toBeNull();
+  });
+
+  it("still refuses to delete the acting administrator", async () => {
+    await seedUsedAccount();
+    authMock.mockResolvedValue({ user: admin });
+
+    const { deleteUser } = await import("@/app/(dashboard)/admin/users/actions");
+    expect(await deleteUser(admin.id)).toEqual({
+      error: "Cannot delete your own account",
+    });
+    expect(await queryOne("SELECT id FROM users WHERE id = ?1", [admin.id])).not.toBeNull();
+  });
+
+  it("reports a missing account rather than claiming success", async () => {
+    await insertUser(admin);
+    authMock.mockResolvedValue({ user: admin });
+
+    const { deleteUser } = await import("@/app/(dashboard)/admin/users/actions");
+    expect(await deleteUser("no-such-user")).toEqual({ error: "User not found" });
+  });
+});
+
+describe("transaction primitive", () => {
   it("rolls the whole batch back when one statement fails", async () => {
     const { transaction } = await import("@/lib/db/rust");
     await insertUser(reader);

@@ -19,7 +19,7 @@
     "e2e:web": "E2E_PLATFORM=web playwright test --config=e2e/playwright.config.ts",
     "e2e:electron": "E2E_PLATFORM=electron playwright test --config=e2e/playwright.config.ts",
     "env:setup": "bash -c 'ENV_HASH=$(node -e \"console.log(require(\\\"crypto\\\").randomBytes(32).toString(\\\"hex\\\"))\"); cp .env.example .env; if [[ \"$OSTYPE\" == \"darwin\"* ]]; then sed -i \"\" \"s/^NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=${ENV_HASH}/\" .env; else sed -i \"s/^NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=${ENV_HASH}/\" .env; fi'",
-    "setup": "pnpm install && pnpm env:setup && pnpm build:native && mkdir -p data && pnpm db:push && pnpm db:seed",
+    "setup": "pnpm install && pnpm env:setup && pnpm build:native && mkdir -p data && pnpm db:push",
     "build:native": "node -e \"console.log('No Node native DB modules to rebuild')\"",
     "postinstall": "pnpm build:native",
     "db:push": "node scripts/db-push.js",

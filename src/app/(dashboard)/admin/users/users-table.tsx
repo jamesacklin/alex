@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,7 +17,13 @@ import {
   TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip,
   TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@alex/ui";
-import { createUser, deleteUser, updateUser, updateUserPassword } from "./actions";
+import {
+  createUser,
+  deleteUser,
+  setUserDisabled,
+  updateUser,
+  updateUserPassword,
+} from "./actions";
 
 type UserRow = {
   id: string;
@@ -25,12 +31,16 @@ type UserRow = {
   displayName: string;
   role: string;
   createdAt: number;
+  /** Unix seconds when the account was deactivated, or null. */
+  disabledAt: number | null;
+  /** 1 when the account has a usable bcrypt password, 0 otherwise. */
+  canSignIn: number;
 };
 
 const createUserSchema = z.object({
   email: z.string().regex(/^[^\s@]+@[^\s@]+$/, "Must be a valid email"),
   displayName: z.string().min(1, "Display name is required"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   role: z.enum(["admin", "user"]),
 });
 
@@ -44,8 +54,8 @@ const editUserSchema = z.object({
 type EditUserValues = z.infer<typeof editUserSchema>;
 
 const resetPasswordSchema = z.object({
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  confirmPassword: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string().min(8, "Password must be at least 8 characters"),
 }).refine(
   (values) => values.password === values.confirmPassword,
   {
@@ -80,20 +90,27 @@ export default function UsersTable({
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
   const [tunnelLoading, setTunnelLoading] = useState(false);
+  const [hasRemoteCredentials, setHasRemoteCredentials] = useState(true);
+  const [ownershipClaimed, setOwnershipClaimed] = useState(true);
 
   useEffect(() => {
     if (!actionsContainerId) return;
     setActionsContainer(document.getElementById(actionsContainerId));
   }, [actionsContainerId]);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.electronAPI?.getTunnelStatus) {
-      window.electronAPI.getTunnelStatus().then((status: { enabled: boolean; url: string }) => {
-        setTunnelEnabled(status.enabled);
-        setTunnelUrl(status.url || "");
-      }).catch(() => {});
-    }
+  const refreshTunnelStatus = useCallback(() => {
+    if (typeof window === "undefined" || !window.electronAPI?.getTunnelStatus) return;
+    window.electronAPI.getTunnelStatus().then((status) => {
+      setTunnelEnabled(status.enabled);
+      setTunnelUrl(status.url || "");
+      setHasRemoteCredentials(status.hasRemoteCredentials);
+      setOwnershipClaimed(status.ownershipClaimed);
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshTunnelStatus();
+  }, [refreshTunnelStatus]);
 
   function copyUrl(url: string) {
     navigator.clipboard.writeText(url).then(() => {
@@ -141,6 +158,25 @@ export default function UsersTable({
     setEditUserId(null);
     setEditUserEmail("");
     editForm.reset();
+    router.refresh();
+  }
+
+  async function toggleDisabled(user: UserRow) {
+    const result = await setUserDisabled(user.id, user.disabledAt === null);
+    if ("error" in result) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(
+      user.disabledAt === null ? "Account disabled" : "Account enabled",
+      {
+        description:
+          user.disabledAt === null
+            ? "Any session it already held stops working immediately."
+            : undefined,
+      },
+    );
+    refreshTunnelStatus();
     router.refresh();
   }
 
@@ -209,10 +245,27 @@ export default function UsersTable({
         setTunnelUrl("");
         toast.success("Public access disabled");
       } else {
-        const result = await window.electronAPI.enableTunnel() as { subdomain: string; url: string };
+        const result = await window.electronAPI.enableTunnel();
+        if ("error" in result) {
+          if (result.error === "no-remote-credentials") {
+            setHasRemoteCredentials(false);
+            toast.error("Add an account that can sign in first", {
+              description:
+                "The desktop app signs you in locally without a password, so there is no credential to publish. Use Add User to create an account for remote access.",
+            });
+          } else {
+            toast.error("Could not enable public access");
+          }
+          return;
+        }
         setTunnelEnabled(true);
         setTunnelUrl(result.url);
-        toast.success("Public access enabled");
+        setOwnershipClaimed(true);
+        toast.success("Public access enabled", {
+          description: result.rotated
+            ? "Your public URL changed: the previous name predated authenticated relay registration and could not be proven as yours."
+            : undefined,
+        });
       }
     } catch {
       toast.error("Failed to toggle public access");
@@ -225,9 +278,12 @@ export default function UsersTable({
     if (!window.electronAPI) return;
     setTunnelLoading(true);
     try {
-      const result = await window.electronAPI.regenerateTunnelSubdomain() as { subdomain: string; url: string };
+      const result = await window.electronAPI.regenerateTunnelSubdomain();
       setTunnelUrl(result.url);
-      toast.success("Public URL regenerated");
+      setOwnershipClaimed(true);
+      toast.success("Public URL regenerated", {
+        description: "Anyone holding the previous link will no longer reach this library.",
+      });
     } catch {
       toast.error("Failed to regenerate URL");
     } finally {
@@ -257,12 +313,24 @@ export default function UsersTable({
               <p className="text-xs text-muted-foreground">
                 Enable this to expose your library at a stable public URL. This is required for sharing collections with people outside your local network.
               </p>
+              {!hasRemoteCredentials && (
+                <p className="mt-1 text-xs text-destructive">
+                  Add a user below first. The desktop app signs you in without a
+                  password, so there is no credential a remote visitor could use.
+                </p>
+              )}
+              {tunnelEnabled && !ownershipClaimed && (
+                <p className="mt-1 text-xs text-destructive">
+                  This public URL predates authenticated relay registration and
+                  cannot be proven as yours. Regenerate it to claim a new name.
+                </p>
+              )}
             </div>
             <Button
               variant={tunnelEnabled ? "default" : "outline"}
               size="sm"
               onClick={toggleTunnel}
-              disabled={tunnelLoading}
+              disabled={tunnelLoading || (!tunnelEnabled && !hasRemoteCredentials)}
               className="shrink-0"
             >
               {tunnelLoading ? "..." : tunnelEnabled ? "Enabled" : "Disabled"}
@@ -303,6 +371,7 @@ export default function UsersTable({
             <TableHead>Email</TableHead>
             <TableHead>Display Name</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead>Status</TableHead>
             <TableHead>Created</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -318,6 +387,25 @@ export default function UsersTable({
                   <Badge variant={user.role === "admin" ? "default" : "secondary"}>
                     {user.role}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  {user.disabledAt !== null ? (
+                    <Badge variant="destructive">disabled</Badge>
+                  ) : user.canSignIn ? (
+                    <Badge variant="secondary">active</Badge>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Badge variant="outline">local only</Badge>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        This account has no password and cannot sign in over the
+                        network. The desktop app uses it locally.
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </TableCell>
                 <TableCell>
                   {new Date(user.createdAt * 1000).toLocaleDateString()}
@@ -338,6 +426,28 @@ export default function UsersTable({
                     >
                       Change Password
                     </Button>
+                    {isOwn ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <Button variant="outline" size="sm" disabled>
+                              Disable
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Cannot disable your own account
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleDisabled(user)}
+                      >
+                        {user.disabledAt !== null ? "Enable" : "Disable"}
+                      </Button>
+                    )}
                     {isOwn ? (
                       <Tooltip>
                         <TooltipTrigger asChild>

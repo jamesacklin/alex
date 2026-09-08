@@ -59,13 +59,22 @@ Initialize the foundational infrastructure for the book library application: Nex
 - [ ] `pnpm db:push` applies schema to `data/library.db`
 
 ### US-1.5: Create Seed Script
-**Description:** As a developer, I need a seed script to create a test admin user for development.
+**Description:** As a developer, I need a way to provision an account without a browser.
 
-**Acceptance Criteria:**
-- [ ] `src/lib/db/seed.ts` creates admin user
-- [ ] Admin: email `admin@localhost`, password `admin123` (bcrypt hashed)
-- [ ] `pnpm db:seed` script in package.json
-- [ ] Script is idempotent (doesn't fail if user exists)
+> **Superseded.** The original acceptance criteria specified a fixed
+> `admin@localhost` / `admin123` account created on every run. That was
+> finding F01 of the September 2026 adversarial review: Docker invoked the
+> seed at each startup with `ON CONFLICT DO UPDATE`, so a container restart
+> restored a publicly known administrator password over whatever the owner
+> had chosen. See docs/release/adversarial-review-remediation.md.
+
+**Acceptance Criteria (current):**
+- [x] `src/lib/db/seed.ts` provisions an account from `ALEX_ADMIN_EMAIL` and
+      `ALEX_ADMIN_PASSWORD`, and refuses to run without both
+- [x] No default password exists anywhere in the shipped code
+- [x] The script inserts only; an existing account is never modified
+- [x] Ordinary installs use the `/setup` flow, gated by a one-time token
+- [x] Startup (container or desktop) provisions no login-capable account
 
 ### US-1.6: Environment Configuration
 **Description:** As a developer, I need environment variables configured for local development.

@@ -1,150 +1,253 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { z } from "zod";
 import { authSession as auth } from "@/lib/auth/config";
 import { execute, queryOne } from "@/lib/db/rust";
+import { deleteAccount } from "@/lib/db/accounts";
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
 
-export async function createUser(data: {
-  email: string;
-  displayName: string;
-  password: string;
-  role: string;
-}) {
+/**
+ * Server actions are public HTTP endpoints; their TypeScript signatures do
+ * not constrain what actually arrives. Every payload is validated here.
+ */
+const emailSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(254)
+  .regex(/^[^\s@]+@[^\s@]+$/, "Must be a valid email");
+
+const idSchema = z.string().trim().min(1).max(128);
+
+const roleSchema = z.enum(["admin", "user"], {
+  message: "Role must be admin or user",
+});
+
+const createUserSchema = z.object({
+  email: emailSchema,
+  displayName: z.string().trim().min(1, "Display name is required").max(120),
+  password: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+    .max(1024),
+  role: roleSchema,
+});
+
+const updateUserSchema = z.object({
+  displayName: z.string().trim().min(1, "Display name is required").max(120),
+  role: roleSchema,
+});
+
+const updatePasswordSchema = z.object({
+  password: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+    .max(1024),
+});
+
+function firstIssue(error: z.ZodError): string {
+  return error.issues[0]?.message ?? "Invalid request";
+}
+
+export async function createUser(data: unknown) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
     return { error: "Forbidden" };
   }
 
-  const existing = await queryOne<{ id: string }>(
+  const parsed = createUserSchema.safeParse(data);
+  if (!parsed.success) {
+    return { error: firstIssue(parsed.error) };
+  }
+  const { email, displayName, password, role } = parsed.data;
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = Math.floor(Date.now() / 1000);
+
+  // The unique index on `email` decides the winner, so two concurrent
+  // creates cannot both insert the same address.
+  const changes = await execute(
     `
-      SELECT id
-      FROM users
-      WHERE email = ?1
-      LIMIT 1
+      INSERT INTO users (
+        id, email, password_hash, display_name, role,
+        session_version, created_at, updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?6)
+      ON CONFLICT(email) DO NOTHING
     `,
-    [data.email]
+    [crypto.randomUUID(), email, passwordHash, displayName, role, now]
   );
-  if (existing) {
+
+  if (changes === 0) {
     return { error: "Email already in use" };
   }
 
-  const passwordHash = await bcrypt.hash(data.password, 10);
-  const now = Math.floor(Date.now() / 1000);
-
-  await execute(
-    `
-      INSERT INTO users (
-        id, email, password_hash, display_name, role, created_at, updated_at
-      )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-    `,
-    [crypto.randomUUID(), data.email, passwordHash, data.displayName, data.role, now, now]
-  );
-
   return { success: true };
 }
 
-export async function deleteUser(id: string) {
+export async function deleteUser(id: unknown) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
     return { error: "Forbidden" };
   }
 
-  if (session.user.id === id) {
+  const parsedId = idSchema.safeParse(id);
+  if (!parsedId.success) {
+    return { error: "Invalid user id" };
+  }
+  const userId = parsedId.data;
+
+  if (session.user.id === userId) {
     return { error: "Cannot delete your own account" };
   }
 
-  await execute("DELETE FROM users WHERE id = ?1", [id]);
+  // Removes the account together with its reading progress and collections
+  // in one transaction; see src/lib/db/accounts.ts for the semantics.
+  const result = await deleteAccount(userId);
+  if (!result.deleted) {
+    return { error: "User not found" };
+  }
 
   return { success: true };
 }
 
-export async function updateUser(
-  id: string,
-  data: { displayName: string; role: string },
-) {
+export async function updateUser(id: unknown, data: unknown) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
     return { error: "Forbidden" };
   }
 
-  if (!data.displayName?.trim()) {
-    return { error: "Display name is required" };
+  const parsedId = idSchema.safeParse(id);
+  if (!parsedId.success) {
+    return { error: "Invalid user id" };
   }
+  const userId = parsedId.data;
 
-  if (!["admin", "user"].includes(data.role)) {
-    return { error: "Role must be admin or user" };
+  const parsed = updateUserSchema.safeParse(data);
+  if (!parsed.success) {
+    return { error: firstIssue(parsed.error) };
   }
+  const { displayName, role } = parsed.data;
 
-  if (session.user.id === id && data.role !== "admin") {
+  if (session.user.id === userId && role !== "admin") {
     return { error: "Cannot remove your own admin role" };
   }
 
-  const existing = await queryOne<{ id: string }>(
+  const existing = await queryOne<{ id: string; role: string }>(
     `
-      SELECT id
+      SELECT id, role
       FROM users
       WHERE id = ?1
       LIMIT 1
     `,
-    [id]
+    [userId]
   );
   if (!existing) {
     return { error: "User not found" };
   }
+
+  // A role change is a change of authority, so bump the session version and
+  // strand any session that was issued under the old role. Renaming alone
+  // is not, and leaves existing sessions working.
+  const revokeSessions = existing.role !== role;
 
   await execute(
     `
       UPDATE users
       SET display_name = ?1,
           role = ?2,
-          updated_at = ?3
-      WHERE id = ?4
+          session_version = session_version + ?3,
+          updated_at = ?4
+      WHERE id = ?5
     `,
-    [data.displayName.trim(), data.role, Math.floor(Date.now() / 1000), id]
+    [displayName, role, revokeSessions ? 1 : 0, Math.floor(Date.now() / 1000), userId]
   );
 
   return { success: true };
 }
 
-export async function updateUserPassword(
-  id: string,
-  data: { password: string },
-) {
+export async function updateUserPassword(id: unknown, data: unknown) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
     return { error: "Forbidden" };
   }
 
-  if (!data.password || data.password.length < 6) {
-    return { error: "Password must be at least 6 characters" };
+  const parsedId = idSchema.safeParse(id);
+  if (!parsedId.success) {
+    return { error: "Invalid user id" };
+  }
+  const userId = parsedId.data;
+
+  const parsed = updatePasswordSchema.safeParse(data);
+  if (!parsed.success) {
+    return { error: firstIssue(parsed.error) };
   }
 
-  const existing = await queryOne<{ id: string }>(
-    `
-      SELECT id
-      FROM users
-      WHERE id = ?1
-      LIMIT 1
-    `,
-    [id]
-  );
-  if (!existing) {
-    return { error: "User not found" };
-  }
-
-  const passwordHash = await bcrypt.hash(data.password, 10);
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   const updatedAt = Math.floor(Date.now() / 1000);
 
-  await execute(
+  // A password reset revokes existing authority: bumping session_version
+  // invalidates every JWT already issued for this account.
+  const changes = await execute(
     `
       UPDATE users
       SET password_hash = ?1,
+          session_version = session_version + 1,
           updated_at = ?2
       WHERE id = ?3
     `,
-    [passwordHash, updatedAt, id]
+    [passwordHash, updatedAt, userId]
   );
+
+  if (changes === 0) {
+    return { error: "User not found" };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Deactivate or reactivate an account without deleting it.
+ *
+ * A disabled account cannot log in and cannot use a session it already
+ * holds, while its reading progress and collections are preserved.
+ */
+export async function setUserDisabled(id: unknown, disabled: unknown) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return { error: "Forbidden" };
+  }
+
+  const parsedId = idSchema.safeParse(id);
+  if (!parsedId.success) {
+    return { error: "Invalid user id" };
+  }
+  const userId = parsedId.data;
+
+  if (typeof disabled !== "boolean") {
+    return { error: "Invalid request" };
+  }
+
+  if (session.user.id === userId && disabled) {
+    return { error: "Cannot disable your own account" };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const changes = await execute(
+    `
+      UPDATE users
+      SET disabled_at = ?1,
+          session_version = session_version + 1,
+          updated_at = ?2
+      WHERE id = ?3
+    `,
+    [disabled ? now : null, now, userId]
+  );
+
+  if (changes === 0) {
+    return { error: "User not found" };
+  }
 
   return { success: true };
 }
