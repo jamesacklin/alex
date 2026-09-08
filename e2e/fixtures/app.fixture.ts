@@ -104,9 +104,19 @@ async function waitForRouteReady(url: string, timeoutMs = 60000): Promise<void> 
   throw new Error(`Timed out waiting ${timeoutMs}ms for ${url}. Last error: ${String(lastError)}`);
 }
 
+/**
+ * Wait for the main window.
+ *
+ * The window is created only after the app's own `waitForServerReady`
+ * resolves, and that has a 120s budget in E2E mode. A 30s budget here was
+ * therefore shorter than the thing it was waiting on, so a slow-but-healthy
+ * cold start was reported as a failure to create a window. The budget now
+ * covers the app's, and the diagnosis on expiry says whether the app was
+ * still waiting for its server or had given up.
+ */
 async function waitForElectronWindow(
   electronApp: ElectronApplication,
-  timeoutMs = process.env.CI ? 30_000 : 90_000,
+  timeoutMs = Number(process.env.E2E_WINDOW_TIMEOUT_MS) || 150_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
@@ -124,7 +134,13 @@ async function waitForElectronWindow(
     await sleep(250);
   }
 
-  throw new Error(`Timed out waiting ${timeoutMs}ms for Electron window creation`);
+  const serverReachable = !(await isPortFree(E2E_ELECTRON_PORT));
+  throw new Error(
+    `Timed out waiting ${timeoutMs}ms for Electron window creation. `
+      + `The app's HTTP server was ${serverReachable ? 'listening' : 'NOT listening'} on port ${E2E_ELECTRON_PORT}, `
+      + `so the app was ${serverReachable ? 'past' : 'probably still inside'} waitForServerReady(). `
+      + 'Look for [Electron] lines above.',
+  );
 }
 
 export const test = base.extend<AppFixture>({
@@ -199,16 +215,49 @@ export const test = base.extend<AppFixture>({
     const logElectronProcess = process.env.E2E_DEBUG_ELECTRON === '1';
     const onStdout = (chunk: Buffer) => process.stdout.write(`[Electron stdout] ${chunk.toString()}`);
     const onStderr = (chunk: Buffer) => process.stderr.write(`[Electron stderr] ${chunk.toString()}`);
-    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-      console.log(`[Fixture] Electron process exited (code=${code}, signal=${signal})`);
+
+    // The main process's own diagnostics — every `[Electron] ...` line, and
+    // anything from the Next.js child that looks like a failure — go to
+    // stdout, which CI used to discard entirely. That is why a startup
+    // failure here showed up only as "no window appeared", with no reason.
+    //
+    // Full stdout is still not forwarded in CI: the Next.js server is
+    // verbose enough to OOM the Playwright worker. Instead, interesting
+    // lines are printed as they arrive and a bounded tail is kept so it can
+    // be dumped if startup fails.
+    const INTERESTING = /^\[(Electron|Tunnel)\]|error|Error|EADDRINUSE|ECONNREFUSED|failed|FATAL/;
+    const TAIL_LIMIT = 200;
+    const tail: string[] = [];
+    let stdoutRemainder = '';
+
+    const onCiStdout = (chunk: Buffer) => {
+      const lines = (stdoutRemainder + chunk.toString()).split('\n');
+      stdoutRemainder = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line) continue;
+        tail.push(line);
+        if (tail.length > TAIL_LIMIT) tail.shift();
+        if (INTERESTING.test(line)) process.stdout.write(`[Electron stdout] ${line}\n`);
+      }
     };
 
-    // In CI, only capture stderr to avoid OOM from buffering verbose
-    // Next.js server stdout in the Playwright worker process.
+    const dumpTail = (reason: string) => {
+      if (tail.length === 0) return;
+      process.stdout.write(`[Fixture] --- last ${tail.length} Electron stdout line(s) (${reason}) ---\n`);
+      for (const line of tail) process.stdout.write(`[Electron stdout] ${line}\n`);
+      process.stdout.write('[Fixture] --- end Electron stdout ---\n');
+    };
+
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      console.log(`[Fixture] Electron process exited (code=${code}, signal=${signal})`);
+      if (code !== 0 && code !== null) dumpTail(`exit code ${code}`);
+    };
+
     if (logElectronProcess) {
       electronProcess.stdout?.on('data', onStdout);
       electronProcess.stderr?.on('data', onStderr);
     } else if (process.env.CI) {
+      electronProcess.stdout?.on('data', onCiStdout);
       electronProcess.stderr?.on('data', onStderr);
     }
     electronProcess.on('exit', onExit);

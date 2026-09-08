@@ -54,7 +54,7 @@ export class AdminUsersPage {
   }
 
   get deleteConfirmButton(): Locator {
-    return this.page.getByRole('alertdialog').getByRole('button', { name: /^delete$/i });
+    return this.page.getByRole('alertdialog').getByRole('button', { name: /^delete\b/i });
   }
 
   async createUser(
@@ -78,7 +78,7 @@ export class AdminUsersPage {
     const confirmDialog = this.page.getByRole('alertdialog');
     try {
       await confirmDialog.waitFor({ state: 'visible', timeout: 2000 });
-      await confirmDialog.getByRole('button', { name: /^delete$/i }).click({ noWaitAfter: true });
+      await confirmDialog.getByRole('button', { name: /^delete\b/i }).click({ noWaitAfter: true });
     } catch {
       // Some builds perform immediate deletion without a confirmation modal.
     }

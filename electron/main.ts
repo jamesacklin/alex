@@ -192,6 +192,20 @@ function isInlineFrameUrl(candidate: string): boolean {
   return protocol === 'about:' || protocol === 'blob:' || protocol === 'data:';
 }
 
+/**
+ * Report a fatal startup problem.
+ *
+ * Always logged. The modal is shown only when there is someone to see it:
+ * showing it blocks the main process, so in a headless test run it turns a
+ * diagnosable failure into a hang with no window and no reason given.
+ */
+function reportFatalStartupError(title: string, detail: string) {
+  console.error(`[Electron] FATAL: ${title} - ${detail}`);
+  if (!isE2E) {
+    dialog.showErrorBox(title, detail);
+  }
+}
+
 function getPackagedNodeCommand(): string {
   const helperName = `${app.getName()} Helper`;
   const helperPath = path.join(
@@ -1708,7 +1722,7 @@ app.whenReady().then(async () => {
       // Serving against a half-built schema is worse than not serving:
       // requests fail in unpredictable ways and, before this change, a
       // login could even take it upon itself to create an administrator.
-      dialog.showErrorBox(
+      reportFatalStartupError(
         'Database could not be prepared',
         'Alex could not apply its database migrations, so it will not start. '
           + 'Check the logs prefixed with [Electron] for the underlying error.',
@@ -1723,10 +1737,13 @@ app.whenReady().then(async () => {
 
     const serverReady = await waitForServerReady();
     if (!serverReady) {
-      dialog.showErrorBox(
+      reportFatalStartupError(
         'Server failed to start',
         `Next.js server did not start on http://127.0.0.1:${PORT}. Check logs prefixed with [Next].`,
       );
+      // Exit rather than sitting there windowless: a supervisor (or a test
+      // harness) can see a non-zero status, but not a silent no-op.
+      app.exit(1);
       return;
     }
 
@@ -1753,7 +1770,7 @@ app.whenReady().then(async () => {
     // only when the database file happens to be missing — that check meant
     // an existing database never picked up later migrations in dev.
     if (!isE2E && !runMigrations(libraryPath)) {
-      dialog.showErrorBox(
+      reportFatalStartupError(
         'Database could not be prepared',
         'Alex could not apply its database migrations. Check the logs prefixed with [Electron].',
       );
