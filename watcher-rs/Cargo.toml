@@ -25,7 +25,9 @@ zip = "2"
 
 # S3 / R2 support (optional, enabled via S3_BUCKET env var at runtime)
 rust-s3 = { version = "0.35", default-features = false, features = ["tokio-rustls-tls"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+# io-std/io-util give us an async stdout writer, so an S3 object streams
+# straight through instead of being buffered whole (see s3::stream).
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "io-std", "io-util"] }
 
 # Tunnel support
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
