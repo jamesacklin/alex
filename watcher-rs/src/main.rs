@@ -147,6 +147,13 @@ struct TunnelCommand {
     /// Local address to forward requests to.
     #[arg(long, default_value = "127.0.0.1:3210")]
     local_addr: String,
+
+    /// Base64 ownership secret for the subdomain.
+    ///
+    /// Read from the environment by default so it does not appear in the
+    /// process table alongside the public hostname.
+    #[arg(long, env = "ALEX_TUNNEL_SECRET", default_value = "")]
+    tunnel_secret: String,
 }
 
 #[derive(Deserialize)]
@@ -330,6 +337,7 @@ fn run_tunnel(cmd: TunnelCommand) -> Result<()> {
         subdomain: cmd.subdomain,
         relay_url: cmd.relay_url,
         local_addr: cmd.local_addr,
+        secret_base64: cmd.tunnel_secret,
     };
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);

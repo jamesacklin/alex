@@ -6,7 +6,10 @@
   "workers_dev": true,
   "vars": {
     "BASE_DOMAIN": "alexreader.app",
-    "REQUEST_TIMEOUT_MS": "120000"
+    "REQUEST_TIMEOUT_MS": "120000",
+    // A tunnel socket that has not proven ownership within this window is
+    // closed rather than left hibernating.
+    "REGISTRATION_DEADLINE_MS": "15000"
   },
   "durable_objects": {
     "bindings": [

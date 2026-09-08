@@ -1,6 +1,21 @@
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
+/**
+ * Wire protocol version. Must match `PROTOCOL_VERSION` in
+ * watcher-rs/src/tunnel/protocol.rs.
+ *
+ * v1 registered a name by asserting it; v2 requires an ownership proof and
+ * adds request cancellation.
+ */
+export const PROTOCOL_VERSION = 2;
+
+/**
+ * Frame identifiers are the bincode enum discriminants used by the Rust
+ * client, i.e. the declaration order of `Frame` in
+ * watcher-rs/src/tunnel/protocol.rs. New frames are appended; existing
+ * numbers never change.
+ */
 const FRAME = {
   register: 0,
   registerAck: 1,
@@ -10,6 +25,11 @@ const FRAME = {
   responseEnd: 5,
   ping: 6,
   pong: 7,
+  challenge: 8,
+  claim: 9,
+  prove: 10,
+  rotate: 11,
+  cancel: 12,
 } as const;
 
 export type HeaderPair = [string, string];
@@ -19,7 +39,17 @@ export type ClientFrame =
   | { type: "httpResponse"; requestId: bigint; status: number; headers: HeaderPair[] }
   | { type: "responseChunk"; requestId: bigint; data: Uint8Array }
   | { type: "responseEnd"; requestId: bigint }
-  | { type: "pong" };
+  | { type: "pong" }
+  | { type: "claim"; protocolVersion: number; subdomain: string; secret: Uint8Array }
+  | { type: "prove"; protocolVersion: number; subdomain: string; proof: Uint8Array }
+  | {
+      type: "rotate";
+      protocolVersion: number;
+      subdomain: string;
+      proof: Uint8Array;
+      newSecret: Uint8Array;
+    }
+  | { type: "cancel"; requestId: bigint };
 
 export type ServerFrame =
   | { type: "registerAck"; success: boolean; message: string }
@@ -31,7 +61,9 @@ export type ServerFrame =
       headers: HeaderPair[];
       body: Uint8Array;
     }
-  | { type: "ping" };
+  | { type: "ping" }
+  | { type: "challenge"; protocolVersion: number; nonce: Uint8Array; claimed: boolean }
+  | { type: "cancel"; requestId: bigint };
 
 class BincodeWriter {
   private bytes = new Uint8Array(256);
@@ -210,6 +242,34 @@ export function decodeClientFrame(input: ArrayBuffer | ArrayBufferView): ClientF
     case FRAME.pong:
       frame = { type: "pong" };
       break;
+    case FRAME.claim:
+      frame = {
+        type: "claim",
+        protocolVersion: reader.u16(),
+        subdomain: reader.string(),
+        secret: reader.byteVector(),
+      };
+      break;
+    case FRAME.prove:
+      frame = {
+        type: "prove",
+        protocolVersion: reader.u16(),
+        subdomain: reader.string(),
+        proof: reader.byteVector(),
+      };
+      break;
+    case FRAME.rotate:
+      frame = {
+        type: "rotate",
+        protocolVersion: reader.u16(),
+        subdomain: reader.string(),
+        proof: reader.byteVector(),
+        newSecret: reader.byteVector(),
+      };
+      break;
+    case FRAME.cancel:
+      frame = { type: "cancel", requestId: reader.u64() };
+      break;
     default:
       throw new Error(`unexpected client frame variant ${variant}`);
   }
@@ -239,6 +299,17 @@ export function decodeServerFrame(input: ArrayBuffer | ArrayBufferView): ServerF
       break;
     case FRAME.ping:
       frame = { type: "ping" };
+      break;
+    case FRAME.challenge:
+      frame = {
+        type: "challenge",
+        protocolVersion: reader.u16(),
+        nonce: reader.byteVector(),
+        claimed: reader.u8() !== 0,
+      };
+      break;
+    case FRAME.cancel:
+      frame = { type: "cancel", requestId: reader.u64() };
       break;
     default:
       throw new Error(`unexpected server frame variant ${variant}`);
@@ -290,4 +361,45 @@ export function encodeResponseChunk(requestId: bigint, data: Uint8Array): Uint8A
 
 export function encodeResponseEnd(requestId: bigint): Uint8Array {
   return encodeFrame(FRAME.responseEnd, (writer) => writer.u64(requestId));
+}
+
+export function encodeChallenge(nonce: Uint8Array, claimed: boolean): Uint8Array {
+  return encodeFrame(FRAME.challenge, (writer) => {
+    writer.u16(PROTOCOL_VERSION);
+    writer.byteVector(nonce);
+    writer.u8(claimed ? 1 : 0);
+  });
+}
+
+export function encodeClaim(subdomain: string, secret: Uint8Array): Uint8Array {
+  return encodeFrame(FRAME.claim, (writer) => {
+    writer.u16(PROTOCOL_VERSION);
+    writer.string(subdomain);
+    writer.byteVector(secret);
+  });
+}
+
+export function encodeProve(subdomain: string, proof: Uint8Array): Uint8Array {
+  return encodeFrame(FRAME.prove, (writer) => {
+    writer.u16(PROTOCOL_VERSION);
+    writer.string(subdomain);
+    writer.byteVector(proof);
+  });
+}
+
+export function encodeRotate(
+  subdomain: string,
+  proof: Uint8Array,
+  newSecret: Uint8Array,
+): Uint8Array {
+  return encodeFrame(FRAME.rotate, (writer) => {
+    writer.u16(PROTOCOL_VERSION);
+    writer.string(subdomain);
+    writer.byteVector(proof);
+    writer.byteVector(newSecret);
+  });
+}
+
+export function encodeCancel(requestId: bigint): Uint8Array {
+  return encodeFrame(FRAME.cancel, (writer) => writer.u64(requestId));
 }
