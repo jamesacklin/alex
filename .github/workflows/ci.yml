@@ -18,6 +18,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
+  # Type checking for all three TypeScript projects. The Worker and the
+  # Electron main process have their own tsconfigs and were previously
+  # checked by nothing in CI.
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm typecheck:electron
+      - run: pnpm typecheck:relay
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -38,6 +55,10 @@ jobs:
       - run: pnpm build:native
       - run: cargo build --manifest-path watcher-rs/Cargo.toml --release --locked
       - run: pnpm build
+      # `next build` alone does not prove the shipped artifact works: the
+      # container and the desktop app both run the standalone output.
+      - run: pnpm prepare:standalone
+      - run: pnpm electron:compile
 
   test:
     runs-on: ubuntu-latest
@@ -67,3 +88,37 @@ jobs:
           name: watcher-rs-coverage-lcov
           path: watcher-rs/lcov.info
       - run: pnpm test
+      # Container startup ordering: a failing migration must stop the server.
+      - run: pnpm test:entrypoint
+
+  # The relay is half of the public-access trust boundary and had no CI gate
+  # at all: its tests and typecheck never ran on a pull request.
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck:relay
+      - run: pnpm test:relay
+
+  # Fails the build on a known-vulnerable production dependency. Development
+  # tooling is reported but not gated; see
+  # docs/release/dependency-baseline.md for the reachability triage.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod
+      - name: Development dependency advisories (informational)
+        run: pnpm audit || true

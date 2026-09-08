@@ -216,6 +216,11 @@ docker compose up -d --build
    The token is discarded as soon as setup completes, so `/setup` cannot be
    replayed. Restarting the container never resets your password.
 
+   Readiness is reported at `/api/health`, which answers 503 until the
+   database schema is at the version the image expects — so a failed
+   migration keeps traffic away instead of serving against a half-built
+   database.
+
 5. **Add books:**
 - Local mode: drop PDFs/EPUBs into your library folder (`/Volumes/books`).
 - S3 mode: upload PDFs/EPUBs to your configured bucket/prefix.

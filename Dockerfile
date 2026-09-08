@@ -33,6 +33,9 @@ ARG TARGETPLATFORM
 
 WORKDIR /app
 COPY watcher-rs ./watcher-rs
+# watcher-rs embeds the migration SQL at compile time (include_str!), so the
+# migration files have to be present in this stage as well.
+COPY src/lib/db/migrations ./src/lib/db/migrations
 
 RUN --mount=type=cache,id=cargo-registry-${TARGETPLATFORM},target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git-${TARGETPLATFORM},target=/usr/local/cargo/git \
@@ -70,6 +73,8 @@ COPY --from=node-builder /app/.next/static ./.next/standalone/.next/static
 COPY --from=node-builder /app/public ./.next/standalone/public
 
 COPY --from=rust-builder /out ./watcher-rs
+COPY --from=node-builder /app/docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh
 
 # Ensure runtime writes (SQLite DB, covers, library metadata) happen as non-root.
 RUN mkdir -p /app/data/library && chown -R node:node /app
@@ -78,7 +83,6 @@ RUN mkdir -p /app/data/library && chown -R node:node /app
 # (the Next.js standalone server does process.chdir to .next/standalone/).
 ENV DATABASE_PATH=/app/data/library.db
 ENV LIBRARY_PATH=/app/data/library
-ENV DB_MIGRATION_PATH=/app/src/lib/db/migrations/0000_wide_expediter.sql
 ENV WATCHER_RS_BIN=/app/watcher-rs/watcher-rs
 ENV LD_LIBRARY_PATH=/app/watcher-rs
 ENV HOSTNAME=0.0.0.0
@@ -87,10 +91,13 @@ EXPOSE 3000
 
 USER node
 
-# db:push (schema) and db:seed (default admin) are both idempotent –
-# running them every startup is safe and ensures the DB is ready.
-# watcher-rs runs as a prebuilt binary; Next.js stays PID 1.
-CMD ["sh", "-c", \
-  "pnpm db:push && pnpm db:seed && \
-   /app/watcher-rs/watcher-rs & \
-   exec node .next/standalone/server.js"]
+# Readiness, not liveness: /api/health reports 503 until the schema is at the
+# version this image expects, so an orchestrator will not send traffic to an
+# instance whose migrations have not finished.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# The entrypoint applies migrations synchronously, fails the container if they
+# fail, provisions no accounts, and supervises the watcher alongside the
+# server. See docker/entrypoint.sh for why the old inline CMD could not.
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
