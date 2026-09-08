@@ -41,3 +41,9 @@ overrides:
   # GHSA-4cwx-7wf7-3272 and four related undici advisories, reached only by
   # the relay's Workers test runtime.
   'miniflare>undici': '^7.29.0'
+  # GHSA-4x5r-pxfx-6jf8 (arbitrary file read via a sourceMappingURL comment).
+  # Reached through next > styled-jsx, which declares @babel/core as a peer —
+  # a `styled-jsx>@babel/core` selector does not apply to a peer, so this is
+  # scoped globally. Build-time only, and 7.29.7 already resolves elsewhere
+  # in the tree, so nothing is being forced onto an untested version.
+  '@babel/core': '^7.29.6'

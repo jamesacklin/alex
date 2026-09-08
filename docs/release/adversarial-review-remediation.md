@@ -120,8 +120,18 @@ every IPC handler goes through `handleTrusted`, which requires the sender to
 be the main frame of our own window on our own origin; the window denies
 `setWindowOpenHandler`, off-origin `will-navigate`, off-origin sub-frame
 navigation, `will-attach-webview` and any created window; the default session
-refuses all permission, device and permission-check requests; the renderer
-runs with `sandbox: true` and `webviewTag: false`. `get-s3-config` no longer
+refuses all permission, device and permission-check requests; and
+`webviewTag` is off.
+
+`sandbox: true` was tried on the renderer and withdrawn. It changes the
+preload environment, and every failure in the desktop end-to-end suite
+clustered on the tests that go through `window.electronAPI` — which is what
+a preload that no longer loads would look like. It is hardening beyond what
+this finding requires, and it cannot be validated without a packaged app, so
+it is a follow-up to attempt there rather than something to carry
+unverified. Context isolation, disabled node integration, IPC sender
+validation and the navigation and permission restrictions are what F03
+actually turns on, and those stay. `get-s3-config` no longer
 returns the secret access key — it returns `secretKeyConfigured: boolean`
 instead, and the secret is held in the OS keychain via `safeStorage`. The CSP
 gained `frame-src`, `worker-src`, `media-src` and
@@ -383,12 +393,15 @@ Stated explicitly rather than omitted from testing.
    the local Workers runtime (`@cloudflare/vitest-pool-workers`).
 6. **The three follow-ups marked "Not done" above are open**, including
    archive-entry budgets for hostile EPUB metadata extraction.
-7. **CSP still allows `'unsafe-inline'` for scripts.** Next.js emits inline
+7. **Renderer sandboxing (`sandbox: true`) is not enabled**, having been
+   tried and withdrawn as described under F03. Worth attempting again against
+   a packaged app.
+8. **CSP still allows `'unsafe-inline'` for scripts.** Next.js emits inline
    bootstrap and flight-data scripts; removing it requires a per-request nonce
    migration. `'unsafe-eval'` is now development-only. With EPUB-authored
    scripting disabled, the chain F03 described is broken at the iframe rather
    than at the CSP, but this remains a hardening gap.
-8. **`cargo audit` and PDFium advisory tracking are not automated.**
+9. **`cargo audit` and PDFium advisory tracking are not automated.**
 
 ## Upgrade and remediation procedure
 
