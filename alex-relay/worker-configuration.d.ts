@@ -4,6 +4,7 @@
 interface __BaseEnv_Env {
 	BASE_DOMAIN: "alexreader.app";
 	REQUEST_TIMEOUT_MS: "120000";
+	REGISTRATION_DEADLINE_MS: "15000";
 	TUNNELS: DurableObjectNamespace<import("./src/index").Tunnel>;
 }
 declare namespace Cloudflare {
