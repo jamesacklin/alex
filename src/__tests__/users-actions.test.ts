@@ -1,15 +1,12 @@
 /**
  * @jest-environment node
  */
-import fs from "fs";
-import os from "os";
-import path from "path";
 import bcrypt from "bcryptjs";
-import { execute, queryOne } from "@/lib/db/rust";
+import { createTestDatabase } from "./helpers/test-db";
 
-const testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alex-"));
-const dbFile = path.join(testDbDir, "users-actions.db");
-process.env.DATABASE_PATH = dbFile;
+const testDb = createTestDatabase("users-actions");
+
+import { execute, queryOne } from "@/lib/db/rust";
 
 const authMock = jest.fn();
 
@@ -19,17 +16,7 @@ jest.mock("@/lib/auth/config", () => ({
 }));
 
 beforeAll(async () => {
-  await execute(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
+  await testDb.migrate();
 });
 
 beforeEach(async () => {
@@ -54,7 +41,7 @@ beforeEach(async () => {
 });
 
 afterAll(() => {
-  fs.rmSync(testDbDir, { recursive: true, force: true });
+  testDb.cleanup();
 });
 
 describe("User actions", () => {

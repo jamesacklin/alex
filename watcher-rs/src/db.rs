@@ -217,14 +217,24 @@ impl Database {
         Ok(rows)
     }
 
-    /// Return all S3 books for a given bucket (for diff computation).
-    pub fn find_s3_books(&self, bucket: &str) -> Result<Vec<S3BookRow>> {
+    /// Return the S3 books that the configured scan actually covers.
+    ///
+    /// Scoped to the bucket *and the prefix*: the scanner compares a
+    /// prefix-limited listing against these rows, so including keys outside
+    /// the prefix would classify them as removed. Narrowing a configured
+    /// prefix used to delete every book outside it — and with the cascades,
+    /// their reading progress and collection membership (F09).
+    pub fn find_s3_books(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<S3BookRow>> {
+        let prefix = prefix.unwrap_or("");
         let mut stmt = self.conn.prepare(
             "SELECT id, title, file_path, file_type, cover_path, s3_etag
-             FROM books WHERE source = 's3' AND s3_bucket = ?1",
+             FROM books
+             WHERE source = 's3'
+               AND s3_bucket = ?1
+               AND substr(file_path, 1, length(?2)) = ?2",
         )?;
         let rows = stmt
-            .query_map(params![bucket], |row| {
+            .query_map(params![bucket, prefix], |row| {
                 Ok(S3BookRow {
                     id: row.get(0)?,
                     title: row.get(1)?,

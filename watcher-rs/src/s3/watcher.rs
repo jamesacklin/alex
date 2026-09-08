@@ -82,7 +82,9 @@ async fn run_scan_cycle(
     db: &Database,
 ) -> Result<(usize, usize, usize)> {
     let s3_objects = list_objects(bucket, prefix).await?;
-    let db_books = db.find_s3_books(bucket_name)?;
+    // Scoped to the same prefix the listing used, so a prefix change cannot
+    // make objects outside the new scope look deleted.
+    let db_books = db.find_s3_books(bucket_name, prefix)?;
     let diff = compute_diff(&s3_objects, &db_books);
 
     let added = diff.added.len();

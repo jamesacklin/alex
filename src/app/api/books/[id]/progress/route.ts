@@ -108,17 +108,6 @@ export async function PUT(
 
   const now = Math.floor(Date.now() / 1000);
 
-  const existing = await queryOne<{ id: string }>(
-    `
-      SELECT id
-      FROM reading_progress
-      WHERE book_id = ?1
-        AND user_id = ?2
-      LIMIT 1
-    `,
-    [id, session.user.id]
-  );
-
   // --- ePub ----------------------------------------------------------
   if (book.fileType === "epub") {
     const { epubLocation, percentComplete } = body;
@@ -138,29 +127,24 @@ export async function PUT(
 
     const status = percentComplete >= 100 ? "completed" : "reading";
 
-    if (existing) {
-      await execute(
-        `
-          UPDATE reading_progress
-          SET epub_location = ?1,
-              percent_complete = ?2,
-              status = ?3,
-              last_read_at = ?4
-          WHERE id = ?5
-        `,
-        [epubLocation, percentComplete, status, now, existing.id]
-      );
-    } else {
-      await execute(
-        `
-          INSERT INTO reading_progress (
-            id, user_id, book_id, epub_location, percent_complete, status, last_read_at
-          )
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-        `,
-        [crypto.randomUUID(), session.user.id, id, epubLocation, percentComplete, status, now]
-      );
-    }
+    // Atomic upsert against the (user_id, book_id) unique index. The former
+    // SELECT-then-INSERT let two concurrent first saves both miss and both
+    // insert, leaving duplicate rows that made book-list joins repeat books
+    // and made an unordered `LIMIT 1` pick arbitrarily between them.
+    await execute(
+      `
+        INSERT INTO reading_progress (
+          id, user_id, book_id, epub_location, percent_complete, status, last_read_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(user_id, book_id) DO UPDATE SET
+          epub_location = excluded.epub_location,
+          percent_complete = excluded.percent_complete,
+          status = excluded.status,
+          last_read_at = excluded.last_read_at
+      `,
+      [crypto.randomUUID(), session.user.id, id, epubLocation, percentComplete, status, now]
+    );
 
     return NextResponse.json({ epubLocation, percentComplete, status, lastReadAt: now });
   }
@@ -178,30 +162,21 @@ export async function PUT(
   const percentComplete = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
   const status = currentPage >= totalPages ? "completed" : "reading";
 
-  if (existing) {
-    await execute(
-      `
-        UPDATE reading_progress
-        SET current_page = ?1,
-            total_pages = ?2,
-            percent_complete = ?3,
-            status = ?4,
-            last_read_at = ?5
-        WHERE id = ?6
-      `,
-      [currentPage, totalPages, percentComplete, status, now, existing.id]
-    );
-  } else {
-    await execute(
-      `
-        INSERT INTO reading_progress (
-          id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at
-        )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-      `,
-      [crypto.randomUUID(), session.user.id, id, currentPage, totalPages, percentComplete, status, now]
-    );
-  }
+  await execute(
+    `
+      INSERT INTO reading_progress (
+        id, user_id, book_id, current_page, total_pages, percent_complete, status, last_read_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      ON CONFLICT(user_id, book_id) DO UPDATE SET
+        current_page = excluded.current_page,
+        total_pages = excluded.total_pages,
+        percent_complete = excluded.percent_complete,
+        status = excluded.status,
+        last_read_at = excluded.last_read_at
+    `,
+    [crypto.randomUUID(), session.user.id, id, currentPage, totalPages, percentComplete, status, now]
+  );
 
   return NextResponse.json({ currentPage, totalPages, percentComplete, status, lastReadAt: now });
 }

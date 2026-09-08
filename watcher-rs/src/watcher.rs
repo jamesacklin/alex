@@ -1,6 +1,7 @@
 use crate::db::Database;
 use crate::handlers::{
-    handle_add_with_covers_dir, handle_change_with_covers_dir, handle_delete, remove_orphaned_books,
+    handle_add_with_covers_dir, handle_change_with_covers_dir, handle_delete,
+    mark_source_scanned, remove_orphaned_books,
 };
 use crate::log::log;
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -103,8 +104,13 @@ pub fn run(
     if pending.is_empty() {
         initial_scan_done = true;
         log("[SCAN] Initial scan complete -- 0 file(s) found.");
-        if let Err(e) = remove_orphaned_books(&db) {
+        if let Err(e) = remove_orphaned_books(&db, &library_path) {
             log(&format!("[ERROR] Orphan cleanup failed: {}", e));
+        }
+        // Recognise this root next time, but only after cleanup has had the
+        // chance to see it as unfamiliar.
+        if let Err(e) = mark_source_scanned(&library_path) {
+            log(&format!("[WARN] Could not mark the library folder: {}", e));
         }
     }
 
@@ -219,8 +225,11 @@ pub fn run(
                 "[SCAN] Initial scan complete -- {} file(s) found.",
                 scan_count
             ));
-            if let Err(e) = remove_orphaned_books(&db) {
+            if let Err(e) = remove_orphaned_books(&db, &library_path) {
                 log(&format!("[ERROR] Orphan cleanup failed: {}", e));
+            }
+            if let Err(e) = mark_source_scanned(&library_path) {
+                log(&format!("[WARN] Could not mark the library folder: {}", e));
             }
         }
     }

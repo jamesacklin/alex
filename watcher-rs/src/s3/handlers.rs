@@ -359,7 +359,7 @@ mod tests {
         assert_eq!(book.file_type, "pdf");
         assert_eq!(book.title, "new-book");
 
-        let s3_books = db.find_s3_books("bucket-a").expect("query s3 books");
+        let s3_books = db.find_s3_books("bucket-a", None).expect("query s3 books");
         assert_eq!(s3_books.len(), 1);
         assert_eq!(s3_books[0].file_path, key);
         assert_eq!(s3_books[0].s3_etag.as_deref(), Some("etag-1"));
@@ -384,7 +384,7 @@ mod tests {
 
         assert!(db.find_by_path(key).expect("query by path").is_none());
         assert!(
-            db.find_s3_books("bucket-a")
+            db.find_s3_books("bucket-a", None)
                 .expect("query s3 books")
                 .is_empty()
         );
@@ -412,7 +412,7 @@ mod tests {
         assert!(error_text.contains("simulated download failure"));
         assert!(db.find_by_path(key).expect("query by path").is_none());
         assert!(
-            db.find_s3_books("bucket-a")
+            db.find_s3_books("bucket-a", None)
                 .expect("query s3 books")
                 .is_empty()
         );
@@ -451,7 +451,7 @@ mod tests {
         assert!(db.find_by_path(key_a).expect("query key_a").is_some());
         assert!(db.find_by_path(key_b).expect("query key_b").is_none());
         assert_eq!(
-            db.find_s3_books("bucket-a").expect("query s3 books").len(),
+            db.find_s3_books("bucket-a", None).expect("query s3 books").len(),
             1
         );
     }
@@ -476,7 +476,7 @@ mod tests {
 
         let inserted = db.find_by_path(key).expect("query by path");
         assert!(inserted.is_some());
-        let s3_books = db.find_s3_books("bucket-a").expect("query s3 books");
+        let s3_books = db.find_s3_books("bucket-a", None).expect("query s3 books");
         assert_eq!(s3_books.len(), 1);
         assert_eq!(s3_books[0].s3_etag.as_deref(), Some("etag-1"));
     }
@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(after.file_hash, before.file_hash);
         assert_eq!(after.title, before.title);
 
-        let s3_books = db.find_s3_books("bucket-a").expect("query s3 books");
+        let s3_books = db.find_s3_books("bucket-a", None).expect("query s3 books");
         assert_eq!(s3_books[0].s3_etag.as_deref(), Some("etag-2"));
     }
 
@@ -564,7 +564,7 @@ mod tests {
             .expect("book after");
         assert_ne!(after.file_hash, before.file_hash);
 
-        let s3_books = db.find_s3_books("bucket-a").expect("query s3 books");
+        let s3_books = db.find_s3_books("bucket-a", None).expect("query s3 books");
         assert_eq!(s3_books[0].s3_etag.as_deref(), Some("etag-2"));
     }
 
@@ -599,7 +599,7 @@ mod tests {
         );
 
         let book = db
-            .find_s3_books("bucket-a")
+            .find_s3_books("bucket-a", None)
             .expect("query s3 books")
             .into_iter()
             .find(|row| row.file_path == key)
