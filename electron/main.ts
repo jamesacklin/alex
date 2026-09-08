@@ -1,12 +1,25 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, session, shell } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import { randomBytes } from 'crypto';
 import { spawn, ChildProcess, spawnSync } from 'child_process';
-import { store } from './store';
-import { getDataPaths } from './paths';
+import {
+  getS3Config as readS3Config,
+  hasStoredS3Secret,
+  migrateS3SecretToKeychain,
+  setS3Config,
+  store,
+  type S3Config,
+} from './store';
+import { getDataPaths, isLibraryPathAvailable } from './paths';
+import {
+  DESKTOP_PRINCIPAL_DISPLAY_NAME,
+  DESKTOP_PRINCIPAL_EMAIL,
+  DESKTOP_PRINCIPAL_ID,
+  NON_LOGIN_PASSWORD_HASH,
+} from './shared-constants';
 import { createTray, destroyTray } from './tray';
 
 let mainWindow: BrowserWindow | null = null;
@@ -51,6 +64,134 @@ function configureDesktopAuthHeaderInjection() {
   desktopAuthHeaderInjectionConfigured = true;
 }
 
+const APP_ORIGIN = `http://127.0.0.1:${PORT}`;
+
+/**
+ * Deny every renderer capability the reader does not need (F03).
+ *
+ * A malicious EPUB is untrusted content that the owner opens deliberately.
+ * Even with its own scripting disabled it should not be able to reach for a
+ * camera, a clipboard read, a notification, or a media device, so the
+ * default session refuses all permission requests outright rather than
+ * prompting.
+ */
+function configureRendererRestrictions() {
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setDevicePermissionHandler(() => false);
+}
+
+/**
+ * True when an IPC message came from the main frame of our own window
+ * loading our own origin.
+ *
+ * Electron's own guidance is to validate the sender of every IPC message.
+ * Without this, any frame the renderer ends up hosting — including the
+ * iframe an EPUB is rendered into — can invoke privileged handlers such as
+ * `get-s3-config`, `reset-app` or `nuke-and-rescan-library`.
+ */
+function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame;
+  if (!frame) return false;
+
+  // Sub-frames (an EPUB's iframe, an embedded SVG document) are never trusted.
+  if (frame.parent !== null) return false;
+
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (event.sender !== mainWindow.webContents) return false;
+
+  try {
+    return new URL(frame.url).origin === APP_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Register an IPC handler that only answers trusted senders.
+ *
+ * Every handler goes through here, so adding one cannot accidentally skip
+ * the check.
+ */
+function handleTrusted<Args extends unknown[], Result>(
+  channel: string,
+  handler: (event: Electron.IpcMainInvokeEvent, ...args: Args) => Result,
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isTrustedSender(event)) {
+      console.warn(`[Electron] Rejected IPC "${channel}" from an untrusted frame: ${event.senderFrame?.url}`);
+      throw new Error('Unauthorized IPC sender');
+    }
+    return handler(event, ...(args as Args));
+  });
+}
+
+/**
+ * Keep a window pinned to the local app and refuse to open anything else.
+ *
+ * Book content can contain links, embedded SVG and frame navigations. None
+ * of them may move the window off our origin or spawn a new Electron window
+ * with renderer privileges; external links open in the user's browser
+ * instead, where they are just web pages.
+ */
+function restrictWindowNavigation(window: BrowserWindow) {
+  const isAppUrl = (candidate: string) => {
+    try {
+      return new URL(candidate).origin === APP_ORIGIN;
+    } catch {
+      return false;
+    }
+  };
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:$/.test(safeProtocol(url))) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!isAppUrl(url)) {
+      event.preventDefault();
+      if (/^https?:$/.test(safeProtocol(url))) {
+        void shell.openExternal(url);
+      }
+    }
+  });
+
+  window.webContents.on('will-frame-navigate', (event) => {
+    // Sub-frames render book content; they must stay on our origin (epub.js
+    // loads chapters through srcdoc/blob, never by navigating away).
+    if (!event.isMainFrame && !isAppUrl(event.url) && !isInlineFrameUrl(event.url)) {
+      event.preventDefault();
+    }
+  });
+
+  window.webContents.on('will-attach-webview', (event) => {
+    event.preventDefault();
+  });
+
+  window.webContents.on('did-create-window', (created) => {
+    created.destroy();
+  });
+}
+
+function safeProtocol(candidate: string): string {
+  try {
+    return new URL(candidate).protocol;
+  } catch {
+    return '';
+  }
+}
+
+/** Protocols epub.js legitimately uses inside its rendering frame. */
+function isInlineFrameUrl(candidate: string): boolean {
+  const protocol = safeProtocol(candidate);
+  return protocol === 'about:' || protocol === 'blob:' || protocol === 'data:';
+}
+
 function getPackagedNodeCommand(): string {
   const helperName = `${app.getName()} Helper`;
   const helperPath = path.join(
@@ -70,28 +211,10 @@ function getPackagedNodeCommand(): string {
   return process.execPath;
 }
 
-function resolveMigrationPath() {
-  const migrationRelPath = path.join('src', 'lib', 'db', 'migrations', '0000_wide_expediter.sql');
-  const candidates = [
-    path.join(process.cwd(), migrationRelPath),
-    path.join(app.getAppPath(), migrationRelPath),
-    path.join(process.resourcesPath, migrationRelPath),
-    path.join(process.resourcesPath, 'app', migrationRelPath),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
 function isS3Configured() {
   const mode = store.get('storageMode') || 'local';
   const config = store.get('s3Config');
-  return mode === 's3' && !!(config?.bucket && config?.accessKey && config?.secretKey);
+  return mode === 's3' && !!(config?.bucket && config?.accessKey) && hasStoredS3Secret();
 }
 
 function shouldStartWatcher(libraryPath: string) {
@@ -114,7 +237,7 @@ function getEnvVars(libraryPath: string) {
   // Build optional S3 env vars
   const s3Vars: Record<string, string> = {};
   const storageMode = store.get('storageMode');
-  const s3Config = store.get('s3Config');
+  const s3Config = readS3Config();
   if (storageMode === 's3' && s3Config) {
     s3Vars.S3_BUCKET = s3Config.bucket;
     s3Vars.S3_ACCESS_KEY_ID = s3Config.accessKey;
@@ -140,7 +263,7 @@ function getEnvVars(libraryPath: string) {
   };
 }
 
-type WatcherDbAction = 'query-all' | 'query-one' | 'execute';
+type WatcherDbAction = 'query-all' | 'query-one' | 'execute' | 'transaction' | 'migrate';
 let cachedDevWatcherDbBinary: string | null = null;
 
 function resolveDevWatcherDbBinary(): string {
@@ -188,7 +311,7 @@ function resolveDevWatcherDbBinary(): string {
 
 function runWatcherDbCommand(
   action: WatcherDbAction,
-  request: { sql: string; params?: unknown[] },
+  request: { sql: string; params?: unknown[] } | { statements: unknown[] } | null,
   env: NodeJS.ProcessEnv,
 ) {
   const dbPath = env.DATABASE_PATH;
@@ -196,43 +319,15 @@ function runWatcherDbCommand(
     throw new Error('DATABASE_PATH is not set');
   }
 
-  const input = JSON.stringify({
-    sql: request.sql,
-    params: request.params ?? [],
-  });
-
-  if (!isDev) {
-    const packagedBinary = getPackagedWatcherBinaryPath();
-    if (!fs.existsSync(packagedBinary)) {
-      throw new Error(`Packaged watcher binary not found: ${packagedBinary}`);
-    }
-
-    const result = spawnSync(packagedBinary, ['db', '--db-path', dbPath, action], {
-      cwd: process.resourcesPath,
-      env,
-      input,
-      encoding: 'utf8',
-    });
-
-    if (result.error) {
-      throw result.error;
-    }
-    if (result.status !== 0) {
-      throw new Error(result.stderr?.trim() || `[watcher-rs] exited with code ${result.status}`);
-    }
-
-    const payload = result.stdout?.trim();
-    if (!payload) {
-      return {};
-    }
-    return JSON.parse(payload) as { row?: unknown; rows?: unknown[]; changes?: number };
+  const binaryPath = isDev ? resolveDevWatcherDbBinary() : getPackagedWatcherBinaryPath();
+  if (!isDev && !fs.existsSync(binaryPath)) {
+    throw new Error(`Packaged watcher binary not found: ${binaryPath}`);
   }
 
-  const devBinary = resolveDevWatcherDbBinary();
-  const result = spawnSync(devBinary, ['db', '--db-path', dbPath, action], {
-    cwd: process.cwd(),
+  const result = spawnSync(binaryPath, ['db', '--db-path', dbPath, action], {
+    cwd: isDev ? process.cwd() : process.resourcesPath,
     env,
-    input,
+    input: request === null ? '' : JSON.stringify(request),
     encoding: 'utf8',
   });
 
@@ -247,167 +342,244 @@ function runWatcherDbCommand(
   if (!payload) {
     return {};
   }
-  return JSON.parse(payload) as { row?: unknown; rows?: unknown[]; changes?: number };
+  return JSON.parse(payload) as {
+    row?: unknown;
+    rows?: unknown[];
+    changes?: number;
+    results?: unknown[];
+    applied?: { version: number; name: string }[];
+    version?: number | null;
+  };
 }
 
-function runDbSetup(libraryPath: string) {
+/**
+ * Bring the database up to date using the canonical migration runner.
+ *
+ * Migrations, their ordering and the applied-version ledger all live in
+ * watcher-rs, which embeds the SQL at compile time. Electron no longer keeps
+ * its own copy of the schema logic, and no longer hunts the filesystem for a
+ * migration file it can silently fail to find.
+ *
+ * Returns false when the database could not be prepared. The caller must not
+ * start serving on a failure: the old code caught the error, logged it and
+ * carried on, so the app came up against a half-built schema.
+ */
+function runMigrations(libraryPath: string): boolean {
   const env = getEnvVars(libraryPath);
   const databasePath = env.DATABASE_PATH;
   if (!databasePath) {
-    console.error('[Electron] DATABASE_PATH is not set; skipping database setup');
-    return;
+    console.error('[Electron] DATABASE_PATH is not set; cannot prepare the database');
+    return false;
   }
-  const absoluteDatabasePath = path.resolve(databasePath);
-  const migrationPath = resolveMigrationPath();
 
   try {
-    if (!migrationPath) {
-      console.error('[Electron] Migration file not found; skipping database setup');
-      return;
-    }
+    fs.mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
 
-    fs.mkdirSync(path.dirname(absoluteDatabasePath), { recursive: true });
+    const result = runWatcherDbCommand('migrate', null, env) as {
+      applied?: { version: number; name: string }[];
+      version?: number | null;
+    };
 
-    const usersTableExists = runWatcherDbCommand(
-      'query-one',
-      { sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'users' LIMIT 1" },
-      env,
-    ).row;
-
-    if (!usersTableExists) {
-      const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-      const statements = migrationSql
-        .split('--> statement-breakpoint')
-        .map((statement) => statement.trim())
-        .filter((statement) => statement.length > 0);
-
-      for (const statement of statements) {
-        runWatcherDbCommand('execute', { sql: statement }, env);
-      }
-      console.log('[Electron] Database schema initialized');
-    }
-
-    const booksTableExists = runWatcherDbCommand(
-      'query-one',
-      { sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'books' LIMIT 1" },
-      env,
-    ).row;
-
-    if (booksTableExists) {
-      const requiredS3Columns = [
-        { name: 'source', definition: "TEXT NOT NULL DEFAULT 'local'" },
-        { name: 's3_bucket', definition: 'TEXT' },
-        { name: 's3_etag', definition: 'TEXT' },
-      ] as const;
-
-      for (const column of requiredS3Columns) {
-        const hasColumn = runWatcherDbCommand(
-          'query-one',
-          {
-            sql: "SELECT 1 AS present FROM pragma_table_info('books') WHERE name = ?1 LIMIT 1",
-            params: [column.name],
-          },
-          env,
-        ).row;
-
-        if (!hasColumn) {
-          runWatcherDbCommand(
-            'execute',
-            { sql: `ALTER TABLE books ADD COLUMN ${column.name} ${column.definition}` },
-            env,
-          );
-          console.log(`[Electron] Added missing books.${column.name} column`);
-        }
-      }
-    }
-
-    const hasFileHashIndex = runWatcherDbCommand(
-      'query-one',
-      { sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'index' AND name = 'books_file_hash_unique' LIMIT 1" },
-      env,
-    ).row;
-
-    if (!hasFileHashIndex) {
-      console.log('[Electron] Missing unique indexes on books table, applying fix...');
-
-      runWatcherDbCommand(
-        'execute',
-        {
-          sql: `
-            DELETE FROM books WHERE id IN (
-              SELECT b.id FROM books b
-              INNER JOIN (
-                SELECT file_hash, MIN(added_at) AS min_added
-                FROM books GROUP BY file_hash HAVING COUNT(*) > 1
-              ) d ON b.file_hash = d.file_hash AND b.added_at > d.min_added
-            )
-          `,
-        },
-        env,
+    for (const migration of result.applied ?? []) {
+      console.log(
+        `[Electron] Applied migration ${String(migration.version).padStart(4, '0')}_${migration.name}`,
       );
-
-      runWatcherDbCommand(
-        'execute',
-        {
-          sql: `
-            DELETE FROM books WHERE id IN (
-              SELECT b.id FROM books b
-              INNER JOIN (
-                SELECT file_path, MIN(added_at) AS min_added
-                FROM books GROUP BY file_path HAVING COUNT(*) > 1
-              ) d ON b.file_path = d.file_path AND b.added_at > d.min_added
-            )
-          `,
-        },
-        env,
-      );
-
-      runWatcherDbCommand(
-        'execute',
-        { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS `books_file_path_unique` ON `books` (`file_path`)' },
-        env,
-      );
-      runWatcherDbCommand(
-        'execute',
-        { sql: 'CREATE UNIQUE INDEX IF NOT EXISTS `books_file_hash_unique` ON `books` (`file_hash`)' },
-        env,
-      );
-      console.log('[Electron] Unique indexes created and duplicates cleaned up');
     }
+    console.log(`[Electron] Database schema ready (version ${result.version ?? 'unknown'})`);
+  } catch (error) {
+    console.error('[Electron] Database migration failed:', error);
+    return false;
+  }
 
-    const adminEmail = 'admin@localhost';
-    const existingAdmin = runWatcherDbCommand(
-      'query-one',
+  return ensureDesktopPrincipal(getEnvVars(libraryPath));
+}
+
+/**
+ * Make sure the synthetic desktop account row exists.
+ *
+ * Reading progress and collections reference `users(id)`, so the desktop
+ * principal has to be a real row. It is created with a sentinel password
+ * hash that is not a bcrypt digest, which the credentials provider refuses
+ * outright — so enabling the public tunnel cannot expose a login for it
+ * (F01). Remote access requires the owner to create a real account in
+ * Admin -> Users.
+ *
+ * An existing row is never modified: whatever the owner has set stays set.
+ */
+function ensureDesktopPrincipal(env: NodeJS.ProcessEnv): boolean {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const result = runWatcherDbCommand(
+      'execute',
       {
-        sql: 'SELECT 1 AS present FROM users WHERE email = ?1 LIMIT 1',
-        params: [adminEmail],
+        sql: `
+          INSERT INTO users (
+            id, email, password_hash, display_name, role,
+            session_version, created_at, updated_at
+          )
+          VALUES (?1, ?2, ?3, ?4, 'admin', 1, ?5, ?5)
+          ON CONFLICT(email) DO NOTHING
+        `,
+        params: [
+          DESKTOP_PRINCIPAL_ID,
+          DESKTOP_PRINCIPAL_EMAIL,
+          NON_LOGIN_PASSWORD_HASH,
+          DESKTOP_PRINCIPAL_DISPLAY_NAME,
+          now,
+        ],
       },
       env,
-    ).row;
+    ) as { changes?: number };
 
-    if (!existingAdmin) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const bcrypt = require('bcryptjs') as { hashSync: (value: string, rounds: number) => string };
-      const now = Math.floor(Date.now() / 1000);
-      const passwordHash = bcrypt.hashSync('admin123', 10);
-      runWatcherDbCommand(
-        'execute',
-        {
-          sql: `
-            INSERT INTO users (
-              id, email, password_hash, display_name, role, created_at, updated_at
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-          `,
-          params: ['1', adminEmail, passwordHash, 'Admin', 'admin', now, now],
-        },
-        env,
-      );
-      console.log('[Electron] Seeded default admin user');
+    if (result.changes) {
+      console.log('[Electron] Created the local desktop account (no remote login)');
     }
+    return true;
   } catch (error) {
-    console.error('[Electron] Database setup failed:', error);
+    console.error('[Electron] Failed to ensure the desktop account:', error);
+    return false;
   }
+}
+
+/** Count accounts that can actually authenticate over the network. */
+function countLoginCapableAccounts(libraryPath: string): number {
+  const env = getEnvVars(libraryPath);
+  const row = runWatcherDbCommand(
+    'query-one',
+    {
+      sql: `
+        SELECT COUNT(*) AS total
+        FROM users
+        WHERE disabled_at IS NULL
+          AND password_hash LIKE '$2%'
+      `,
+    },
+    env,
+  ).row as { total?: number } | undefined;
+
+  return Number(row?.total ?? 0);
+}
+
+type S3ConfigInput = Omit<S3Config, 'secretKey'> & { secretKey: string };
+
+/**
+ * Validate an S3 settings payload from the renderer.
+ *
+ * The IPC boundary is untyped at runtime; the previous handler destructured
+ * whatever arrived and persisted it.
+ */
+function parseS3ConfigInput(
+  input: unknown,
+): { config: S3ConfigInput } | { error: string } {
+  if (!input || typeof input !== 'object') {
+    return { error: 'Invalid S3 settings' };
+  }
+
+  const raw = input as Record<string, unknown>;
+  const optionalString = (value: unknown, field: string) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value !== 'string') throw new Error(`${field} must be text`);
+    return value.trim() || undefined;
+  };
+
+  try {
+    const bucket = typeof raw.bucket === 'string' ? raw.bucket.trim() : '';
+    const accessKey = typeof raw.accessKey === 'string' ? raw.accessKey.trim() : '';
+    if (!bucket) return { error: 'A bucket name is required' };
+    if (!accessKey) return { error: 'An access key ID is required' };
+
+    const endpoint = optionalString(raw.endpoint, 'Endpoint');
+    if (endpoint && !/^https?:\/\//.test(endpoint)) {
+      return { error: 'Endpoint must be an http(s) URL' };
+    }
+
+    let pollInterval: number | undefined;
+    if (raw.pollInterval !== undefined && raw.pollInterval !== null && raw.pollInterval !== '') {
+      const value = Number(raw.pollInterval);
+      if (!Number.isFinite(value) || value < 5 || value > 86_400) {
+        return { error: 'Poll interval must be between 5 and 86400 seconds' };
+      }
+      pollInterval = Math.floor(value);
+    }
+
+    return {
+      config: {
+        bucket,
+        accessKey,
+        secretKey: typeof raw.secretKey === 'string' ? raw.secretKey : '',
+        endpoint,
+        region: optionalString(raw.region, 'Region'),
+        prefix: optionalString(raw.prefix, 'Prefix'),
+        pollInterval,
+      },
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Invalid S3 settings' };
+  }
+}
+
+/**
+ * Source identity for an S3 config.
+ *
+ * Endpoint, region, bucket and prefix together decide *which* objects the
+ * scanner reconciles against; the credentials decide whether it can read
+ * them. Two configs are equal when both halves match.
+ */
+function s3ConfigsEqual(a: S3Config, b: S3Config): boolean {
+  const normalize = (config: S3Config) => [
+    config.endpoint ?? '',
+    config.region ?? '',
+    config.bucket,
+    config.prefix ?? '',
+    String(config.pollInterval ?? ''),
+    config.accessKey,
+    config.secretKey,
+  ].join('\u0000');
+
+  return normalize(a) === normalize(b);
+}
+
+/** List one page of objects to prove the credentials and scope work. */
+function checkS3Connectivity(config: S3Config): { ok: true } | { ok: false; error: string } {
+  const binaryPath = isDev ? resolveDevWatcherDbBinary() : getPackagedWatcherBinaryPath();
+  if (!fs.existsSync(binaryPath)) {
+    return { ok: false, error: `watcher binary not found at ${binaryPath}` };
+  }
+
+  const args = [
+    's3-check',
+    '--s3-bucket', config.bucket,
+    '--s3-access-key', config.accessKey,
+    '--s3-secret-key', config.secretKey,
+  ];
+  if (config.endpoint) args.push('--s3-endpoint', config.endpoint);
+  if (config.region) args.push('--s3-region', config.region);
+  if (config.prefix) args.push('--s3-prefix', config.prefix);
+
+  const result = spawnSync(binaryPath, args, {
+    cwd: isDev ? process.cwd() : process.resourcesPath,
+    env: buildWatcherEnv(process.env, path.dirname(binaryPath)),
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+
+  if (result.error) {
+    return { ok: false, error: result.error.message };
+  }
+
+  const payload = result.stdout?.trim();
+  if (payload) {
+    try {
+      const parsed = JSON.parse(payload) as { ok?: boolean; error?: string };
+      if (parsed.ok) return { ok: true };
+      return { ok: false, error: parsed.error || 'unknown error' };
+    } catch {
+      // Fall through to the exit-code check.
+    }
+  }
+
+  if (result.status === 0) return { ok: true };
+  return { ok: false, error: result.stderr?.trim() || `check exited with code ${result.status}` };
 }
 
 function startServer(libraryPath: string) {
@@ -590,6 +762,16 @@ function startWatcher(libraryPath: string) {
     return;
   }
 
+  if (libraryPath && !isLibraryPathAvailable(libraryPath)) {
+    // The watcher still starts (it may be an S3 install, and the volume may
+    // come back), but say so plainly: an unreachable source is not an empty
+    // library, and the scanner deliberately declines to treat it as one.
+    console.warn(
+      `[Electron] Library folder is not reachable right now: ${libraryPath}. `
+        + 'Books already indexed from it are kept until it comes back.',
+    );
+  }
+
   const baseEnv = getEnvVars(libraryPath);
   const watcherArgs = getWatcherArgs(baseEnv);
   const workingDir = isDev ? process.cwd() : process.resourcesPath;
@@ -727,7 +909,21 @@ function startTunnel() {
     return;
   }
 
-  const baseEnv = getEnvVars(store.get('libraryPath') || '');
+  const secret = store.get('tunnelSecret');
+  if (!secret) {
+    // A name with no ownership proof cannot be registered any more (F02).
+    console.error(
+      '[Electron] No tunnel ownership secret for this name. Generate a new public URL to claim one.',
+    );
+    return;
+  }
+
+  // The secret travels in the environment rather than argv so it does not
+  // show up in the process table next to the public hostname.
+  const baseEnv = {
+    ...getEnvVars(store.get('libraryPath') || ''),
+    ALEX_TUNNEL_SECRET: secret,
+  };
   const workingDir = isDev ? process.cwd() : process.resourcesPath;
 
   let command: string;
@@ -1013,6 +1209,16 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // The preload only uses contextBridge + ipcRenderer, both of which
+      // work in a sandboxed renderer, so there is no reason to leave the
+      // OS-level sandbox off.
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      nodeIntegrationInSubFrames: false,
+      // Book content is rendered in an iframe; it must never get its own
+      // Electron window with renderer privileges.
+      webviewTag: false,
     },
   };
 
@@ -1026,6 +1232,7 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow(windowOptions);
+  restrictWindowNavigation(mainWindow);
   console.log('[Electron] Window created, loading URL...');
 
   const startUrl = isFirstRun
@@ -1111,9 +1318,11 @@ function setMacAppIcon() {
 app.whenReady().then(async () => {
   setMacAppIcon();
   configureDesktopAuthHeaderInjection();
+  configureRendererRestrictions();
+  migrateS3SecretToKeychain();
 
   // Set up IPC handlers
-  ipcMain.handle('select-library-path', async () => {
+  handleTrusted('select-library-path', async () => {
     const currentPath = store.get('libraryPath');
     const newPath = await selectLibraryPath();
     if (newPath) {
@@ -1142,7 +1351,7 @@ app.whenReady().then(async () => {
     return newPath;
   });
 
-  ipcMain.handle('rescan-library', () => {
+  handleTrusted('rescan-library', () => {
     const libraryPath = store.get('libraryPath');
     if (libraryPath) {
       console.log('[Electron] Rescanning library...');
@@ -1153,7 +1362,7 @@ app.whenReady().then(async () => {
     return false;
   });
 
-  ipcMain.handle('nuke-and-rescan-library', async () => {
+  handleTrusted('nuke-and-rescan-library', async () => {
     const libraryPath = store.get('libraryPath');
     if (libraryPath) {
       console.log('[Electron] Nuking and rescanning library...');
@@ -1188,11 +1397,11 @@ app.whenReady().then(async () => {
     return false;
   });
 
-  ipcMain.handle('get-app-version', () => {
+  handleTrusted('get-app-version', () => {
     return app.getVersion();
   });
 
-  ipcMain.handle('get-local-ips', () => {
+  handleTrusted('get-local-ips', () => {
     const interfaces = os.networkInterfaces();
     const urls: string[] = [];
     for (const addrs of Object.values(interfaces)) {
@@ -1206,66 +1415,113 @@ app.whenReady().then(async () => {
     return urls;
   });
 
-  ipcMain.handle('get-library-path', () => {
+  handleTrusted('get-library-path', () => {
     return store.get('libraryPath') || '';
   });
 
-  ipcMain.handle('get-storage-mode', () => {
+  handleTrusted('get-storage-mode', () => {
     return store.get('storageMode') || 'local';
   });
 
-  ipcMain.handle('get-s3-config', () => {
-    return store.get('s3Config') || null;
+  handleTrusted('get-s3-config', () => {
+    const stored = readS3Config();
+    if (!stored) return null;
+
+    // Never hand the secret access key back to the renderer (F03). Book
+    // content is rendered in the same renderer process, so anything the
+    // renderer can read is within reach of a compromise there. The settings
+    // form only needs to know whether a secret is already stored.
+    return {
+      bucket: stored.bucket,
+      accessKey: stored.accessKey,
+      endpoint: stored.endpoint,
+      region: stored.region,
+      prefix: stored.prefix,
+      pollInterval: stored.pollInterval,
+      secretKeyConfigured: hasStoredS3Secret(),
+    };
   });
 
-  ipcMain.handle('save-s3-config', async (_event, config: {
-    endpoint?: string;
-    region?: string;
-    bucket: string;
-    accessKey: string;
-    secretKey: string;
-    prefix?: string;
-    pollInterval?: number;
-  }) => {
+  handleTrusted('save-s3-config', async (_event, incoming: unknown) => {
+    const parsed = parseS3ConfigInput(incoming);
+    if ('error' in parsed) {
+      return { success: false, error: parsed.error };
+    }
+
+    const existing = readS3Config();
+    const next: S3Config = {
+      ...parsed.config,
+      // An empty secret means "keep the one already stored", which is what
+      // the redacted form sends back when the owner has not retyped it.
+      secretKey: parsed.config.secretKey || existing?.secretKey || '',
+    };
+
+    if (!next.secretKey) {
+      return { success: false, error: 'A secret access key is required' };
+    }
+
+    const alreadyActive = store.get('storageMode') === 's3';
+    if (alreadyActive && existing && s3ConfigsEqual(existing, next)) {
+      // Saving unchanged settings must be a no-op. It used to clear the
+      // entire books table — and with it everyone's reading progress and
+      // collection membership — even when nothing had changed (F09).
+      console.log('[Electron] S3 settings unchanged; nothing to do');
+      return { success: true, unchanged: true };
+    }
+
+    // Prove the new configuration works *before* replacing a working one.
+    const check = checkS3Connectivity(next);
+    if (!check.ok) {
+      console.error('[Electron] Rejected S3 settings that could not reach the bucket:', check.error);
+      return {
+        success: false,
+        error: `Could not reach the bucket with these settings: ${check.error}`,
+      };
+    }
+
+    const previousConfig = existing;
+    const previousMode = store.get('storageMode');
+
     try {
-      store.set('s3Config', config);
+      setS3Config(next);
       store.set('storageMode', 's3');
 
-      // Stop watcher, clear books, restart with S3 config
       if (watcherProcess) {
         watcherProcess.kill();
         watcherProcess = null;
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      await clearBooksTable();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
+      // Books are deliberately left in place. Switching source or rotating a
+      // key is not a request to destroy reading state; the S3 scanner
+      // reconciles the newly configured bucket/prefix, and "Clear library"
+      // in Admin -> Library remains available as an explicit operation.
       const libraryPath = store.get('libraryPath') || '';
       await restartServer(libraryPath);
       startWatcher(libraryPath);
 
       return { success: true };
     } catch (error) {
-      console.error('[Electron] Failed to save S3 config:', error);
+      console.error('[Electron] Failed to activate S3 config; restoring the previous one:', error);
+      if (previousConfig) {
+        setS3Config(previousConfig);
+      }
+      store.set('storageMode', previousMode);
       return { success: false, error: String(error) };
     }
   });
 
-  ipcMain.handle('switch-to-local-storage', async () => {
+  handleTrusted('switch-to-local-storage', async () => {
     try {
       store.set('storageMode', 'local');
 
-      // Stop watcher, clear books, restart in local mode
       if (watcherProcess) {
         watcherProcess.kill();
         watcherProcess = null;
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      await clearBooksTable();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
+      // As above: changing source does not delete reader state.
       const libraryPath = store.get('libraryPath');
       await restartServer(libraryPath || '');
       if (libraryPath) {
@@ -1279,7 +1535,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('select-library-path-initial', async () => {
+  handleTrusted('select-library-path-initial', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
       title: 'Select Library Folder',
@@ -1296,7 +1552,7 @@ app.whenReady().then(async () => {
     return selectedPath;
   });
 
-  ipcMain.handle('complete-onboarding', () => {
+  handleTrusted('complete-onboarding', () => {
     const libPath = store.get('libraryPath');
     const mode = store.get('storageMode');
 
@@ -1315,7 +1571,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('reset-app', async () => {
+  handleTrusted('reset-app', async () => {
     try {
       console.log('[Electron] Resetting app...');
 
@@ -1344,33 +1600,84 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('get-tunnel-status', () => {
+  handleTrusted('get-tunnel-status', () => {
     const enabled = store.get('tunnelEnabled');
     const subdomain = store.get('tunnelSubdomain');
     const url = subdomain ? `https://${subdomain}.${TUNNEL_DOMAIN}` : '';
-    return { enabled, subdomain, url, connected: tunnelProcess !== null };
+
+    let hasRemoteCredentials = false;
+    try {
+      hasRemoteCredentials = countLoginCapableAccounts(store.get('libraryPath') || '') > 0;
+    } catch {
+      // Reported as "no credentials" rather than failing the status call.
+    }
+
+    return {
+      enabled,
+      subdomain,
+      url,
+      connected: tunnelProcess !== null,
+      hasRemoteCredentials,
+      ownershipClaimed: Boolean(store.get('tunnelSecret')),
+    };
   });
 
-  ipcMain.handle('enable-tunnel', () => {
-    let subdomain = store.get('tunnelSubdomain');
-    if (!subdomain) {
-      subdomain = generateTunnelSubdomain();
-      store.set('tunnelSubdomain', subdomain);
+  handleTrusted('enable-tunnel', () => {
+    // Public access is only meaningful — and only safe — once the owner has
+    // created an account that can actually log in. The desktop principal
+    // deliberately cannot (F01), so without this check enabling the tunnel
+    // would publish a login page with no usable credentials, and previously
+    // published one whose password was a matter of public record.
+    let loginCapable = 0;
+    try {
+      loginCapable = countLoginCapableAccounts(store.get('libraryPath') || '');
+    } catch (error) {
+      console.error('[Electron] Could not check for remote-capable accounts:', error);
+      return { error: 'account-check-failed' };
     }
+
+    if (loginCapable === 0) {
+      return { error: 'no-remote-credentials' };
+    }
+
+    let subdomain = store.get('tunnelSubdomain');
+    let secret = store.get('tunnelSecret');
+    let rotated = false;
+
+    if (!subdomain || !secret) {
+      // A name carried over from before authenticated registration has no
+      // proof of ownership, and the relay will not take our word for it.
+      // Rotating is the only safe migration: anybody could have claimed the
+      // old name in the meantime.
+      if (subdomain && !secret) {
+        console.warn(
+          `[Electron] Rotating tunnel name "${subdomain}": it predates authenticated registration.`,
+        );
+        rotated = true;
+      }
+      subdomain = generateTunnelSubdomain();
+      secret = randomBytes(32).toString('base64');
+      store.setMany({ tunnelSubdomain: subdomain, tunnelSecret: secret, tunnelOwnershipVersion: 2 });
+    }
+
     store.set('tunnelEnabled', true);
     startTunnel();
     const url = `https://${subdomain}.${TUNNEL_DOMAIN}`;
-    return { subdomain, url };
+    return { subdomain, url, rotated };
   });
 
-  ipcMain.handle('disable-tunnel', () => {
+  handleTrusted('disable-tunnel', () => {
     store.set('tunnelEnabled', false);
     stopTunnel();
   });
 
-  ipcMain.handle('regenerate-tunnel-subdomain', () => {
+  handleTrusted('regenerate-tunnel-subdomain', () => {
+    // A new name needs a new ownership secret: reusing the old one would
+    // leave the previous name claimable with a secret we still hold, and
+    // would tie two public identities to one proof.
     const subdomain = generateTunnelSubdomain();
-    store.set('tunnelSubdomain', subdomain);
+    const secret = randomBytes(32).toString('base64');
+    store.setMany({ tunnelSubdomain: subdomain, tunnelSecret: secret, tunnelOwnershipVersion: 2 });
 
     // Restart tunnel if it was running
     if (store.get('tunnelEnabled')) {
@@ -1397,8 +1704,17 @@ app.whenReady().then(async () => {
     console.log('[Electron] Production mode: starting server and watcher');
     if (isE2E) {
       console.log('[Electron] E2E mode: skipping db setup (handled by test harness)');
-    } else {
-      runDbSetup(libraryPath);
+    } else if (!runMigrations(libraryPath)) {
+      // Serving against a half-built schema is worse than not serving:
+      // requests fail in unpredictable ways and, before this change, a
+      // login could even take it upon itself to create an administrator.
+      dialog.showErrorBox(
+        'Database could not be prepared',
+        'Alex could not apply its database migrations, so it will not start. '
+          + 'Check the logs prefixed with [Electron] for the underlying error.',
+      );
+      app.exit(1);
+      return;
     }
     startServer(libraryPath);
     if (shouldStartWatcher(libraryPath)) {
@@ -1414,9 +1730,18 @@ app.whenReady().then(async () => {
       return;
     }
 
-    // Auto-start tunnel if enabled
+    // Auto-start tunnel if enabled. A name with no ownership secret is
+    // skipped rather than registered unauthenticated; the owner regenerates
+    // the URL from Admin -> Users to claim a fresh, proven name.
     if (store.get('tunnelEnabled') && store.get('tunnelSubdomain')) {
-      startTunnel();
+      if (store.get('tunnelSecret')) {
+        startTunnel();
+      } else {
+        console.warn(
+          '[Electron] Public access is enabled but this tunnel name has no ownership secret. '
+            + 'Open Admin -> Users and regenerate the public URL.',
+        );
+      }
     }
 
     createWindow();
@@ -1424,13 +1749,16 @@ app.whenReady().then(async () => {
     // Dev mode: server is already running externally via concurrently
     console.log('[Electron] Dev mode: using external server');
 
-    // Check if database exists, if not run setup
-    const paths = getDataPaths(libraryPath);
-    const dbExists = fs.existsSync(paths.databasePath);
-
-    if (!dbExists) {
-      console.log('[Electron] Database not found, running initial setup...');
-      runDbSetup(libraryPath);
+    // Migrations are idempotent, so run them unconditionally rather than
+    // only when the database file happens to be missing — that check meant
+    // an existing database never picked up later migrations in dev.
+    if (!isE2E && !runMigrations(libraryPath)) {
+      dialog.showErrorBox(
+        'Database could not be prepared',
+        'Alex could not apply its database migrations. Check the logs prefixed with [Electron].',
+      );
+      app.exit(1);
+      return;
     }
 
     // Start watcher only (server is running externally)

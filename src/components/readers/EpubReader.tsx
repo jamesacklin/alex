@@ -971,7 +971,14 @@ export function EpubReader({
           readerStyles={readerStyles}
           epubViewStyles={epubViewStyles}
           epubOptions={{
-            allowScriptedContent: true,
+            // An imported EPUB is untrusted content. epub.js renders each
+            // chapter in an iframe it creates with `sandbox="allow-same-origin"`
+            // and appends `allow-scripts` under this option — the combination
+            // that lets a document reach the parent application's origin
+            // (F03). Reader layout, navigation, themes and location tracking
+            // are all driven from the parent, so nothing here needs the
+            // book's own scripts to run.
+            allowScriptedContent: false,
             flow: "scrolled-continuous",
             manager: "continuous",
             spread: "none",
