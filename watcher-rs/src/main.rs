@@ -60,6 +60,8 @@ enum Command {
     S3Stream(S3StreamCommand),
     /// Run the reverse tunnel client to expose the local server publicly.
     Tunnel(TunnelCommand),
+    /// Verify that S3 credentials can list the configured bucket/prefix.
+    S3Check(S3CheckCommand),
 }
 
 #[derive(Args)]
@@ -109,6 +111,27 @@ struct S3StreamCommand {
 
     #[arg(long, env = "S3_SECRET_ACCESS_KEY")]
     s3_secret_key: String,
+}
+
+#[derive(Args)]
+struct S3CheckCommand {
+    #[arg(long, env = "S3_ENDPOINT")]
+    s3_endpoint: Option<String>,
+
+    #[arg(long, env = "S3_REGION", default_value = "auto")]
+    s3_region: String,
+
+    #[arg(long, env = "S3_BUCKET")]
+    s3_bucket: String,
+
+    #[arg(long, env = "S3_ACCESS_KEY_ID")]
+    s3_access_key: String,
+
+    #[arg(long, env = "S3_SECRET_ACCESS_KEY")]
+    s3_secret_key: String,
+
+    #[arg(long, env = "S3_PREFIX")]
+    s3_prefix: Option<String>,
 }
 
 #[derive(Args)]
@@ -163,6 +186,7 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Db(cmd)) => run_db_command(cmd),
         Some(Command::S3Stream(cmd)) => run_s3_stream(cmd),
         Some(Command::Tunnel(cmd)) => run_tunnel(cmd),
+        Some(Command::S3Check(cmd)) => run_s3_check(cmd),
         None => {
             // Auto-detect: if S3_BUCKET is set, run S3 watcher; otherwise local.
             if cli.s3_bucket.is_some() {
@@ -264,6 +288,41 @@ fn run_s3_stream(cmd: S3StreamCommand) -> Result<()> {
     ))?;
 
     Ok(())
+}
+
+/// Check that the supplied credentials can reach the bucket and prefix.
+///
+/// Used before a configuration change is activated, so a bad credential
+/// rotation is reported instead of silently replacing a working source.
+/// Prints `{"ok":true,"objects":N}` on success and exits non-zero with
+/// `{"ok":false,"error":"..."}` on failure.
+fn run_s3_check(cmd: S3CheckCommand) -> Result<()> {
+    let config = S3Config {
+        endpoint: cmd.s3_endpoint,
+        region: cmd.s3_region,
+        bucket: cmd.s3_bucket,
+        access_key: cmd.s3_access_key,
+        secret_key: cmd.s3_secret_key,
+        prefix: cmd.s3_prefix.clone(),
+        poll_interval: 0,
+    };
+
+    let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+    let result = rt.block_on(async {
+        let bucket = watcher_rs::s3::client::create_bucket(&config)?;
+        watcher_rs::s3::scanner::list_objects(&bucket, config.prefix.as_deref()).await
+    });
+
+    match result {
+        Ok(objects) => {
+            println!("{}", json!({ "ok": true, "objects": objects.len() }));
+            Ok(())
+        }
+        Err(error) => {
+            println!("{}", json!({ "ok": false, "error": format!("{error:#}") }));
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run_tunnel(cmd: TunnelCommand) -> Result<()> {

@@ -42,6 +42,9 @@ export default function AdminLibraryPage() {
   const [storageMode, setStorageMode] = useState<"local" | "s3">("local");
   const [s3Form, setS3Form] = useState<S3FormState>(EMPTY_S3_FORM);
   const [isSavingS3, setIsSavingS3] = useState(false);
+  // The main process never returns the stored secret, so the form only
+  // knows whether one exists; an empty field means "keep what is stored".
+  const [hasStoredSecret, setHasStoredSecret] = useState(false);
 
   const loadElectronState = useCallback(async () => {
     if (!window.electronAPI) return;
@@ -58,10 +61,11 @@ export default function AdminLibraryPage() {
         region: config.region || "",
         bucket: config.bucket || "",
         accessKey: config.accessKey || "",
-        secretKey: config.secretKey || "",
+        secretKey: "",
         prefix: config.prefix || "",
         pollInterval: config.pollInterval ? String(config.pollInterval) : "60",
       });
+      setHasStoredSecret(config.secretKeyConfigured);
     }
   }, []);
 
@@ -183,7 +187,7 @@ export default function AdminLibraryPage() {
   const handleSaveS3Config = async () => {
     if (!window.electronAPI || isSavingS3) return;
 
-    if (!s3Form.bucket || !s3Form.accessKey || !s3Form.secretKey) {
+    if (!s3Form.bucket || !s3Form.accessKey || (!s3Form.secretKey && !hasStoredSecret)) {
       toast.error("Missing required fields", {
         description: "Bucket, Access Key, and Secret Key are required.",
       });
@@ -204,9 +208,16 @@ export default function AdminLibraryPage() {
 
       if (result.success) {
         setStorageMode("s3");
-        toast.success("S3 storage configured", {
-          description: "Library cleared and watcher restarted with S3 backend.",
-        });
+        setHasStoredSecret(true);
+        setS3Form((previous) => ({ ...previous, secretKey: "" }));
+        toast.success(
+          result.unchanged ? "S3 settings unchanged" : "S3 storage configured",
+          {
+            description: result.unchanged
+              ? "Nothing needed changing, so your library was left as it is."
+              : "Connection verified and the watcher restarted against the bucket. Your existing books and reading progress were kept.",
+          },
+        );
         router.refresh();
       } else {
         toast.error("Failed to save S3 config", {
@@ -230,7 +241,8 @@ export default function AdminLibraryPage() {
         setStorageMode("local");
         setShowSwitchToLocalDialog(false);
         toast.success("Switched to local storage", {
-          description: "Library cleared. Select a folder to start scanning.",
+          description:
+            "Select a folder to start scanning. Your existing books and reading progress were kept — use \u201cClear library\u201d if you want them removed.",
         });
         router.refresh();
       } else {
@@ -434,11 +446,18 @@ export default function AdminLibraryPage() {
                       <Input
                         id="s3-secret-key"
                         type="password"
-                        placeholder="••••••••"
+                        placeholder={hasStoredSecret ? "Stored — leave blank to keep" : "••••••••"}
                         value={s3Form.secretKey}
                         onChange={(e) => updateS3Field("secretKey", e.target.value)}
-                        required
+                        required={!hasStoredSecret}
                       />
+                      {hasStoredSecret && (
+                        <p className="text-xs text-muted-foreground">
+                          A secret key is already stored in your operating system&apos;s
+                          keychain. Leave this blank to keep it, or type a new one to
+                          rotate it.
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -474,7 +493,12 @@ export default function AdminLibraryPage() {
 
                 <Button
                   onClick={handleSaveS3Config}
-                  disabled={isSavingS3 || !s3Form.bucket || !s3Form.accessKey || !s3Form.secretKey}
+                  disabled={
+                    isSavingS3
+                    || !s3Form.bucket
+                    || !s3Form.accessKey
+                    || (!s3Form.secretKey && !hasStoredSecret)
+                  }
                 >
                   {isSavingS3 ? "Saving..." : "Save & Connect"}
                 </Button>
@@ -699,9 +723,11 @@ export default function AdminLibraryPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Switch to local storage?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will disconnect from S3, clear all books from the library,
-              and switch to local folder mode. You will need to select a
-              library folder to start scanning local files.
+              This will disconnect from S3 and switch to local folder mode.
+              You will need to select a library folder to start scanning local
+              files. Books already indexed and everyone&apos;s reading progress
+              are kept; use &ldquo;Clear library&rdquo; if you want them
+              removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
