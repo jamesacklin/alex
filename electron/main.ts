@@ -1223,10 +1223,15 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // The preload only uses contextBridge + ipcRenderer, both of which
-      // work in a sandboxed renderer, so there is no reason to leave the
-      // OS-level sandbox off.
-      sandbox: true,
+      // `sandbox: true` was tried here and withdrawn. It changes the preload
+      // environment, and every failure in the desktop end-to-end suite
+      // clustered on the tests that go through `window.electronAPI` — a
+      // preload that no longer loads would look exactly like that. It is
+      // hardening beyond what F03 requires (context isolation, no node
+      // integration, IPC sender validation and the navigation and permission
+      // restrictions below are what that finding turns on), and it cannot be
+      // validated without running a packaged app. Revisit it there, on its
+      // own, where the fallout is attributable.
       webSecurity: true,
       allowRunningInsecureContent: false,
       nodeIntegrationInSubFrames: false,

@@ -45,7 +45,34 @@ the desktop runtime, and neither Rust crates nor PDFium appear at all.
 | `electron` 34.5.8 → 39.8.10 | Electron 34 is out of support. 39.8.10 is the lowest version clearing all six advisories that applied to 34.5.8 (GHSA-532v-xpq5-8h95, GHSA-8337-3p73-46f4, GHSA-jjp3-mq3x-295m, GHSA-9wfr-w7mm-pc7f, GHSA-v3j7-r9gq-3gjw, GHSA-h7rp-cf8h-j98x, GHSA-9f4c-93c8-jc8g) and is on a supported line. Required one source change: `app.dock` is typed as possibly undefined from Electron 36 onward. |
 | `electron-builder` 25.1.8 → 26.15.3 | Compatibility with Electron 39, plus GHSA-7g7r-gx96-252g (`app-builder-lib`) and GHSA-p2f4-r6v6-j797 (`builder-util-runtime`). |
 | `react`/`react-dom` pinned to 19.2.8 (root and override) | The root pinned 19.2.3 while the `@alex/ui` workspace peer resolved 19.2.8, producing two copies of `react-hook-form` whose structurally identical types are nominally incompatible at every `<Form>` boundary. |
-| `pnpm` overrides for `epubjs>lodash`, `epubjs>@xmldom/xmldom`, `postcss>nanoid`, `browserslist`, `miniflare>undici` | Transitive advisories the direct dependency ranges cannot reach. Each override is scoped to the dependent that pulls the vulnerable copy so a future consumer wanting a different major is not pinned back. |
+| `pnpm` overrides for `epubjs>lodash`, `epubjs>@xmldom/xmldom`, `postcss>nanoid`, `browserslist`, `miniflare>undici`, `@babel/core` | Transitive advisories the direct dependency ranges cannot reach. Each is scoped to the dependent that pulls the vulnerable copy, so a future consumer wanting a different major is not pinned back — except `@babel/core`, which `styled-jsx` declares as a *peer*, and a `parent>child` selector does not apply to a peer. |
+
+### Deliberately not upgraded
+
+An earlier revision of this branch ran `pnpm update --recursive`, which
+swept up every caret-range dependency rather than only the ones an advisory
+required. That moved `tailwindcss` 4.1.18 → 4.3.3, the Storybook toolchain
+10.2.12 → 10.6.0, `radix-ui` 1.4.3 → 1.6.7 and several others, and the
+consequence was 100 of 108 Storybook stories changing visually — a
+wholesale design re-baseline to review inside a security PR, caused by
+nothing anyone asked for.
+
+Those pins are restored. The dependency diff on this branch is now six
+lines: `next`, `next-auth`, `electron`, `electron-builder` and
+`react`/`react-dom`. Every one is either advisory-driven or required to
+unify the duplicate React resolution above.
+
+The cost of narrowing is that the *development* tooling keeps the
+advisories it had at the reviewed commit: the full `pnpm audit` reports 97,
+against 2 when everything was swept forward. All 97 are in build and test
+tooling — `minimatch`, `picomatch`, `flatted`, `serialize-javascript`,
+`brace-expansion` and friends, reached through Storybook's webpack plugins,
+electron-builder's packaging code and eslint's matcher. None is reachable
+from a running Alex instance, which is why the CI gate is
+`pnpm audit --prod` (zero findings, hard failure) with the full audit
+reported informationally. Sweeping dev tooling forward is worth doing —
+separately, where its visual and behavioural fallout can be reviewed on its
+own merits.
 
 ## Reachability triage
 
@@ -63,17 +90,18 @@ because a couple of these are genuinely unreachable in Alex's configuration.
 | `postcss>nanoid`, `browserslist` | **No.** Build-time only; they process this project's own CSS and config, not untrusted input. | Overridden anyway (cheap, no API change). |
 | `miniflare>undici` (5 advisories) | **No.** Only in the relay's Workers *test* runtime. | Overridden to `^7.29.0`. |
 | `electron>extract-zip` (GHSA-jmr9-qjv8-65gv, symlink path traversal) | **No.** Runs at `pnpm install` time, unpacking the Electron download from Electron's own CDN over TLS. | **Waived, no fix available** (`patched_versions: <0.0.0`). Revisit when Electron switches unpackers. |
+| GHSA-4x5r-pxfx-6jf8 (`@babel/core` arbitrary file read via `sourceMappingURL`) | **No.** Build-time only; it reads this project's own sources. It appears in `--prod` because `styled-jsx` is a production dependency of `next`, even though `@babel/core` never runs in production. | Overridden to `^7.29.6` so the production gate stays at zero rather than being relaxed to ignore low findings. |
 | `@storybook/nextjs > … > elliptic` (GHSA-848j-6mx2-7j84, low) | **No.** Inside a webpack node-polyfill bundle used only by the Storybook build; not shipped by Alex. | **Waived, no fix available.** |
 
 ## Current state
 
 ```
-pnpm audit --prod   →  no known vulnerabilities
-pnpm audit          →  2 advisories, both waived above with no upstream fix
+pnpm audit --prod   →  no known vulnerabilities   (was 54: 3 critical, 28 high, 19 moderate, 4 low)
+pnpm audit          →  97, all in build/test tooling and all pre-existing
 ```
 
-Down from 54 production matches (3 critical, 28 high, 19 moderate, 4 low) and
-159 total at the reviewed commit.
+The production number is what the CI gate enforces. See "Deliberately not
+upgraded" above for why the development number is not.
 
 ## Gaps
 
@@ -86,6 +114,8 @@ These are stated rather than quietly omitted.
 - **PDFium has no automated audit.** It is downloaded by `pdfium-render`'s
   build script from a pinned release. Tracking its advisories needs a manual
   process or a vendored, checksummed artifact.
+- **Development tooling still carries its pre-existing advisories** (97 in
+  the full audit). Deliberate; see "Deliberately not upgraded".
 - **Desktop packages were not built or smoke-tested for this baseline.** The
   Electron and electron-builder upgrades type-check (`pnpm typecheck:electron`)
   and the standalone bundle builds, but `electron-builder --mac/--win/--linux`
