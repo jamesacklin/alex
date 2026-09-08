@@ -58,6 +58,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Readiness probe — must answer before any account exists.
+  if (nextUrl.pathname === "/api/health") {
+    return NextResponse.next();
+  }
+
   // Public shared collection API endpoints — no auth required.
   // Token validation happens within each endpoint.
   if (nextUrl.pathname.startsWith("/api/shared/")) {

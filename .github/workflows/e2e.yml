@@ -42,7 +42,8 @@ jobs:
           pnpm exec playwright install-deps chromium
         if: steps.playwright-cache.outputs.cache-hit == 'true'
       - run: pnpm build:native
-      - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      # global-setup.ts resets and seeds the test database itself.
+      - run: mkdir -p data && pnpm db:push
       - run: pnpm exec playwright test --config=e2e/playwright.config.ts
         env:
           E2E_PLATFORM: web
@@ -90,7 +91,8 @@ jobs:
           cp -r .next/static .next/standalone/.next/static
           cp -r public .next/standalone/public
       - run: npx tsc -p electron/tsconfig.json
-      - run: mkdir -p data && pnpm db:push && pnpm db:seed
+      # global-setup.ts resets and seeds the test database itself.
+      - run: mkdir -p data && pnpm db:push
       # Only run specs that test Electron-specific behaviour.  Web-UI
       # tests (library, epub-reader, pdf-reader, collections, progress)
       # are already fully covered by the e2e-web job above.
